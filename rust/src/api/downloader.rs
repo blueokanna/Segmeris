@@ -3792,7 +3792,7 @@ fn stream_media_response_to_file(
 
         if status == 416 {
             let range = parse_content_range(&response_headers)?;
-            let validators_match = resume_metadata.as_ref().map_or(true, |saved| {
+            let validators_match = resume_metadata.as_ref().is_none_or(|saved| {
                 resumable_metadata_matches_response(saved, &response_headers, range.total)
             });
             if is_complete_unsatisfied_range(range, downloaded) && validators_match {
