@@ -17,7 +17,7 @@
 //! that needed the fallback are remembered so the retry cost is paid only
 //! once per host.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use courierust::courierust_body::Body;
 use courierust::courierust_client::{Client, ClientConfig, TlsSettings as ClientTls};
 use courierust::courierust_http::header::{HeaderName, HeaderValue};
@@ -86,7 +86,7 @@ impl SyncHttpClient {
             read_timeout: Some(read_timeout),
             handshake_timeout: Some(Duration::from_secs(10)),
             max_redirects: MAX_REDIRECTS,
-            user_agent: Some("FerrisLoad/1.0".to_string()),
+            user_agent: Some("Segmeris/1.0".to_string()),
             max_header_list: 1 << 20,
             max_body: MAX_MEMORY_BODY,
             tls: Some(ClientTls {

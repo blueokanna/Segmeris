@@ -1,13 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:m3u8_downloader/src/app/app_theme.dart';
-import 'package:m3u8_downloader/src/home/home_download_tasks_card.dart';
-import 'package:m3u8_downloader/src/home/home_page_controller.dart';
+import 'package:segmeris/src/app/app_theme.dart';
+import 'package:segmeris/src/home/home_download_tasks_card.dart';
+import 'package:segmeris/src/home/home_page_controller.dart';
 
 import '../widget_test_harness.dart';
 
 void main() {
   testWidgets('renders concurrent download task snapshots', (tester) async {
     final startedAt = DateTime(2025, 1, 1, 12);
+    String? retriedTaskId;
 
     await tester.pumpWidget(
       buildTestHarness(
@@ -37,7 +38,19 @@ void main() {
               running: false,
               resultPath: 'D:/Videos/second.mp4',
             ),
+            HomeDownloadTask(
+              id: 'task-3',
+              fileName: 'failed.mp4',
+              sourcePage: 'https://example.com/failed.m3u8',
+              status: 'Network connection lost',
+              progress: 0.4,
+              stage: HomeWorkflowStage.failed,
+              startedAt: startedAt,
+              running: false,
+              error: 'Network connection lost',
+            ),
           ],
+          onRetry: (taskId) => retriedTaskId = taskId,
         ),
       ),
     );
@@ -50,5 +63,8 @@ void main() {
     expect(find.text('42%'), findsOneWidget);
     expect(find.text('second.mp4'), findsOneWidget);
     expect(find.text('D:/Videos/second.mp4'), findsOneWidget);
+    expect(find.byTooltip('Retry'), findsOneWidget);
+    await tester.tap(find.byTooltip('Retry'));
+    expect(retriedTaskId, 'task-3');
   });
 }

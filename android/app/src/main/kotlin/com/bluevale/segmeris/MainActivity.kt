@@ -1,4 +1,4 @@
-package com.bluevale.m3u8_downloader
+package com.bluevale.segmeris
 
 import android.content.Intent
 import android.net.Uri
@@ -16,16 +16,16 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        private const val CHANNEL = "com.blue.ferrisload/media_store"
+        private const val CHANNEL = "com.blue.segmeris/media_store"
         private var rustLibLoaded = false
 
         init {
             try {
-                System.loadLibrary("rust_lib_m3u8_downloader")
+                System.loadLibrary("rust_lib_segmeris")
                 rustLibLoaded = true
                 Log.i(TAG, "✅ Rust library loaded successfully")
             } catch (e: UnsatisfiedLinkError) {
-                Log.e(TAG, "❌ Failed to load rust_lib_m3u8_downloader: ${e.message}", e)
+                Log.e(TAG, "❌ Failed to load rust_lib_segmeris: ${e.message}", e)
                 // Don't crash the app — Flutter side will handle the missing library gracefully
             }
         }
@@ -79,7 +79,7 @@ class MainActivity : FlutterActivity() {
                         val srcPath = call.argument<String>("srcPath")
                         val fileName = call.argument<String>("fileName")
                         val mimeType = call.argument<String>("mimeType") ?: "video/mp4"
-                        val subDir = call.argument<String>("subDir") ?: "FerrisLoad"
+                        val subDir = call.argument<String>("subDir") ?: "Segmeris"
 
                         if (srcPath == null || fileName == null) {
                             result.error("INVALID_ARGS", "srcPath and fileName are required", null)

@@ -5,10 +5,10 @@ import 'platform_utils.dart';
 
 class MediaStoreBridge {
   static const MethodChannel _channel =
-      MethodChannel('com.blue.ferrisload/media_store');
+      MethodChannel('com.blue.segmeris/media_store');
 
   static Future<void> requestPermissions() async {
-    if (!FerrisPlatform.isAndroid) {
+    if (!SegmerisPlatform.isAndroid) {
       return;
     }
     await [Permission.storage, Permission.manageExternalStorage].request();
@@ -16,7 +16,7 @@ class MediaStoreBridge {
   }
 
   static Future<String> getAppPrivateDir() async {
-    if (!FerrisPlatform.isAndroid) {
+    if (!SegmerisPlatform.isAndroid) {
       return '';
     }
     try {
@@ -30,9 +30,9 @@ class MediaStoreBridge {
   static Future<String?> saveViaMediaStore(
     String srcPath,
     String fileName, {
-    String subDir = 'FerrisLoad',
+    String subDir = 'Segmeris',
   }) async {
-    if (!FerrisPlatform.isAndroid) {
+    if (!SegmerisPlatform.isAndroid) {
       return srcPath;
     }
     try {
@@ -52,7 +52,7 @@ class MediaStoreBridge {
     String destDir,
     String fileName,
   ) async {
-    if (!FerrisPlatform.isAndroid) {
+    if (!SegmerisPlatform.isAndroid) {
       return srcPath;
     }
     try {
@@ -67,7 +67,7 @@ class MediaStoreBridge {
   }
 
   static Future<void> startForegroundService() async {
-    if (!FerrisPlatform.isAndroid) {
+    if (!SegmerisPlatform.isAndroid) {
       return;
     }
     try {
@@ -76,7 +76,7 @@ class MediaStoreBridge {
   }
 
   static Future<void> stopForegroundService() async {
-    if (!FerrisPlatform.isAndroid) {
+    if (!SegmerisPlatform.isAndroid) {
       return;
     }
     try {
@@ -86,7 +86,7 @@ class MediaStoreBridge {
 
   static Future<void> updateForegroundProgress(
       int progress, String status) async {
-    if (!FerrisPlatform.isAndroid) {
+    if (!SegmerisPlatform.isAndroid) {
       return;
     }
     try {
@@ -98,7 +98,7 @@ class MediaStoreBridge {
   }
 
   static Future<bool> isIgnoringBatteryOptimizations() async {
-    if (!FerrisPlatform.isAndroid) {
+    if (!SegmerisPlatform.isAndroid) {
       return true;
     }
     try {
@@ -111,7 +111,7 @@ class MediaStoreBridge {
   }
 
   static Future<void> requestIgnoreBatteryOptimizations() async {
-    if (!FerrisPlatform.isAndroid) {
+    if (!SegmerisPlatform.isAndroid) {
       return;
     }
     try {

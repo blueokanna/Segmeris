@@ -37,7 +37,7 @@ Future<PlatformCapabilitySnapshot> probeDesktopCapabilities() async {
   }
 
   return PlatformCapabilitySnapshot(
-    platform: FerrisPlatform.operatingSystem,
+    platform: SegmerisPlatform.operatingSystem,
     transcoderBackend: backend,
     hardwareAccelerated: accelerated,
     videoEncoders: encoders,
@@ -49,13 +49,13 @@ Future<PlatformCapabilitySnapshot> probeDesktopCapabilities() async {
 }
 
 Future<String?> _resolveFfmpeg() async {
-  final executable = FerrisPlatform.isWindows ? 'ffmpeg.exe' : 'ffmpeg';
+  final executable = SegmerisPlatform.isWindows ? 'ffmpeg.exe' : 'ffmpeg';
   final appDirectory = File(Platform.resolvedExecutable).parent;
   final candidates = <String>[
     if ((Platform.environment['FERRISLOAD_FFMPEG_PATH'] ?? '').isNotEmpty)
       Platform.environment['FERRISLOAD_FFMPEG_PATH']!,
-    '${appDirectory.path}${FerrisPlatform.pathSeparator}tools${FerrisPlatform.pathSeparator}$executable',
-    '${appDirectory.path}${FerrisPlatform.pathSeparator}$executable',
+    '${appDirectory.path}${SegmerisPlatform.pathSeparator}tools${SegmerisPlatform.pathSeparator}$executable',
+    '${appDirectory.path}${SegmerisPlatform.pathSeparator}$executable',
     executable,
   ];
   for (final candidate in _unique(candidates)) {
@@ -67,7 +67,7 @@ Future<String?> _resolveFfmpeg() async {
 }
 
 Future<bool> _resolveYtdlp() async {
-  final executable = FerrisPlatform.isWindows ? 'yt-dlp.exe' : 'yt-dlp';
+  final executable = SegmerisPlatform.isWindows ? 'yt-dlp.exe' : 'yt-dlp';
   final appDirectory = File(Platform.resolvedExecutable).parent;
   final cachePath = _ytdlpCachePath();
   final candidates = <({String program, List<String> prefix})>[
@@ -78,22 +78,23 @@ Future<bool> _resolveYtdlp() async {
       ),
     (
       program:
-          '${appDirectory.path}${FerrisPlatform.pathSeparator}tools${FerrisPlatform.pathSeparator}$executable',
+          '${appDirectory.path}${SegmerisPlatform.pathSeparator}tools${SegmerisPlatform.pathSeparator}$executable',
       prefix: const [],
     ),
     (
-      program: '${appDirectory.path}${FerrisPlatform.pathSeparator}$executable',
+      program:
+          '${appDirectory.path}${SegmerisPlatform.pathSeparator}$executable',
       prefix: const [],
     ),
     if (cachePath != null) (program: cachePath, prefix: const []),
     (program: executable, prefix: const []),
-    if (FerrisPlatform.isWindows)
+    if (SegmerisPlatform.isWindows)
       (program: 'py', prefix: const ['-m', 'yt_dlp']),
     (
-      program: FerrisPlatform.isWindows ? 'python' : 'python3',
+      program: SegmerisPlatform.isWindows ? 'python' : 'python3',
       prefix: const ['-m', 'yt_dlp'],
     ),
-    if (!FerrisPlatform.isWindows)
+    if (!SegmerisPlatform.isWindows)
       (program: 'python', prefix: const ['-m', 'yt_dlp']),
   ];
   for (final candidate in candidates) {
@@ -108,19 +109,19 @@ Future<bool> _resolveYtdlp() async {
 }
 
 String? _ytdlpCachePath() {
-  if (FerrisPlatform.isWindows) {
+  if (SegmerisPlatform.isWindows) {
     final root = Platform.environment['LOCALAPPDATA'];
     return root == null
         ? null
-        : '$root${FerrisPlatform.pathSeparator}FerrisLoad${FerrisPlatform.pathSeparator}tools${FerrisPlatform.pathSeparator}yt-dlp.exe';
+        : '$root${SegmerisPlatform.pathSeparator}Segmeris${SegmerisPlatform.pathSeparator}tools${SegmerisPlatform.pathSeparator}yt-dlp.exe';
   }
   final home = Platform.environment['HOME'];
-  if (FerrisPlatform.isMacOS && home != null) {
-    return '$home/Library/Application Support/FerrisLoad/tools/yt-dlp';
+  if (SegmerisPlatform.isMacOS && home != null) {
+    return '$home/Library/Application Support/Segmeris/tools/yt-dlp';
   }
   final root = Platform.environment['XDG_DATA_HOME'] ??
       (home == null ? null : '$home/.local/share');
-  return root == null ? null : '$root/ferrisload/tools/yt-dlp';
+  return root == null ? null : '$root/segmeris/tools/yt-dlp';
 }
 
 Future<_EncoderProbe?> _detectEncoder(String ffmpeg) async {
@@ -128,7 +129,7 @@ Future<_EncoderProbe?> _detectEncoder(String ffmpeg) async {
     const _EncoderProbe('NVIDIA NVENC', 'h264_nvenc', true),
     const _EncoderProbe('AMD AMF', 'h264_amf', true),
     const _EncoderProbe('Intel Quick Sync', 'h264_qsv', true),
-    if (FerrisPlatform.isLinux)
+    if (SegmerisPlatform.isLinux)
       const _EncoderProbe(
         'Linux VAAPI',
         'h264_vaapi',
@@ -140,7 +141,7 @@ Future<_EncoderProbe?> _detectEncoder(String ffmpeg) async {
           'format=nv12,hwupload',
         ],
       ),
-    if (FerrisPlatform.isMacOS)
+    if (SegmerisPlatform.isMacOS)
       const _EncoderProbe('Apple VideoToolbox', 'h264_videotoolbox', true),
     const _EncoderProbe('CPU libx264', 'libx264', false),
   ];
@@ -187,7 +188,7 @@ List<String> _unique(List<String> values) {
   return [
     for (final value in values)
       if (seen.add(
-        FerrisPlatform.isWindows ? value.toLowerCase() : value,
+        SegmerisPlatform.isWindows ? value.toLowerCase() : value,
       ))
         value,
   ];

@@ -1,6 +1,6 @@
 //! Diagnostic: exercise SyncHttpClient against hls.piotrt.cn to surface the
 //! exact transport failure (DNS / TLS / connect / HTTP).
-use rust_lib_m3u8_downloader::net::SyncHttpClient;
+use rust_lib_segmeris::net::SyncHttpClient;
 
 fn main() {
     let client = match SyncHttpClient::with_timeouts(

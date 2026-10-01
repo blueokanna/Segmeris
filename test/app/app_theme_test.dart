@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:m3u8_downloader/src/app/app_theme.dart';
+import 'package:segmeris/src/app/app_theme.dart';
 
 void main() {
   test('keeps monet and amoled theme profiles available', () {

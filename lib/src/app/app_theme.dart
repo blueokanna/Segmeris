@@ -213,23 +213,23 @@ ThemeData buildAppTheme(
       isDense: true,
       fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
       border: OutlineInputBorder(
-        borderRadius: FerrisShapes.standard.input,
+        borderRadius: SegmerisShapes.standard.input,
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: FerrisShapes.standard.input,
+        borderRadius: SegmerisShapes.standard.input,
         borderSide: BorderSide(color: scheme.outlineVariant),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: FerrisShapes.standard.input,
+        borderRadius: SegmerisShapes.standard.input,
         borderSide: BorderSide(color: scheme.primary, width: 2),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: FerrisShapes.standard.input,
+        borderRadius: SegmerisShapes.standard.input,
         borderSide: BorderSide(color: scheme.error),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: FerrisShapes.standard.input,
+        borderRadius: SegmerisShapes.standard.input,
         borderSide: BorderSide(color: scheme.error, width: 2),
       ),
     ),
@@ -241,7 +241,7 @@ ThemeData buildAppTheme(
       margin: EdgeInsets.zero,
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: FerrisShapes.standard.card,
+        borderRadius: SegmerisShapes.standard.card,
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
@@ -269,7 +269,7 @@ ThemeData buildAppTheme(
       style: ButtonStyle(
         shape: WidgetStatePropertyAll(
           RoundedRectangleBorder(
-            borderRadius: FerrisShapes.standard.md,
+            borderRadius: SegmerisShapes.standard.md,
           ),
         ),
       ),
@@ -288,7 +288,7 @@ ThemeData buildAppTheme(
       backgroundColor: scheme.surfaceContainerHigh,
       contentTextStyle: TextStyle(color: scheme.onSurface),
       shape: RoundedRectangleBorder(
-        borderRadius: FerrisShapes.standard.md,
+        borderRadius: SegmerisShapes.standard.md,
       ),
     ),
     bottomSheetTheme: BottomSheetThemeData(
@@ -303,7 +303,7 @@ ThemeData buildAppTheme(
       backgroundColor: scheme.surface,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: FerrisShapes.standard.xl,
+        borderRadius: SegmerisShapes.standard.xl,
       ),
     ),
     navigationBarTheme: NavigationBarThemeData(
@@ -331,7 +331,7 @@ ThemeData buildAppTheme(
         alpha: brightness == Brightness.dark ? 0.7 : 0.56,
       ),
       shape: RoundedRectangleBorder(
-        borderRadius: FerrisShapes.standard.md,
+        borderRadius: SegmerisShapes.standard.md,
       ),
     ),
     textSelectionTheme: TextSelectionThemeData(
@@ -351,8 +351,8 @@ ThemeData buildAppTheme(
       color: scheme.outlineVariant.withValues(alpha: 0.35),
     ),
     extensions: [
-      FerrisShapes.standard,
-      FerrisSpacing.standard,
+      SegmerisShapes.standard,
+      SegmerisSpacing.standard,
     ],
   );
 }
@@ -363,8 +363,8 @@ ThemeData buildAppTheme(
 /// Follows the Material 3 reference shape scale:
 ///   xs=4, sm=8, md=12, lg=16, xl=28.
 @immutable
-class FerrisShapes extends ThemeExtension<FerrisShapes> {
-  const FerrisShapes({
+class SegmerisShapes extends ThemeExtension<SegmerisShapes> {
+  const SegmerisShapes({
     required this.xs,
     required this.sm,
     required this.md,
@@ -399,7 +399,7 @@ class FerrisShapes extends ThemeExtension<FerrisShapes> {
   /// Fully rounded (pill / stadium) shape.
   final BorderRadius pill;
 
-  static const FerrisShapes standard = FerrisShapes(
+  static const SegmerisShapes standard = SegmerisShapes(
     xs: BorderRadius.all(Radius.circular(4)),
     sm: BorderRadius.all(Radius.circular(8)),
     md: BorderRadius.all(Radius.circular(12)),
@@ -410,11 +410,11 @@ class FerrisShapes extends ThemeExtension<FerrisShapes> {
     pill: BorderRadius.all(Radius.circular(999)),
   );
 
-  static FerrisShapes of(BuildContext context) =>
-      Theme.of(context).extension<FerrisShapes>() ?? standard;
+  static SegmerisShapes of(BuildContext context) =>
+      Theme.of(context).extension<SegmerisShapes>() ?? standard;
 
   @override
-  FerrisShapes copyWith({
+  SegmerisShapes copyWith({
     BorderRadius? xs,
     BorderRadius? sm,
     BorderRadius? md,
@@ -424,7 +424,7 @@ class FerrisShapes extends ThemeExtension<FerrisShapes> {
     BorderRadius? input,
     BorderRadius? pill,
   }) {
-    return FerrisShapes(
+    return SegmerisShapes(
       xs: xs ?? this.xs,
       sm: sm ?? this.sm,
       md: md ?? this.md,
@@ -437,11 +437,11 @@ class FerrisShapes extends ThemeExtension<FerrisShapes> {
   }
 
   @override
-  FerrisShapes lerp(FerrisShapes? other, double t) {
+  SegmerisShapes lerp(SegmerisShapes? other, double t) {
     if (other == null) {
       return this;
     }
-    return FerrisShapes(
+    return SegmerisShapes(
       xs: BorderRadius.lerp(xs, other.xs, t)!,
       sm: BorderRadius.lerp(sm, other.sm, t)!,
       md: BorderRadius.lerp(md, other.md, t)!,
@@ -456,8 +456,8 @@ class FerrisShapes extends ThemeExtension<FerrisShapes> {
 
 /// Consistent spacing scale so surfaces, cards and stacks align everywhere.
 @immutable
-class FerrisSpacing extends ThemeExtension<FerrisSpacing> {
-  const FerrisSpacing({
+class SegmerisSpacing extends ThemeExtension<SegmerisSpacing> {
+  const SegmerisSpacing({
     required this.unit,
     required this.xs,
     required this.sm,
@@ -473,7 +473,7 @@ class FerrisSpacing extends ThemeExtension<FerrisSpacing> {
   final double lg;
   final double xl;
 
-  static const FerrisSpacing standard = FerrisSpacing(
+  static const SegmerisSpacing standard = SegmerisSpacing(
     unit: 8,
     xs: 4,
     sm: 8,
@@ -482,11 +482,11 @@ class FerrisSpacing extends ThemeExtension<FerrisSpacing> {
     xl: 24,
   );
 
-  static FerrisSpacing of(BuildContext context) =>
-      Theme.of(context).extension<FerrisSpacing>() ?? standard;
+  static SegmerisSpacing of(BuildContext context) =>
+      Theme.of(context).extension<SegmerisSpacing>() ?? standard;
 
   @override
-  FerrisSpacing copyWith({
+  SegmerisSpacing copyWith({
     double? unit,
     double? xs,
     double? sm,
@@ -494,7 +494,7 @@ class FerrisSpacing extends ThemeExtension<FerrisSpacing> {
     double? lg,
     double? xl,
   }) {
-    return FerrisSpacing(
+    return SegmerisSpacing(
       unit: unit ?? this.unit,
       xs: xs ?? this.xs,
       sm: sm ?? this.sm,
@@ -505,11 +505,11 @@ class FerrisSpacing extends ThemeExtension<FerrisSpacing> {
   }
 
   @override
-  FerrisSpacing lerp(FerrisSpacing? other, double t) {
+  SegmerisSpacing lerp(SegmerisSpacing? other, double t) {
     if (other == null) {
       return this;
     }
-    return FerrisSpacing(
+    return SegmerisSpacing(
       unit: unit + (other.unit - unit) * t,
       xs: xs + (other.xs - xs) * t,
       sm: sm + (other.sm - sm) * t,

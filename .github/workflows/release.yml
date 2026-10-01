@@ -63,7 +63,7 @@ jobs:
         working-directory: rust
         run: |
           cargo check --workspace --all-targets --locked
-          cargo check -p ferrisload-core --no-default-features --locked
+          cargo check -p segmeris-core --no-default-features --locked
 
       - name: Setup stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -79,7 +79,7 @@ jobs:
           cargo fmt --all --check
           cargo clippy --workspace --all-targets --locked -- -D warnings
           cargo test --workspace --locked
-          cargo package -p ferrisload-core --locked --allow-dirty
+          cargo package -p segmeris-core --locked --allow-dirty
 
       - name: Validate Flutter application
         run: |
@@ -226,9 +226,9 @@ jobs:
             flutter build apk --release --target-platform="$target_platform"
             cp build/app/outputs/flutter-apk/app-release.apk "dist/android/$artifact_name"
           }
-          build_apk android-arm64 FerrisLoad-android-arm64-v8a.apk
-          build_apk android-arm FerrisLoad-android-armeabi-v7a.apk
-          build_apk android-x64 FerrisLoad-android-x86_64.apk
+          build_apk android-arm64 Segmeris-android-arm64-v8a.apk
+          build_apk android-arm Segmeris-android-armeabi-v7a.apk
+          build_apk android-x64 Segmeris-android-x86_64.apk
           ls -lah dist/android
 
       - name: Upload Android artifacts
@@ -284,13 +284,13 @@ jobs:
       - name: Package Windows artifact
         run: |
           New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
-          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "dist\windows\FerrisLoad-windows-x64.zip"
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "dist\windows\Segmeris-windows-x64.zip"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-x64
-          path: dist/windows/FerrisLoad-windows-x64.zip
+          path: dist/windows/Segmeris-windows-x64.zip
           retention-days: 7
 
   build-macos:
@@ -344,14 +344,14 @@ jobs:
           mkdir -p dist/macos
           APP_PATH=$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' | head -n 1)
           test -n "$APP_PATH"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "dist/macos/FerrisLoad-macos-${{ matrix.arch }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "dist/macos/Segmeris-macos-${{ matrix.arch }}.zip"
           ls -lah dist/macos
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}
-          path: dist/macos/FerrisLoad-macos-${{ matrix.arch }}.zip
+          path: dist/macos/Segmeris-macos-${{ matrix.arch }}.zip
           retention-days: 7
 
   build-linux:
@@ -408,14 +408,14 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist/linux
-          tar -C build/linux/x64/release/bundle -czf dist/linux/FerrisLoad-linux-x64.tar.gz .
+          tar -C build/linux/x64/release/bundle -czf dist/linux/Segmeris-linux-x64.tar.gz .
           ls -lah dist/linux
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-x64
-          path: dist/linux/FerrisLoad-linux-x64.tar.gz
+          path: dist/linux/Segmeris-linux-x64.tar.gz
           retention-days: 7
 
   build-web:
@@ -534,14 +534,14 @@ jobs:
           mkdir -p dist/ios
           APP_PATH=$(find build/ios/iphoneos -maxdepth 1 -name '*.app' | head -n 1)
           test -n "$APP_PATH"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "dist/ios/FerrisLoad-ios-arm64-unsigned.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "dist/ios/Segmeris-ios-arm64-unsigned.zip"
           ls -lah dist/ios
 
       - name: Upload iOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: ios-arm64
-          path: dist/ios/FerrisLoad-ios-arm64-unsigned.zip
+          path: dist/ios/Segmeris-ios-arm64-unsigned.zip
           retention-days: 7
 
   docker-api:
@@ -579,7 +579,7 @@ jobs:
         id: docker_tags
         shell: bash
         run: |
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/m3u8-downloader-api"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/segmeris-api"
           TAGS=("${IMAGE}:sha-${GITHUB_SHA::7}")
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             RELEASE_TAG="${GITHUB_REF#refs/tags/}"
@@ -658,14 +658,14 @@ jobs:
             RELEASE_NAME="${GITHUB_REF#refs/tags/}"
           fi
           echo "name=${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
-          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/m3u8-downloader-api:${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/segmeris-api:${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
           if [[ "${{ needs.docker-api.result }}" == "success" ]]; then
-            echo "docker_line=Docker API image: \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/m3u8-downloader-api:${RELEASE_NAME}\`" >> "$GITHUB_OUTPUT"
+            echo "docker_line=Docker API image: \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/segmeris-api:${RELEASE_NAME}\`" >> "$GITHUB_OUTPUT"
           else
             echo 'docker_line=Docker API image was not published for this release (skipped or failed; app artifacts above are unaffected).' >> "$GITHUB_OUTPUT"
           fi
           if [[ "${{ needs.build-ios.result }}" == "success" ]]; then
-            echo 'ios_line=iOS arm64 (unsigned) archive: `FerrisLoad-ios-arm64-unsigned.zip`.' >> "$GITHUB_OUTPUT"
+            echo 'ios_line=iOS arm64 (unsigned) archive: `Segmeris-ios-arm64-unsigned.zip`.' >> "$GITHUB_OUTPUT"
           else
             echo 'ios_line=iOS archive was not built for this release (skipped or failed; other artifacts are unaffected).' >> "$GITHUB_OUTPUT"
           fi
@@ -680,15 +680,15 @@ jobs:
         run: |
           {
             echo 'files<<EOF'
-            echo 'artifacts/android-apks/FerrisLoad-android-arm64-v8a.apk'
-            echo 'artifacts/android-apks/FerrisLoad-android-armeabi-v7a.apk'
-            echo 'artifacts/android-apks/FerrisLoad-android-x86_64.apk'
-            echo 'artifacts/windows-x64/FerrisLoad-windows-x64.zip'
-            echo 'artifacts/macos-x64/FerrisLoad-macos-x64.zip'
-            echo 'artifacts/macos-arm64/FerrisLoad-macos-arm64.zip'
-            echo 'artifacts/linux-x64/FerrisLoad-linux-x64.tar.gz'
+            echo 'artifacts/android-apks/Segmeris-android-arm64-v8a.apk'
+            echo 'artifacts/android-apks/Segmeris-android-armeabi-v7a.apk'
+            echo 'artifacts/android-apks/Segmeris-android-x86_64.apk'
+            echo 'artifacts/windows-x64/Segmeris-windows-x64.zip'
+            echo 'artifacts/macos-x64/Segmeris-macos-x64.zip'
+            echo 'artifacts/macos-arm64/Segmeris-macos-arm64.zip'
+            echo 'artifacts/linux-x64/Segmeris-linux-x64.tar.gz'
             if [[ "${{ needs.build-ios.result }}" == "success" ]]; then
-              echo 'artifacts/ios-arm64/FerrisLoad-ios-arm64-unsigned.zip'
+              echo 'artifacts/ios-arm64/Segmeris-ios-arm64-unsigned.zip'
             fi
             echo 'artifacts/SHA256SUMS'
             echo 'EOF'
@@ -712,7 +712,7 @@ jobs:
         with:
           tag_name: ${{ steps.release_tag.outputs.name }}
           target_commitish: ${{ github.sha }}
-          name: FerrisLoad ${{ steps.release_tag.outputs.name }}
+          name: Segmeris ${{ steps.release_tag.outputs.name }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           body: |

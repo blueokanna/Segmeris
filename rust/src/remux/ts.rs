@@ -16,7 +16,7 @@
 
 use std::io::{ErrorKind, Read};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use log::{debug, info, warn};
 
 use super::bits::BitReader;
@@ -168,10 +168,10 @@ impl Timebase {
     }
 
     fn map(&mut self, ticks: i64) -> i64 {
-        if let Some(last) = self.last
-            && ticks + self.offset < last - 45_000
-        {
-            self.offset = last - ticks;
+        if let Some(last) = self.last {
+            if ticks + self.offset < last - 45_000 {
+                self.offset = last - ticks;
+            }
         }
         let mapped = ticks + self.offset;
         self.last = Some(match self.last {
@@ -436,20 +436,21 @@ impl<'s> TsParser<'s> {
     /// only used for this estimate; the output timeline itself is built from
     /// the frame count, which keeps it continuous across segment resets.
     fn calibrate_video_interval(&mut self, dts: i64) {
-        if !self.video_interval_from_vui
-            && let Some((previous_dts, previous_count)) = self.video_pes_anchor
-        {
-            let frames = self.video_pictures_seen - previous_count;
-            if frames > 0 {
-                let delta = dts - previous_dts;
-                if delta > 0 {
-                    let estimate = delta / frames;
-                    if (300..=20_000).contains(&estimate) {
-                        if self.video_interval_estimated {
-                            self.video_frame_interval = (self.video_frame_interval + estimate) / 2;
-                        } else {
-                            self.video_frame_interval = estimate;
-                            self.video_interval_estimated = true;
+        if !self.video_interval_from_vui {
+            if let Some((previous_dts, previous_count)) = self.video_pes_anchor {
+                let frames = self.video_pictures_seen - previous_count;
+                if frames > 0 {
+                    let delta = dts - previous_dts;
+                    if delta > 0 {
+                        let estimate = delta / frames;
+                        if (300..=20_000).contains(&estimate) {
+                            if self.video_interval_estimated {
+                                self.video_frame_interval =
+                                    (self.video_frame_interval + estimate) / 2;
+                            } else {
+                                self.video_frame_interval = estimate;
+                                self.video_interval_estimated = true;
+                            }
                         }
                     }
                 }
@@ -602,11 +603,11 @@ impl<'s> TsParser<'s> {
                 bail!("H.264 SPS/PPS were not present before the first slice");
             };
             let config = parse_avc_config(sps, pps)?;
-            if let Some(interval_ticks) = config.frame_interval_ticks
-                && interval_ticks > 0
-            {
-                self.video_frame_interval = i64::from(interval_ticks);
-                self.video_interval_from_vui = true;
+            if let Some(interval_ticks) = config.frame_interval_ticks {
+                if interval_ticks > 0 {
+                    self.video_frame_interval = i64::from(interval_ticks);
+                    self.video_interval_from_vui = true;
+                }
             }
             info!(
                 "MPEG-TS: AVC {}x{}, profile {}, level {}, frame interval {} ticks{}",

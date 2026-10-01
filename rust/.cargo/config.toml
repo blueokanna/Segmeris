@@ -1,5 +1,5 @@
 # Allow undefined symbols when linking the iOS cdylib. The crate declares
-# iOS-only `extern "C"` VideoToolbox symbols (`ferrisload_videotoolbox_*`) that
+# iOS-only `extern "C"` VideoToolbox symbols (`segmeris_videotoolbox_*`) that
 # are implemented in the App's `VideoToolboxBridge.m` and only exist at the
 # final App link; the app itself consumes the STATIC library, so tolerating the
 # unresolved symbols in the (unused) cdylib is safe.
@@ -9,7 +9,7 @@
 # different directory, so these flags do NOT reach the `flutter build ios`
 # build there. The effective mechanism for Xcode builds is the
 # `CARGO_TARGET_*_APPLE_IOS*_RUSTFLAGS` exports in
-# `rust_builder/ios/rust_lib_m3u8_downloader.podspec` (device arm64 +
+# `rust_builder/ios/rust_lib_segmeris.podspec` (device arm64 +
 # simulator arm64/x86_64); this file only covers manual
 # `cargo build --target aarch64-apple-ios` runs from inside `rust/`.
 [target.'cfg(target_os = "ios")']

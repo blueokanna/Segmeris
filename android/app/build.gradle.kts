@@ -21,7 +21,7 @@ val hasReleaseSigning = releaseStoreFile != null &&
     }
 
 android {
-    namespace = "com.bluevale.m3u8_downloader"
+    namespace = "com.bluevale.segmeris"
     compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
@@ -41,7 +41,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.blue.ferrisload"
+        applicationId = "com.blue.segmeris"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

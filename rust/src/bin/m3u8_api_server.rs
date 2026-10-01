@@ -13,5 +13,5 @@ fn init_runtime_logging() {
 
 fn main() -> std::io::Result<()> {
     init_runtime_logging();
-    rust_lib_m3u8_downloader::api_server::run_server()
+    rust_lib_segmeris::api_server::run_server()
 }

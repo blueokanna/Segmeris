@@ -1,21 +1,71 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:m3u8_downloader/src/app/app_localizations.dart';
-import 'package:m3u8_downloader/src/app/app_settings.dart';
-import 'package:m3u8_downloader/src/app/auth_browser_page.dart';
-import 'package:m3u8_downloader/src/app/download_engine.dart';
-import 'package:m3u8_downloader/src/app/local_file_utils.dart';
-import 'package:m3u8_downloader/src/app/platform_bridge.dart';
-import 'package:m3u8_downloader/src/app/platform_utils.dart';
-import 'package:m3u8_downloader/src/home/home_candidates_card.dart';
-import 'package:m3u8_downloader/src/home/home_download_tasks_card.dart';
-import 'package:m3u8_downloader/src/home/home_page_controller.dart';
-import 'package:m3u8_downloader/src/home/home_history_card.dart';
-import 'package:m3u8_downloader/src/home/home_input_card.dart';
-import 'package:m3u8_downloader/src/home/home_settings_sheet.dart';
-import 'package:m3u8_downloader/src/home/home_widgets.dart';
-import 'package:m3u8_downloader/src/home/source_input.dart';
-import 'package:m3u8_downloader/src/rust/api/downloader.dart';
+import 'package:segmeris/src/app/app_localizations.dart';
+import 'package:segmeris/src/app/app_settings.dart';
+import 'package:segmeris/src/app/auth_browser_page.dart';
+import 'package:segmeris/src/app/download_engine.dart';
+import 'package:segmeris/src/app/local_file_utils.dart';
+import 'package:segmeris/src/app/platform_bridge.dart';
+import 'package:segmeris/src/app/platform_utils.dart';
+import 'package:segmeris/src/home/home_candidates_card.dart';
+import 'package:segmeris/src/home/home_download_tasks_card.dart';
+import 'package:segmeris/src/home/home_page_controller.dart';
+import 'package:segmeris/src/home/home_history_card.dart';
+import 'package:segmeris/src/home/home_input_card.dart';
+import 'package:segmeris/src/home/home_settings_sheet.dart';
+import 'package:segmeris/src/home/home_widgets.dart';
+import 'package:segmeris/src/home/source_input.dart';
+import 'package:segmeris/src/rust/api/downloader.dart';
+
+class _DownloadTaskRequest {
+  const _DownloadTaskRequest({
+    required this.pageUrl,
+    required this.mediaUrl,
+    required this.audioUrl,
+    required this.output,
+    required this.chosenDir,
+    required this.concurrency,
+    required this.retries,
+    required this.videoBitrate,
+    required this.audioBitrate,
+    required this.keepTemp,
+    required this.requestContext,
+    required this.fileName,
+    required this.sourcePage,
+  });
+
+  final String pageUrl;
+  final String mediaUrl;
+  final String? audioUrl;
+  final String output;
+  final String? chosenDir;
+  final int concurrency;
+  final int retries;
+  final int videoBitrate;
+  final int audioBitrate;
+  final bool keepTemp;
+  final RequestContext requestContext;
+  final String fileName;
+  final String sourcePage;
+
+  _DownloadTaskRequest withRequestContext(RequestContext value) {
+    return _DownloadTaskRequest(
+      pageUrl: pageUrl,
+      mediaUrl: mediaUrl,
+      audioUrl: audioUrl,
+      output: output,
+      chosenDir: chosenDir,
+      concurrency: concurrency,
+      retries: retries,
+      videoBitrate: videoBitrate,
+      audioBitrate: audioBitrate,
+      keepTemp: keepTemp,
+      requestContext: value,
+      fileName: fileName,
+      sourcePage: sourcePage,
+    );
+  }
+}
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -48,6 +98,7 @@ class _HomePageState extends State<HomePage> {
   final _cookieCtrl = TextEditingController();
   final _headersCtrl = TextEditingController();
   final _pageController = HomePageController();
+  final Map<String, _DownloadTaskRequest> _retryRequests = {};
   late final Listenable _authContextListenable = Listenable.merge([
     _userAgentCtrl,
     _refererCtrl,
@@ -91,6 +142,7 @@ class _HomePageState extends State<HomePage> {
     _originCtrl.dispose();
     _cookieCtrl.dispose();
     _headersCtrl.dispose();
+    _retryRequests.clear();
     _pageController.dispose();
     super.dispose();
   }
@@ -101,7 +153,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _pickDir() async {
-    if (_pageController.value.analyzing || FerrisPlatform.isWeb) {
+    if (_pageController.value.analyzing || SegmerisPlatform.isWeb) {
       return;
     }
     final dir = await FilePicker.getDirectoryPath();
@@ -111,17 +163,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<String> _tempOutputPathFor(String name, String? chosenDir) async {
-    if (FerrisPlatform.isWeb) {
+    if (SegmerisPlatform.isWeb) {
       return name;
     }
-    if (FerrisPlatform.isAndroid) {
+    if (SegmerisPlatform.isAndroid) {
       final safe = await MediaStoreBridge.getAppPrivateDir();
       return safe.isNotEmpty
-          ? '$safe${FerrisPlatform.pathSeparator}$name'
+          ? '$safe${SegmerisPlatform.pathSeparator}$name'
           : name;
     }
     if (chosenDir != null && chosenDir.isNotEmpty) {
-      final separator = FerrisPlatform.pathSeparator;
+      final separator = SegmerisPlatform.pathSeparator;
       return chosenDir.endsWith(separator)
           ? '$chosenDir$name'
           : '$chosenDir$separator$name';
@@ -373,7 +425,6 @@ class _HomePageState extends State<HomePage> {
     }
     final l = AppLocalizations.of(context);
     final requestContext = _requestContext();
-    var shouldAutoOpenAuthBrowser = false;
 
     var vm = _pageController.value;
     final enteredUrl = extractSourceUrl(_urlCtrl.text)!;
@@ -404,28 +455,74 @@ class _HomePageState extends State<HomePage> {
         int.parse(_vBitrateCtrl.text.trim()).clamp(0, 20000).toInt();
     final aBitrate = int.parse(_aBitrateCtrl.text.trim()).clamp(0, 512).toInt();
 
+    final request = _DownloadTaskRequest(
+      pageUrl: pageUrl,
+      mediaUrl: mediaUrl,
+      audioUrl: audioUrl,
+      output: output,
+      chosenDir: chosenDir,
+      concurrency: concurrency,
+      retries: retries,
+      videoBitrate: vBitrate,
+      audioBitrate: aBitrate,
+      keepTemp: keepTemp,
+      requestContext: requestContext,
+      fileName: fileName,
+      sourcePage: sourcePage,
+    );
     final taskId = _pageController.beginDownloadTask(
       fileName: fileName,
       sourcePage: sourcePage,
       status: l.text('preparing'),
     );
+    _retryRequests[taskId] = request;
+    final visibleTaskIds =
+        _pageController.value.downloadTasks.map((task) => task.id).toSet();
+    _retryRequests.removeWhere((id, _) => !visibleTaskIds.contains(id));
 
+    await _runDownloadTask(taskId, request);
+  }
+
+  Future<void> _retryDownloadTask(String taskId) async {
+    final request = _retryRequests[taskId];
+    if (request == null || !mounted) {
+      return;
+    }
+    final l = AppLocalizations.of(context);
+    if (!_pageController.retryDownloadTask(
+      taskId,
+      status: l.text('preparing'),
+    )) {
+      return;
+    }
+    final refreshedRequest = request.withRequestContext(_requestContext());
+    _retryRequests[taskId] = refreshedRequest;
+    await _runDownloadTask(taskId, refreshedRequest);
+  }
+
+  Future<void> _runDownloadTask(
+    String taskId,
+    _DownloadTaskRequest request,
+  ) async {
+    final l = AppLocalizations.of(context);
+    var shouldAutoOpenAuthBrowser = false;
+    var downloadStreamFailed = false;
     await MediaStoreBridge.startForegroundService();
     var lastNotifiedPercent = -1;
     var lastNotifiedMessage = <String>{};
 
     try {
       await for (final event in _engine.download(
-        pageUrl: pageUrl,
-        mediaUrl: mediaUrl,
-        audioUrl: audioUrl,
-        output: output,
-        concurrency: concurrency,
-        retries: retries,
-        videoBitrate: vBitrate,
-        audioBitrate: aBitrate,
-        keepTemp: keepTemp,
-        requestContext: requestContext,
+        pageUrl: request.pageUrl,
+        mediaUrl: request.mediaUrl,
+        audioUrl: request.audioUrl,
+        output: request.output,
+        concurrency: request.concurrency,
+        retries: request.retries,
+        videoBitrate: request.videoBitrate,
+        audioBitrate: request.audioBitrate,
+        keepTemp: request.keepTemp,
+        requestContext: request.requestContext,
       )) {
         if (!mounted) {
           return;
@@ -438,11 +535,12 @@ class _HomePageState extends State<HomePage> {
             status: null,
             progress: 0,
           );
+          downloadStreamFailed = true;
           shouldAutoOpenAuthBrowser = _shouldAutoOpenAuthBrowser(
             skipAutoAuth: false,
             errorText: terminalError,
           );
-          return;
+          break;
         }
         _pageController.updateDownloadTask(
           taskId,
@@ -465,56 +563,60 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      String finalPath;
-      if (_engine.writesLocalFiles) {
-        if (!await localFileExists(output) ||
-            await localFileLength(output) == 0) {
-          _pageController.failDownloadTask(
-            taskId,
-            l.text('output_not_created'),
-            status: null,
-            progress: 0,
-          );
-          return;
-        }
-        finalPath = output;
-        if (FerrisPlatform.isAndroid) {
-          String? savedPath;
-          if (chosenDir != null && chosenDir.isNotEmpty) {
-            savedPath = await MediaStoreBridge.saveToPath(
-              output,
-              chosenDir,
-              fileName,
-            );
-          } else {
-            savedPath = await MediaStoreBridge.saveViaMediaStore(
-              output,
-              fileName,
-            );
-          }
-          if (savedPath == null) {
+      if (!downloadStreamFailed) {
+        String finalPath;
+        if (_engine.writesLocalFiles) {
+          if (!await localFileExists(request.output) ||
+              await localFileLength(request.output) == 0) {
             _pageController.failDownloadTask(
               taskId,
-              '${l.text('export_failed')} $output',
+              l.text('output_not_created'),
               status: null,
+              progress: 0,
             );
             return;
           }
-          finalPath = savedPath;
-          await localFileDelete(output);
+          finalPath = request.output;
+          if (SegmerisPlatform.isAndroid) {
+            String? savedPath;
+            final chosenDir = request.chosenDir;
+            if (chosenDir != null && chosenDir.isNotEmpty) {
+              savedPath = await MediaStoreBridge.saveToPath(
+                request.output,
+                chosenDir,
+                request.fileName,
+              );
+            } else {
+              savedPath = await MediaStoreBridge.saveViaMediaStore(
+                request.output,
+                request.fileName,
+              );
+            }
+            if (savedPath == null) {
+              _pageController.failDownloadTask(
+                taskId,
+                '${l.text('export_failed')} ${request.output}',
+                status: null,
+              );
+              return;
+            }
+            finalPath = savedPath;
+            await localFileDelete(request.output);
+          }
+        } else {
+          // Web: the file lives on the API server; surface its path.
+          finalPath = _engine.lastResultPath ?? request.output;
         }
-      } else {
-        // Web: the file lives on the API server; surface its path.
-        finalPath = _engine.lastResultPath ?? output;
-      }
 
-      _pageController.completeDownloadTask(
-        id: taskId,
-        finalPath: finalPath,
-        fileName: fileName,
-        sourcePage: sourcePage,
-        completedStatus: l.text('completed'),
-      );
+        _retryRequests.remove(taskId);
+        _pageController.completeDownloadTask(
+          id: taskId,
+          finalPath: finalPath,
+          fileName: request.fileName,
+          sourcePage: request.sourcePage,
+          completedStatus: l.text('completed'),
+        );
+      }
     } catch (error) {
       if (!mounted) {
         return;
@@ -699,7 +801,7 @@ class _HomePageState extends State<HomePage> {
   }) {
     final l = AppLocalizations.of(context);
     final children = <Widget>[
-      if (FerrisPlatform.isAndroid && !vm.ignoringBattery)
+      if (SegmerisPlatform.isAndroid && !vm.ignoringBattery)
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: BatteryBanner(
@@ -774,7 +876,10 @@ class _HomePageState extends State<HomePage> {
     EdgeInsetsGeometry padding = EdgeInsets.zero,
   }) {
     final children = <Widget>[
-      HomeDownloadTasksCard(tasks: vm.downloadTasks),
+      HomeDownloadTasksCard(
+        tasks: vm.downloadTasks,
+        onRetry: (taskId) => _retryDownloadTask(taskId),
+      ),
       const SizedBox(height: 12),
       HomeHistoryCard(history: vm.history),
     ];

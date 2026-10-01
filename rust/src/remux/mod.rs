@@ -103,10 +103,8 @@ mod tests {
             .filter_level(log::LevelFilter::Info)
             .try_init();
         let sample = std::path::PathBuf::from(sample);
-        let output = std::env::temp_dir().join(format!(
-            "ferrisload-remux-sample-{}.mp4",
-            std::process::id()
-        ));
+        let output =
+            std::env::temp_dir().join(format!("segmeris-remux-sample-{}.mp4", std::process::id()));
         let summary = remux_ts_to_mp4(&sample, &output).expect("stream-copy remux must succeed");
         assert!(summary.video_samples > 0, "no video samples were produced");
         assert!(summary.width > 0 && summary.height > 0);

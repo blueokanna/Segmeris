@@ -112,7 +112,7 @@ class AppLocalizations {
 
   static const _strings = <String, Map<String, String>>{
     'en': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle':
           'Inspect pages, locate playable media, and download the best exposed stream.',
       'input_source': 'Source URL',
@@ -146,8 +146,9 @@ class AppLocalizations {
       'probing_capabilities': 'Probing real codec and engine availability...',
       'available': 'Available',
       'not_available': 'Unavailable',
+      'unknown': 'Unknown',
       'hardware_encoder': 'Hardware encoder',
-      'video_encoders': 'Verified video encoders',
+      'video_encoders': 'Listed video encoders',
       'video_decoders': 'Hardware video decoders',
       'mode': 'Mode',
       'system': 'System',
@@ -157,7 +158,7 @@ class AppLocalizations {
       'language': 'Language',
       'api_base_url': 'API server URL (web build)',
       'api_base_url_hint':
-          'Base URL of the FerrisLoad API server, e.g. http://localhost:3000. Non-local servers must use https.',
+          'Base URL of the Segmeris API server, e.g. http://localhost:3000. Non-local servers must use https.',
       'api_token': 'API token (optional)',
       'api_token_hint':
           'Optional bearer token; matches the server FERRISLOAD_API_TOKEN. Leave empty when the server has no token.',
@@ -187,7 +188,7 @@ class AppLocalizations {
       'auth_browser_open': 'Open auth browser',
       'auth_browser_title': 'Authorized session browser',
       'auth_browser_hint':
-          'Open the target site here, complete login or human verification yourself, then import the current session back into FerrisLoad.',
+          'Open the target site here, complete login or human verification yourself, then import the current session back into Segmeris.',
       'auth_browser_hint_inline':
           'Use the auth browser when the site requires login, cookie-bound playback, or a human verification page.',
       'auth_browser_address': 'Browser address',
@@ -199,10 +200,10 @@ class AppLocalizations {
           'Authorized session imported. You can analyze or download again with the updated request context.',
       'auth_challenge_detected': 'Access challenge detected',
       'auth_challenge_help':
-          'FerrisLoad can reuse a session you complete yourself, but it will not bypass Cloudflare, CAPTCHA, bans, DRM, signatures, or preview limits.',
+          'Segmeris can reuse a session you complete yourself, but it will not bypass Cloudflare, CAPTCHA, bans, DRM, signatures, or preview limits.',
       'auth_auto_open': 'Automatically open auth browser on challenge',
       'auth_auto_open_hint':
-          'When inspection or downloading hits login, rate-limit, or human-verification challenges, FerrisLoad opens the authorized session browser automatically.',
+          'When inspection or downloading hits login, rate-limit, or human-verification challenges, Segmeris opens the authorized session browser automatically.',
       'auth_redirecting':
           'Authorization challenge detected. Opening auth browser...',
       'clear_auth_context': 'Clear imported session',
@@ -240,7 +241,7 @@ class AppLocalizations {
       'separate_audio': 'Separate audio',
     },
     'zh': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle': '分析网页、定位可播放媒体，并下载当前页面暴露出的最佳核心流。',
       'input_source': '资源地址',
       'source_hint': '粘贴网页、m3u8、mp4、YouTube 或 Bilibili 链接',
@@ -273,8 +274,9 @@ class AppLocalizations {
       'probing_capabilities': '正在检测真实的编解码器与下载引擎...',
       'available': '可用',
       'not_available': '不可用',
+      'unknown': '未知',
       'hardware_encoder': '硬件编码器',
-      'video_encoders': '已验证的视频编码器',
+      'video_encoders': '列出的视频编码器',
       'video_decoders': '硬件视频解码器',
       'mode': '模式',
       'system': '跟随系统',
@@ -305,7 +307,7 @@ class AppLocalizations {
       'segments': '分片',
       'auth_browser_open': '打开授权浏览器',
       'auth_browser_title': '授权会话浏览器',
-      'auth_browser_hint': '在这里打开目标站点，由你自己完成登录或真人验证，然后把当前会话导回 FerrisLoad。',
+      'auth_browser_hint': '在这里打开目标站点，由你自己完成登录或真人验证，然后把当前会话导回 Segmeris。',
       'auth_browser_hint_inline':
           '当站点要求登录、绑定 Cookie 的播放权限，或出现真人验证页面时，请使用授权浏览器。',
       'auth_browser_address': '浏览器地址',
@@ -315,10 +317,10 @@ class AppLocalizations {
       'auth_session_imported': '授权会话已导入，现在可以使用更新后的请求上下文重新分析或下载。',
       'auth_challenge_detected': '检测到访问挑战',
       'auth_challenge_help':
-          'FerrisLoad 可以复用你自己完成验证后的会话，但不会绕过 Cloudflare、验证码、封禁、DRM、签名校验或试看限制。',
+          'Segmeris 可以复用你自己完成验证后的会话，但不会绕过 Cloudflare、验证码、封禁、DRM、签名校验或试看限制。',
       'auth_auto_open': '检测到挑战时自动打开授权浏览器',
       'auth_auto_open_hint':
-          '当分析或下载遇到登录、限流、Cloudflare 或真人验证挑战时，FerrisLoad 会自动跳转到授权浏览器。',
+          '当分析或下载遇到登录、限流、Cloudflare 或真人验证挑战时，Segmeris 会自动跳转到授权浏览器。',
       'auth_redirecting': '检测到授权挑战，正在打开授权浏览器…',
       'clear_auth_context': '清空已导入会话',
       'preparing': '正在准备下载…',
@@ -352,7 +354,7 @@ class AppLocalizations {
       'separate_audio': '独立音轨',
     },
     'zh_Hant': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle': '分析網頁、定位可播放媒體，並下載目前頁面暴露出的最佳核心流。',
       'input_source': '資源位址',
       'source_hint': '貼上網頁、m3u8、mp4、YouTube 或 Bilibili 連結',
@@ -379,8 +381,9 @@ class AppLocalizations {
       'probing_capabilities': '正在偵測真實的編解碼器與下載引擎...',
       'available': '可用',
       'not_available': '不可用',
+      'unknown': '未知',
       'hardware_encoder': '硬體編碼器',
-      'video_encoders': '已驗證的影片編碼器',
+      'video_encoders': '列出的影片編碼器',
       'video_decoders': '硬體影片解碼器',
       'mode': '模式',
       'system': '跟隨系統',
@@ -411,7 +414,7 @@ class AppLocalizations {
       'segments': '分片',
       'auth_browser_open': '開啟授權瀏覽器',
       'auth_browser_title': '授權會話瀏覽器',
-      'auth_browser_hint': '在這裡打開目標站點，由你自行完成登入或真人驗證，然後把目前會話導回 FerrisLoad。',
+      'auth_browser_hint': '在這裡打開目標站點，由你自行完成登入或真人驗證，然後把目前會話導回 Segmeris。',
       'auth_browser_hint_inline':
           '當站點要求登入、綁定 Cookie 的播放權限，或出現真人驗證頁面時，請使用授權瀏覽器。',
       'auth_browser_address': '瀏覽器位址',
@@ -421,15 +424,15 @@ class AppLocalizations {
       'auth_session_imported': '授權會話已匯入，現在可以使用更新後的請求上下文重新分析或下載。',
       'auth_challenge_detected': '偵測到存取挑戰',
       'auth_challenge_help':
-          'FerrisLoad 可以重用你自行完成驗證後的會話，但不會繞過 Cloudflare、驗證碼、封禁、DRM、簽名校驗或試看限制。',
+          'Segmeris 可以重用你自行完成驗證後的會話，但不會繞過 Cloudflare、驗證碼、封禁、DRM、簽名校驗或試看限制。',
       'auth_auto_open': '偵測到挑戰時自動開啟授權瀏覽器',
       'auth_auto_open_hint':
-          '當分析或下載遇到登入、限流、Cloudflare 或真人驗證挑戰時，FerrisLoad 會自動跳轉到授權瀏覽器。',
+          '當分析或下載遇到登入、限流、Cloudflare 或真人驗證挑戰時，Segmeris 會自動跳轉到授權瀏覽器。',
       'auth_redirecting': '偵測到授權挑戰，正在開啟授權瀏覽器…',
       'clear_auth_context': '清空已匯入會話',
     },
     'ja': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle': 'ページを解析し、再生可能なメディアを見つけて、公開されている最適なストリームをダウンロードします。',
       'input_source': 'ソース URL',
       'source_hint': 'Web ページ、m3u8、mp4、YouTube、Bilibili のリンクを貼り付けます',
@@ -483,7 +486,7 @@ class AppLocalizations {
       'auth_browser_open': '認証ブラウザーを開く',
       'auth_browser_title': '認証済みセッションブラウザー',
       'auth_browser_hint':
-          'ここで対象サイトを開き、自分でログインや本人確認を完了したあと、現在のセッションを FerrisLoad に取り込みます。',
+          'ここで対象サイトを開き、自分でログインや本人確認を完了したあと、現在のセッションを Segmeris に取り込みます。',
       'auth_browser_hint_inline':
           'サイト側でログイン、Cookie による再生権限、または人による確認が必要な場合は、認証ブラウザーを使ってください。',
       'auth_browser_address': 'ブラウザーのアドレス',
@@ -495,10 +498,10 @@ class AppLocalizations {
           '認証済みセッションを取り込みました。更新されたリクエスト設定で、もう一度解析またはダウンロードできます。',
       'auth_challenge_detected': 'アクセス制限を検出しました',
       'auth_challenge_help':
-          'FerrisLoad は、自分で認証を完了したあとのセッションを再利用できますが、Cloudflare、CAPTCHA、アクセス制限、DRM、署名検証、試聴制限を回避することはありません。',
+          'Segmeris は、自分で認証を完了したあとのセッションを再利用できますが、Cloudflare、CAPTCHA、アクセス制限、DRM、署名検証、試聴制限を回避することはありません。',
       'auth_auto_open': '制限検出時に認証ブラウザーを自動で開く',
       'auth_auto_open_hint':
-          '解析やダウンロードでログイン、レート制限、Cloudflare、人による確認が求められた場合、FerrisLoad が認証ブラウザーを自動で開きます。',
+          '解析やダウンロードでログイン、レート制限、Cloudflare、人による確認が求められた場合、Segmeris が認証ブラウザーを自動で開きます。',
       'auth_redirecting': '認証が必要な状態を検出しました。認証ブラウザーを開いています…',
       'clear_auth_context': '取り込んだセッションを消去',
       'preparing': 'ダウンロードを準備しています…',
@@ -508,7 +511,7 @@ class AppLocalizations {
       'download_hint': '解析しなくても直接ダウンロードできます。m3u8 や直接のメディア URL を貼り付けて開始してください。',
     },
     'ar': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle':
           'حلّل الصفحة، واعثر على الوسائط القابلة للتشغيل، ثم نزّل أفضل تدفّق مكشوف فيها.',
       'input_source': 'رابط المصدر',
@@ -564,7 +567,7 @@ class AppLocalizations {
       'auth_browser_open': 'افتح متصفح التفويض',
       'auth_browser_title': 'متصفح الجلسة المصرّح بها',
       'auth_browser_hint':
-          'افتح الموقع المستهدف هنا، وأكمل تسجيل الدخول أو التحقق البشري بنفسك، ثم استورد الجلسة الحالية مرة أخرى إلى FerrisLoad.',
+          'افتح الموقع المستهدف هنا، وأكمل تسجيل الدخول أو التحقق البشري بنفسك، ثم استورد الجلسة الحالية مرة أخرى إلى Segmeris.',
       'auth_browser_hint_inline':
           'استخدم متصفح التفويض عندما يتطلب الموقع تسجيل الدخول، أو صلاحية تشغيل مرتبطة بملفات تعريف الارتباط، أو صفحة تحقق بشري.',
       'auth_browser_address': 'عنوان المتصفح',
@@ -576,10 +579,10 @@ class AppLocalizations {
           'تم استيراد الجلسة المصرّح بها. يمكنك الآن إعادة التحليل أو التنزيل باستخدام سياق الطلب المحدّث.',
       'auth_challenge_detected': 'تم اكتشاف تحدي وصول',
       'auth_challenge_help':
-          'يمكن لـ FerrisLoad إعادة استخدام جلسة أكملتها بنفسك، لكنه لا يتجاوز Cloudflare أو CAPTCHA أو الحظر أو DRM أو التواقيع أو قيود المعاينة.',
+          'يمكن لـ Segmeris إعادة استخدام جلسة أكملتها بنفسك، لكنه لا يتجاوز Cloudflare أو CAPTCHA أو الحظر أو DRM أو التواقيع أو قيود المعاينة.',
       'auth_auto_open': 'افتح متصفح التفويض تلقائيًا عند اكتشاف تحدٍ',
       'auth_auto_open_hint':
-          'عندما يواجه التحليل أو التنزيل تسجيل دخول أو تقييد معدل أو Cloudflare أو تحققًا بشريًا، يفتح FerrisLoad متصفح التفويض تلقائيًا.',
+          'عندما يواجه التحليل أو التنزيل تسجيل دخول أو تقييد معدل أو Cloudflare أو تحققًا بشريًا، يفتح Segmeris متصفح التفويض تلقائيًا.',
       'auth_redirecting':
           'تم اكتشاف حاجة إلى جلسة مصرح بها. جارٍ فتح متصفح التفويض…',
       'clear_auth_context': 'امسح الجلسة المستوردة',
@@ -591,7 +594,7 @@ class AppLocalizations {
           'يمكنك التنزيل مباشرة من دون تحليل: ألصق رابط m3u8 أو رابط الوسائط المباشر ثم ابدأ.',
     },
     'fa': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle':
           'صفحه را بررسی کنید، رسانه قابل پخش را پیدا کنید و بهترین جریان در دسترس را دانلود کنید.',
       'input_source': 'نشانی منبع',
@@ -648,7 +651,7 @@ class AppLocalizations {
       'auth_browser_open': 'باز کردن مرورگر احراز هویت',
       'auth_browser_title': 'مرورگر نشست مجاز',
       'auth_browser_hint':
-          'سایت هدف را اینجا باز کنید، ورود یا تأیید انسانی را خودتان انجام دهید، سپس نشست فعلی را دوباره به FerrisLoad وارد کنید.',
+          'سایت هدف را اینجا باز کنید، ورود یا تأیید انسانی را خودتان انجام دهید، سپس نشست فعلی را دوباره به Segmeris وارد کنید.',
       'auth_browser_hint_inline':
           'وقتی سایت به ورود، مجوز پخش وابسته به Cookie یا صفحه تأیید انسانی نیاز دارد، از مرورگر احراز هویت استفاده کنید.',
       'auth_browser_address': 'نشانی مرورگر',
@@ -660,11 +663,11 @@ class AppLocalizations {
           'نشست مجاز وارد شد. اکنون می‌توانید با زمینه درخواست به‌روزشده دوباره تحلیل یا دانلود کنید.',
       'auth_challenge_detected': 'چالش دسترسی شناسایی شد',
       'auth_challenge_help':
-          'FerrisLoad می‌تواند از نشستی که خودتان تکمیل کرده‌اید دوباره استفاده کند، اما Cloudflare، CAPTCHA، مسدودسازی، DRM، امضاها یا محدودیت پیش‌نمایش را دور نمی‌زند.',
+          'Segmeris می‌تواند از نشستی که خودتان تکمیل کرده‌اید دوباره استفاده کند، اما Cloudflare، CAPTCHA، مسدودسازی، DRM، امضاها یا محدودیت پیش‌نمایش را دور نمی‌زند.',
       'auth_auto_open':
           'در صورت تشخیص چالش، مرورگر احراز هویت را خودکار باز کن',
       'auth_auto_open_hint':
-          'اگر هنگام تحلیل یا دانلود با ورود، محدودیت نرخ، Cloudflare یا تأیید انسانی روبه‌رو شوید، FerrisLoad مرورگر احراز هویت را خودکار باز می‌کند.',
+          'اگر هنگام تحلیل یا دانلود با ورود، محدودیت نرخ، Cloudflare یا تأیید انسانی روبه‌رو شوید، Segmeris مرورگر احراز هویت را خودکار باز می‌کند.',
       'auth_redirecting':
           'نیاز به نشست مجاز تشخیص داده شد. در حال باز کردن مرورگر احراز هویت…',
       'clear_auth_context': 'پاک کردن نشست واردشده',
@@ -676,7 +679,7 @@ class AppLocalizations {
           'می‌توانید بدون تحلیل هم مستقیم دانلود کنید: یک پیوند m3u8 یا پیوند مستقیم رسانه را وارد کنید و شروع کنید.',
     },
     'ur': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle':
           'صفحہ دیکھیں، چلنے کے قابل میڈیا تلاش کریں، اور دستیاب بہترین اسٹریم ڈاؤن لوڈ کریں۔',
       'input_source': 'ماخذ URL',
@@ -733,7 +736,7 @@ class AppLocalizations {
       'auth_browser_open': 'تصدیقی براؤزر کھولیں',
       'auth_browser_title': 'مجاز سیشن براؤزر',
       'auth_browser_hint':
-          'ہدف سائٹ یہاں کھولیں، لاگ اِن یا انسانی تصدیق خود مکمل کریں، پھر موجودہ سیشن واپس FerrisLoad میں درآمد کریں۔',
+          'ہدف سائٹ یہاں کھولیں، لاگ اِن یا انسانی تصدیق خود مکمل کریں، پھر موجودہ سیشن واپس Segmeris میں درآمد کریں۔',
       'auth_browser_hint_inline':
           'جب سائٹ کو لاگ اِن، Cookie سے منسلک پلے بیک اجازت، یا انسانی تصدیق درکار ہو تو تصدیقی براؤزر استعمال کریں۔',
       'auth_browser_address': 'براؤزر کا پتہ',
@@ -745,10 +748,10 @@ class AppLocalizations {
           'مجاز سیشن درآمد ہو گیا۔ اب آپ تازہ درخواست سیاق کے ساتھ دوبارہ تجزیہ یا ڈاؤن لوڈ کر سکتے ہیں۔',
       'auth_challenge_detected': 'رسائی کا چیلنج معلوم ہوا',
       'auth_challenge_help':
-          'FerrisLoad اس سیشن کو دوبارہ استعمال کر سکتا ہے جسے آپ نے خود مکمل کیا ہو، لیکن یہ Cloudflare، CAPTCHA، پابندی، DRM، دستخط یا پیش نظارہ کی حد کو نظرانداز نہیں کرتا۔',
+          'Segmeris اس سیشن کو دوبارہ استعمال کر سکتا ہے جسے آپ نے خود مکمل کیا ہو، لیکن یہ Cloudflare، CAPTCHA، پابندی، DRM، دستخط یا پیش نظارہ کی حد کو نظرانداز نہیں کرتا۔',
       'auth_auto_open': 'چیلنج ملنے پر تصدیقی براؤزر خودکار کھولیں',
       'auth_auto_open_hint':
-          'اگر تجزیہ یا ڈاؤن لوڈ کے دوران لاگ اِن، ریٹ لمٹ، Cloudflare یا انسانی تصدیق سامنے آئے تو FerrisLoad تصدیقی براؤزر خودکار کھول دے گا۔',
+          'اگر تجزیہ یا ڈاؤن لوڈ کے دوران لاگ اِن، ریٹ لمٹ، Cloudflare یا انسانی تصدیق سامنے آئے تو Segmeris تصدیقی براؤزر خودکار کھول دے گا۔',
       'auth_redirecting': 'مجاز سیشن درکار ہے۔ تصدیقی براؤزر کھولا جا رہا ہے…',
       'clear_auth_context': 'درآمد شدہ سیشن صاف کریں',
       'preparing': 'ڈاؤن لوڈ کی تیاری ہو رہی ہے…',
@@ -759,7 +762,7 @@ class AppLocalizations {
           'آپ تجزیہ کے بغیر بھی براہ راست ڈاؤن لوڈ کر سکتے ہیں: m3u8 یا براہ راست میڈیا لنک چسپاں کریں اور شروع کریں۔',
     },
     'es': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle':
           'Analiza páginas, encuentra medios reproducibles y descarga el mejor flujo expuesto.',
       'input_source': 'URL de origen',
@@ -805,7 +808,7 @@ class AppLocalizations {
       'stream': 'Flujo',
     },
     'ru': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle':
           'Анализируйте страницу, находите воспроизводимое медиа и сохраняйте лучший открытый поток.',
       'input_source': 'URL источника',
@@ -852,7 +855,7 @@ class AppLocalizations {
       'stream': 'Поток',
     },
     'hi': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle':
           'पेज का विश्लेषण करें, चलने योग्य मीडिया खोजें और सर्वश्रेष्ठ उपलब्ध स्ट्रीम डाउनलोड करें।',
       'input_source': 'स्रोत URL',
@@ -898,7 +901,7 @@ class AppLocalizations {
       'stream': 'स्ट्रीम',
     },
     'fr': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle':
           'Analysez une page, repérez les médias lisibles et téléchargez le meilleur flux exposé.',
       'input_source': 'URL source',
@@ -955,7 +958,7 @@ class AppLocalizations {
       'auth_browser_open': 'Ouvrir le navigateur d’autorisation',
       'auth_browser_title': 'Navigateur de session autorisée',
       'auth_browser_hint':
-          'Ouvrez le site cible ici, terminez vous-même la connexion ou la vérification humaine, puis réimportez la session actuelle dans FerrisLoad.',
+          'Ouvrez le site cible ici, terminez vous-même la connexion ou la vérification humaine, puis réimportez la session actuelle dans Segmeris.',
       'auth_browser_hint_inline':
           'Utilisez le navigateur d’autorisation quand le site exige une connexion, une lecture liée à un Cookie ou une vérification humaine.',
       'auth_browser_address': 'Adresse du navigateur',
@@ -967,11 +970,11 @@ class AppLocalizations {
           'La session autorisée a été importée. Vous pouvez relancer l’analyse ou le téléchargement avec le contexte de requête mis à jour.',
       'auth_challenge_detected': 'Défi d’accès détecté',
       'auth_challenge_help':
-          'FerrisLoad peut réutiliser une session que vous avez validée vous-même, mais ne contourne pas Cloudflare, les CAPTCHA, les blocages, le DRM, les signatures ni les limites d’aperçu.',
+          'Segmeris peut réutiliser une session que vous avez validée vous-même, mais ne contourne pas Cloudflare, les CAPTCHA, les blocages, le DRM, les signatures ni les limites d’aperçu.',
       'auth_auto_open':
           'Ouvrir automatiquement le navigateur d’autorisation en cas de défi',
       'auth_auto_open_hint':
-          'Quand l’analyse ou le téléchargement rencontre une connexion obligatoire, une limitation, Cloudflare ou une vérification humaine, FerrisLoad ouvre automatiquement le navigateur d’autorisation.',
+          'Quand l’analyse ou le téléchargement rencontre une connexion obligatoire, une limitation, Cloudflare ou une vérification humaine, Segmeris ouvre automatiquement le navigateur d’autorisation.',
       'auth_redirecting':
           'Une session autorisée est nécessaire. Ouverture du navigateur d’autorisation…',
       'clear_auth_context': 'Effacer la session importée',
@@ -984,7 +987,7 @@ class AppLocalizations {
           'Vous pouvez télécharger directement sans analyse : collez un lien m3u8 ou un lien média direct, puis lancez le téléchargement.',
     },
     'de': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle':
           'Analysiere Seiten, finde abspielbare Medien und lade den besten freigelegten Stream herunter.',
       'input_source': 'Quell-URL',
@@ -1041,7 +1044,7 @@ class AppLocalizations {
       'auth_browser_open': 'Autorisierungsbrowser öffnen',
       'auth_browser_title': 'Browser für autorisierte Sitzungen',
       'auth_browser_hint':
-          'Öffne die Zielseite hier, erledige Anmeldung oder menschliche Verifikation selbst und importiere danach die aktuelle Sitzung zurück in FerrisLoad.',
+          'Öffne die Zielseite hier, erledige Anmeldung oder menschliche Verifikation selbst und importiere danach die aktuelle Sitzung zurück in Segmeris.',
       'auth_browser_hint_inline':
           'Verwende den Autorisierungsbrowser, wenn die Seite eine Anmeldung, Cookie-gebundene Wiedergabe oder eine menschliche Verifikation verlangt.',
       'auth_browser_address': 'Browseradresse',
@@ -1053,11 +1056,11 @@ class AppLocalizations {
           'Die autorisierte Sitzung wurde importiert. Du kannst jetzt mit dem aktualisierten Anfragekontext erneut analysieren oder herunterladen.',
       'auth_challenge_detected': 'Zugriffshürde erkannt',
       'auth_challenge_help':
-          'FerrisLoad kann eine von dir selbst bestätigte Sitzung wiederverwenden, umgeht aber weder Cloudflare noch CAPTCHA, Sperren, DRM, Signaturen oder Vorschaugrenzen.',
+          'Segmeris kann eine von dir selbst bestätigte Sitzung wiederverwenden, umgeht aber weder Cloudflare noch CAPTCHA, Sperren, DRM, Signaturen oder Vorschaugrenzen.',
       'auth_auto_open':
           'Autorisierungsbrowser bei Zugriffshürde automatisch öffnen',
       'auth_auto_open_hint':
-          'Wenn Analyse oder Download auf Anmeldung, Ratenbegrenzung, Cloudflare oder menschliche Verifikation stoßen, öffnet FerrisLoad automatisch den Autorisierungsbrowser.',
+          'Wenn Analyse oder Download auf Anmeldung, Ratenbegrenzung, Cloudflare oder menschliche Verifikation stoßen, öffnet Segmeris automatisch den Autorisierungsbrowser.',
       'auth_redirecting':
           'Eine autorisierte Sitzung wird benötigt. Autorisierungsbrowser wird geöffnet…',
       'clear_auth_context': 'Importierte Sitzung löschen',
@@ -1070,7 +1073,7 @@ class AppLocalizations {
           'Du kannst auch ohne Analyse direkt herunterladen: m3u8- oder Direktlink einfügen und starten.',
     },
     'pt': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle':
           'Analise páginas, localize mídia reproduzível e baixe o melhor fluxo exposto.',
       'input_source': 'URL de origem',
@@ -1116,7 +1119,7 @@ class AppLocalizations {
       'stream': 'Fluxo',
     },
     'tr': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle':
           'Sayfayı analiz edin, oynatılabilir medyayı bulun ve açıkta olan en iyi akışı indirin.',
       'input_source': 'Kaynak URL',
@@ -1163,7 +1166,7 @@ class AppLocalizations {
       'stream': 'Akış',
     },
     'vi': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle':
           'Phân tích trang, tìm media có thể phát và tải luồng tốt nhất đang được lộ ra.',
       'input_source': 'URL nguồn',
@@ -1208,7 +1211,7 @@ class AppLocalizations {
       'stream': 'Luồng',
     },
     'id': {
-      'app_title': 'FerrisLoad',
+      'app_title': 'Segmeris',
       'app_subtitle':
           'Analisis halaman, temukan media yang bisa diputar, lalu unduh aliran terbaik yang terlihat.',
       'input_source': 'URL sumber',

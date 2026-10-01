@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 
-//! Platform-independent FerrisLoad types, validation, and wire encoding.
+//! Platform-independent Segmeris types, validation, and wire encoding.
 //!
 //! Network, filesystem, Flutter FFI, and hardware codec implementations belong
 //! to platform adapters. This crate intentionally stays usable without `std`.
@@ -138,7 +138,7 @@ impl std::error::Error for ValidationError {}
 pub enum WireError {
     /// The RustBinary payload is malformed or violates a resource limit.
     Codec(rustbinary::core::Error),
-    /// The decoded plan violates a FerrisLoad invariant.
+    /// The decoded plan violates a Segmeris invariant.
     Validation(ValidationError),
 }
 

@@ -1,11 +1,10 @@
 [package]
-name = "rust_lib_m3u8_downloader"
-version = "0.1.3"
-edition = "2024"
-rust-version = "1.88"
+name = "rust_lib_segmeris"
+version = "0.1.4"
+edition = "2021"
 license-file = "../LICENSE"
 authors = ["blueokanna"]
-description = "FerrisLoad application runtime and Flutter bridge for video downloading"
+description = "Segmeris application runtime and Flutter bridge for video downloading"
 repository = "https://github.com/blueokanna/FerrisLoadDownloader"
 
 [workspace]
@@ -13,12 +12,12 @@ members = ["core"]
 resolver = "2"
 
 [lib]
-name = "rust_lib_m3u8_downloader"
+name = "rust_lib_segmeris"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 anyhow = "1.0.104"
-ferrisload-core = { path = "core", version = "0.1.3", features = ["std"] }
+segmeris-core = { path = "core", version = "0.1.3", features = ["std"] }
 
 flutter_rust_bridge = "2.13.0"
 

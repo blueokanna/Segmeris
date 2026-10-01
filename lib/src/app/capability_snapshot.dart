@@ -13,10 +13,10 @@ class PlatformCapabilitySnapshot {
 
   final String platform;
   final String transcoderBackend;
-  final bool hardwareAccelerated;
+  final bool? hardwareAccelerated;
   final List<String> videoEncoders;
   final List<String> videoDecoders;
-  final bool ffmpegAvailable;
-  final bool ytdlpAvailable;
+  final bool? ffmpegAvailable;
+  final bool? ytdlpAvailable;
   final List<String> notes;
 }

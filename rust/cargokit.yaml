@@ -1,13 +1,13 @@
 # cargokit per-build options (parsed by rust_builder/cargokit/build_tool).
 #
 # Purpose: make the iOS cdylib link tolerate the iOS-only VideoToolbox externs
-# (`ferrisload_videotoolbox_*`), whose definitions live in the App's
+# (`segmeris_videotoolbox_*`), whose definitions live in the App's
 # `VideoToolboxBridge.m` and only exist at the final App link.
 #
 # The crate builds `crate-type = ["cdylib", "staticlib", "rlib"]`; the cdylib
 # is an unused side product on iOS (the app consumes the staticlib via
 # -force_load), but cargo still has to LINK it, and a plain cdylib link fails
-# with "Undefined symbols: _ferrisload_videotoolbox_*".
+# with "Undefined symbols: _segmeris_videotoolbox_*".
 #
 # `-undefined dynamic_lookup` tells the iOS linker to leave those symbols
 # unresolved in the dylib, which is exactly what we want here.

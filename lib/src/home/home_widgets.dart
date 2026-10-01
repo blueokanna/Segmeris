@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:m3u8_downloader/src/app/app_localizations.dart';
-import 'package:m3u8_downloader/src/app/app_theme.dart';
-import 'package:m3u8_downloader/src/app/runtime_capabilities.dart';
-import 'package:m3u8_downloader/src/rust/api/downloader.dart';
+import 'package:segmeris/src/app/app_localizations.dart';
+import 'package:segmeris/src/app/app_theme.dart';
+import 'package:segmeris/src/app/runtime_capabilities.dart';
+import 'package:segmeris/src/rust/api/downloader.dart';
 
-class FerrisMotion {
+class SegmerisMotion {
   static const Duration fast = Duration(milliseconds: 200);
   static const Duration medium = Duration(milliseconds: 300);
   static const Duration slow = Duration(milliseconds: 500);
@@ -19,11 +19,11 @@ class FerrisMotion {
   static const Curve accelerate = emphasizedAccelerate;
 }
 
-Widget ferrisFadeScaleTransition(Widget child, Animation<double> animation) {
+Widget segmerisFadeScaleTransition(Widget child, Animation<double> animation) {
   final curved = CurvedAnimation(
     parent: animation,
-    curve: FerrisMotion.standardDecelerate,
-    reverseCurve: FerrisMotion.standardAccelerate,
+    curve: SegmerisMotion.standardDecelerate,
+    reverseCurve: SegmerisMotion.standardAccelerate,
   );
   return FadeTransition(
     opacity: curved,
@@ -34,17 +34,17 @@ Widget ferrisFadeScaleTransition(Widget child, Animation<double> animation) {
   );
 }
 
-Widget ferrisSharedAxisTransition(Widget child, Animation<double> animation) {
+Widget segmerisSharedAxisTransition(Widget child, Animation<double> animation) {
   final fade = CurvedAnimation(
     parent: animation,
-    curve: FerrisMotion.standardDecelerate,
-    reverseCurve: FerrisMotion.standardAccelerate,
+    curve: SegmerisMotion.standardDecelerate,
+    reverseCurve: SegmerisMotion.standardAccelerate,
   );
   final slide = Tween<Offset>(
     begin: const Offset(0, 0.045),
     end: Offset.zero,
   ).animate(
-    CurvedAnimation(parent: animation, curve: FerrisMotion.emphasized),
+    CurvedAnimation(parent: animation, curve: SegmerisMotion.emphasized),
   );
   return FadeTransition(
     opacity: fade,
@@ -72,11 +72,11 @@ class SectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context);
     final cs = t.colorScheme;
-    final shapes = FerrisShapes.of(context);
-    final spacing = FerrisSpacing.of(context);
+    final shapes = SegmerisShapes.of(context);
+    final spacing = SegmerisSpacing.of(context);
     return AnimatedContainer(
-      duration: FerrisMotion.medium,
-      curve: FerrisMotion.emphasized,
+      duration: SegmerisMotion.medium,
+      curve: SegmerisMotion.emphasized,
       decoration: BoxDecoration(
         borderRadius: shapes.card,
         color: cs.surfaceContainerLow,
@@ -164,22 +164,22 @@ class CandidateTile extends StatelessWidget {
     final t = Theme.of(context);
     final cs = t.colorScheme;
     return AnimatedSlide(
-      duration: FerrisMotion.medium,
-      curve: FerrisMotion.emphasized,
+      duration: SegmerisMotion.medium,
+      curve: SegmerisMotion.emphasized,
       offset: selected ? Offset.zero : const Offset(0, 0.018),
       child: AnimatedScale(
-        duration: FerrisMotion.medium,
-        curve: FerrisMotion.emphasized,
+        duration: SegmerisMotion.medium,
+        curve: SegmerisMotion.emphasized,
         scale: selected ? 1 : 0.986,
         child: InkWell(
-          borderRadius: FerrisShapes.of(context).md,
+          borderRadius: SegmerisShapes.of(context).md,
           onTap: onTap,
           child: AnimatedContainer(
-            duration: FerrisMotion.medium,
-            curve: FerrisMotion.emphasized,
+            duration: SegmerisMotion.medium,
+            curve: SegmerisMotion.emphasized,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              borderRadius: FerrisShapes.of(context).md,
+              borderRadius: SegmerisShapes.of(context).md,
               border: Border.all(
                 color: selected
                     ? cs.primary
@@ -204,8 +204,8 @@ class CandidateTile extends StatelessWidget {
                       ),
                     ),
                     AnimatedSwitcher(
-                      duration: FerrisMotion.fast,
-                      transitionBuilder: ferrisFadeScaleTransition,
+                      duration: SegmerisMotion.fast,
+                      transitionBuilder: segmerisFadeScaleTransition,
                       child: selected
                           ? Icon(
                               Icons.check_circle_rounded,
@@ -300,7 +300,8 @@ class _RevealMotionState extends State<RevealMotion>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: FerrisMotion.slow);
+    _controller =
+        AnimationController(vsync: this, duration: SegmerisMotion.slow);
     _configureAnimations();
     _schedule();
   }
@@ -308,8 +309,8 @@ class _RevealMotionState extends State<RevealMotion>
   void _configureAnimations() {
     final curve = CurvedAnimation(
       parent: _controller,
-      curve: FerrisMotion.emphasizedDecelerate,
-      reverseCurve: FerrisMotion.emphasizedAccelerate,
+      curve: SegmerisMotion.emphasizedDecelerate,
+      reverseCurve: SegmerisMotion.emphasizedAccelerate,
     );
     _opacity = CurvedAnimation(
       parent: _controller,
@@ -371,7 +372,7 @@ class MiniChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context);
     final cs = t.colorScheme;
-    final shapes = FerrisShapes.of(context);
+    final shapes = SegmerisShapes.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
@@ -388,7 +389,8 @@ class MiniChip extends StatelessWidget {
           ],
           Text(
             label,
-            style: t.textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
+            style:
+                t.textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
           ),
         ],
       ),
@@ -410,7 +412,7 @@ class RuntimeCapabilitiesPanel extends StatelessWidget {
     final t = Theme.of(context);
     final cs = t.colorScheme;
 
-    final shapes = FerrisShapes.of(context);
+    final shapes = SegmerisShapes.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -424,14 +426,14 @@ class RuntimeCapabilitiesPanel extends StatelessWidget {
         builder: (context, snapshot) {
           final report = snapshot.data;
           return AnimatedSize(
-            duration: FerrisMotion.medium,
-            curve: FerrisMotion.emphasized,
+            duration: SegmerisMotion.medium,
+            curve: SegmerisMotion.emphasized,
             alignment: Alignment.topCenter,
             child: AnimatedSwitcher(
-              duration: FerrisMotion.medium,
-              switchInCurve: FerrisMotion.emphasizedDecelerate,
-              switchOutCurve: FerrisMotion.emphasizedAccelerate,
-              transitionBuilder: ferrisSharedAxisTransition,
+              duration: SegmerisMotion.medium,
+              switchInCurve: SegmerisMotion.emphasizedDecelerate,
+              switchOutCurve: SegmerisMotion.emphasizedAccelerate,
+              transitionBuilder: segmerisSharedAxisTransition,
               child: report == null
                   ? Row(
                       key: const ValueKey('capabilities-loading'),
@@ -599,34 +601,50 @@ class _CapabilityIndicator extends StatelessWidget {
   });
 
   final String label;
-  final bool available;
+  final bool? available;
 
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
     final cs = Theme.of(context).colorScheme;
-    final background = available ? cs.primaryContainer : cs.errorContainer;
-    final foreground = available ? cs.onPrimaryContainer : cs.onErrorContainer;
+    final background = switch (available) {
+      true => cs.primaryContainer,
+      false => cs.errorContainer,
+      null => cs.surfaceContainerHighest,
+    };
+    final foreground = switch (available) {
+      true => cs.onPrimaryContainer,
+      false => cs.onErrorContainer,
+      null => cs.onSurfaceVariant,
+    };
     return AnimatedContainer(
-      duration: FerrisMotion.fast,
-      curve: FerrisMotion.standard,
+      duration: SegmerisMotion.fast,
+      curve: SegmerisMotion.standard,
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
       decoration: BoxDecoration(
         color: background,
-        borderRadius: FerrisShapes.of(context).pill,
+        borderRadius: SegmerisShapes.of(context).pill,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            available ? Icons.check_rounded : Icons.close_rounded,
+            switch (available) {
+              true => Icons.check_rounded,
+              false => Icons.close_rounded,
+              null => Icons.help_outline_rounded,
+            },
             size: 15,
             color: foreground,
           ),
           const SizedBox(width: 5),
           Flexible(
             child: Text(
-              '$label · ${l.text(available ? 'available' : 'not_available')}',
+              '$label · ${l.text(switch (available) {
+                true => 'available',
+                false => 'not_available',
+                null => 'unknown',
+              })}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -662,12 +680,12 @@ class DisplayPreviewCard extends StatelessWidget {
     final isDark = brightness == Brightness.dark;
 
     return AnimatedContainer(
-      duration: FerrisMotion.slow,
-      curve: FerrisMotion.emphasized,
+      duration: SegmerisMotion.slow,
+      curve: SegmerisMotion.emphasized,
       height: 234,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: FerrisShapes.of(context).card,
+        borderRadius: SegmerisShapes.of(context).card,
         color: cs.surfaceContainer,
         border: Border.all(color: cs.outlineVariant),
       ),
@@ -688,8 +706,8 @@ class DisplayPreviewCard extends StatelessWidget {
                 ),
               ),
               AnimatedSwitcher(
-                duration: FerrisMotion.fast,
-                transitionBuilder: ferrisFadeScaleTransition,
+                duration: SegmerisMotion.fast,
+                transitionBuilder: segmerisFadeScaleTransition,
                 child: Icon(
                   isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
                   key: ValueKey(isDark),
@@ -704,7 +722,7 @@ class DisplayPreviewCard extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                borderRadius: FerrisShapes.of(context).md,
+                borderRadius: SegmerisShapes.of(context).md,
                 color: cs.surface,
                 border: Border.all(color: cs.outlineVariant),
               ),
@@ -712,7 +730,7 @@ class DisplayPreviewCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'FerrisLoad',
+                    'Segmeris',
                     style: previewTheme.textTheme.titleMedium?.copyWith(
                       color: cs.onSurface,
                       fontWeight: FontWeight.w800,
@@ -761,21 +779,21 @@ class ThemePaletteCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context);
     final cs = t.colorScheme;
-    final shapes = FerrisShapes.of(context);
+    final shapes = SegmerisShapes.of(context);
     return AnimatedSlide(
-      duration: FerrisMotion.medium,
-      curve: FerrisMotion.emphasized,
+      duration: SegmerisMotion.medium,
+      curve: SegmerisMotion.emphasized,
       offset: selected ? Offset.zero : const Offset(0, 0.02),
       child: AnimatedScale(
-        duration: FerrisMotion.medium,
-        curve: FerrisMotion.emphasized,
+        duration: SegmerisMotion.medium,
+        curve: SegmerisMotion.emphasized,
         scale: selected ? 1 : 0.972,
         child: InkWell(
           borderRadius: shapes.md,
           onTap: onTap,
           child: AnimatedContainer(
-            duration: FerrisMotion.medium,
-            curve: FerrisMotion.emphasized,
+            duration: SegmerisMotion.medium,
+            curve: SegmerisMotion.emphasized,
             width: 172,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -803,8 +821,8 @@ class ThemePaletteCard extends StatelessWidget {
                       ThemeDot(color: profile.accent),
                       const Spacer(),
                       AnimatedSwitcher(
-                        duration: FerrisMotion.fast,
-                        transitionBuilder: ferrisFadeScaleTransition,
+                        duration: SegmerisMotion.fast,
+                        transitionBuilder: segmerisFadeScaleTransition,
                         child: selected
                             ? Icon(
                                 Icons.check_circle_rounded,
@@ -854,12 +872,12 @@ class InspectionWarningTile extends StatelessWidget {
     final t = Theme.of(context);
     final parsed = InspectionWarningData.parse(warning, t.colorScheme);
     return AnimatedContainer(
-      duration: FerrisMotion.medium,
-      curve: FerrisMotion.emphasized,
+      duration: SegmerisMotion.medium,
+      curve: SegmerisMotion.emphasized,
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        borderRadius: FerrisShapes.of(context).md,
+        borderRadius: SegmerisShapes.of(context).md,
         color: parsed.background,
         border: Border.all(color: parsed.border),
       ),
@@ -1019,13 +1037,13 @@ class StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shapes = FerrisShapes.of(context);
+    final shapes = SegmerisShapes.of(context);
     final brightness = ThemeData.estimateBrightnessForColor(color);
     final foreground =
         brightness == Brightness.dark ? Colors.white : Colors.black87;
     return AnimatedContainer(
-      duration: FerrisMotion.fast,
-      curve: FerrisMotion.emphasized,
+      duration: SegmerisMotion.fast,
+      curve: SegmerisMotion.emphasized,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         borderRadius: shapes.pill,
@@ -1078,7 +1096,7 @@ class SmoothLinearProgressIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final target = value?.clamp(0.0, 1.0);
-    final radius = FerrisShapes.of(context).xs;
+    final radius = SegmerisShapes.of(context).xs;
     if (target == null) {
       return ClipRRect(
         borderRadius: radius,
@@ -1092,8 +1110,8 @@ class SmoothLinearProgressIndicator extends StatelessWidget {
 
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(end: target),
-      duration: FerrisMotion.medium,
-      curve: FerrisMotion.linear,
+      duration: SegmerisMotion.medium,
+      curve: SegmerisMotion.linear,
       builder: (context, animatedValue, _) => ClipRRect(
         borderRadius: radius,
         child: LinearProgressIndicator(
@@ -1213,11 +1231,11 @@ class BatteryBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context);
     final cs = t.colorScheme;
-    final shapes = FerrisShapes.of(context);
-    final spacing = FerrisSpacing.of(context);
+    final shapes = SegmerisShapes.of(context);
+    final spacing = SegmerisSpacing.of(context);
     return AnimatedContainer(
-      duration: FerrisMotion.medium,
-      curve: FerrisMotion.emphasized,
+      duration: SegmerisMotion.medium,
+      curve: SegmerisMotion.emphasized,
       decoration: BoxDecoration(
         borderRadius: shapes.md,
         color: cs.tertiaryContainer,

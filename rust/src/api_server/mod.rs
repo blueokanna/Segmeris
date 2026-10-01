@@ -6,7 +6,7 @@
 //! to a worker thread, and long-running download tasks run on their own
 //! dedicated threads so the accept loop is never blocked.
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use courierust::courierust_body::Body;
 use courierust::courierust_http::header::HeaderName;
 use courierust::courierust_http::request::Request;
@@ -175,10 +175,10 @@ pub fn run_server() -> std::io::Result<()> {
     };
     let server = Server::bind_with_config((bind_ip, port), config)?;
     let bound = server.local_addr()?;
-    log::info!("FerrisLoad API listening on http://{}", bound);
+    log::info!("Segmeris API listening on http://{}", bound);
 
     if configured_api_token().is_some() {
-        log::info!("FerrisLoad API authentication is enabled (FERRISLOAD_API_TOKEN)");
+        log::info!("Segmeris API authentication is enabled (FERRISLOAD_API_TOKEN)");
     }
 
     server.serve(move |request: Request<Body>| handle_request(request, &tasks))
@@ -242,7 +242,7 @@ fn handle_request(request: Request<Body>, tasks: &TaskStore) -> Response<Body> {
 fn handle_health() -> Response<Body> {
     json_response(
         StatusCode::OK,
-        r#"{"status":"ok","service":"ferrisload-api"}"#,
+        r#"{"status":"ok","service":"segmeris-api"}"#,
     )
 }
 
@@ -324,7 +324,7 @@ fn handle_download(request: Request<Body>, tasks: &TaskStore) -> Response<Body> 
     let background_request = req.clone();
     let background_task_id = task_id.clone();
     std::thread::Builder::new()
-        .name("ferrisload-download".into())
+        .name("segmeris-download".into())
         .spawn(move || {
             download::run_download_task(background_task_id, background_request, background_tasks);
         })

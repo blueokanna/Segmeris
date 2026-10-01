@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:m3u8_downloader/src/app/app_localizations.dart';
-import 'package:m3u8_downloader/src/app/app_theme.dart';
-import 'package:m3u8_downloader/src/home/home_widgets.dart';
-import 'package:m3u8_downloader/src/home/source_input.dart';
+import 'package:segmeris/src/app/app_localizations.dart';
+import 'package:segmeris/src/app/app_theme.dart';
+import 'package:segmeris/src/home/home_widgets.dart';
+import 'package:segmeris/src/home/source_input.dart';
 
 class HomeInputCard extends StatelessWidget {
   const HomeInputCard({
@@ -133,7 +133,7 @@ class HomeInputCard extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             InkWell(
-              borderRadius: FerrisShapes.of(context).md,
+              borderRadius: SegmerisShapes.of(context).md,
               onTap: analyzing ? null : onPickDir,
               child: Ink(
                 padding: const EdgeInsets.symmetric(
@@ -141,7 +141,7 @@ class HomeInputCard extends StatelessWidget {
                   vertical: 14,
                 ),
                 decoration: BoxDecoration(
-                  borderRadius: FerrisShapes.of(context).md,
+                  borderRadius: SegmerisShapes.of(context).md,
                   color: cs.surfaceContainerHigh,
                   border: Border.all(color: cs.outlineVariant),
                 ),
@@ -166,8 +166,8 @@ class HomeInputCard extends StatelessWidget {
                       ),
                     ),
                     AnimatedSwitcher(
-                      duration: FerrisMotion.fast,
-                      transitionBuilder: ferrisFadeScaleTransition,
+                      duration: SegmerisMotion.fast,
+                      transitionBuilder: segmerisFadeScaleTransition,
                       child: chosenDir != null
                           ? IconButton(
                               key: const ValueKey('reset-directory'),
@@ -189,8 +189,8 @@ class HomeInputCard extends StatelessWidget {
               builder: (context, constraints) {
                 final compact = constraints.maxWidth < 420;
                 final analyzeButton = AnimatedScale(
-                  duration: FerrisMotion.medium,
-                  curve: FerrisMotion.emphasized,
+                  duration: SegmerisMotion.medium,
+                  curve: SegmerisMotion.emphasized,
                   scale: analyzing ? 0.98 : 1,
                   child: OutlinedButton.icon(
                     onPressed: analyzing ? null : onAnalyze,
@@ -205,8 +205,8 @@ class HomeInputCard extends StatelessWidget {
                   ),
                 );
                 final downloadButton = AnimatedScale(
-                  duration: FerrisMotion.medium,
-                  curve: FerrisMotion.emphasized,
+                  duration: SegmerisMotion.medium,
+                  curve: SegmerisMotion.emphasized,
                   scale: running ? 0.98 : 1,
                   child: FilledButton.icon(
                     onPressed: analyzing ? null : onDownload,
@@ -255,11 +255,11 @@ class HomeInputCard extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             AnimatedContainer(
-              duration: FerrisMotion.medium,
-              curve: FerrisMotion.emphasized,
+              duration: SegmerisMotion.medium,
+              curve: SegmerisMotion.emphasized,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                borderRadius: FerrisShapes.of(context).md,
+                borderRadius: SegmerisShapes.of(context).md,
                 color: cs.surfaceContainer,
                 border: Border.all(
                   color: cs.outlineVariant.withValues(alpha: 0.6),

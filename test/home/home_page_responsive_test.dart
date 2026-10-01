@@ -3,12 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:m3u8_downloader/src/app/app_localizations.dart';
-import 'package:m3u8_downloader/src/app/app_settings.dart';
-import 'package:m3u8_downloader/src/app/app_theme.dart';
-import 'package:m3u8_downloader/src/app/download_engine.dart';
-import 'package:m3u8_downloader/src/home/home_page.dart';
-import 'package:m3u8_downloader/src/home/home_settings_sheet.dart';
+import 'package:segmeris/src/app/app_localizations.dart';
+import 'package:segmeris/src/app/app_settings.dart';
+import 'package:segmeris/src/app/app_theme.dart';
+import 'package:segmeris/src/app/download_engine.dart';
+import 'package:segmeris/src/home/home_page.dart';
+import 'package:segmeris/src/home/home_settings_sheet.dart';
 
 const _settings = AppSettings(
   themeProfileId: 'monet_flow',
@@ -39,7 +39,8 @@ Widget _buildApp(Key captureKey) {
 }
 
 Future<void> _capture(Finder finder, String fileName) async {
-  if (Platform.environment['FERRIS_CAPTURE_UI'] != '1') {
+  if (Platform.environment['SEGMERIS_CAPTURE_UI'] != '1' &&
+      Platform.environment['FERRIS_CAPTURE_UI'] != '1') {
     return;
   }
   await expectLater(

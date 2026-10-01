@@ -1,4 +1,4 @@
-# FerrisLoad
+# Segmeris
 
 A cross-platform media downloader with a Flutter UI and a Rust core (bridged via `flutter_rust_bridge`).
 
@@ -80,9 +80,9 @@ The container runs the real downloader (not simulated progress). Endpoints:
 - `GET /tasks`
 
 ```bash
-docker build -f Dockerfile.api -t ferrisload-api .
+docker build -f Dockerfile.api -t segmeris-api .
 docker run --rm -p 3000:3000 -e DOWNLOAD_DIR=/app/downloads \
-  -v $(pwd)/downloads:/app/downloads ferrisload-api
+  -v $(pwd)/downloads:/app/downloads segmeris-api
 ```
 
 ## Security & privacy

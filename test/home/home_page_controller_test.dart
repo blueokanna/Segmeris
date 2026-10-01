@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:m3u8_downloader/src/home/home_page_controller.dart';
+import 'package:segmeris/src/home/home_page_controller.dart';
 
 void main() {
   test('records the actual encoder and replaces it after CPU fallback', () {
@@ -78,5 +78,28 @@ void main() {
       HomeWorkflowStage.transfer,
     );
     expect(controller.value.downloadTasks.single.backend, 'yt-dlp');
+  });
+
+  test('retries a failed task with its existing identity', () {
+    final controller = HomePageController();
+    addTearDown(controller.dispose);
+    final taskId = controller.beginDownloadTask(
+      fileName: 'video.mp4',
+      sourcePage: 'https://example.com/video.m3u8',
+      status: 'Preparing',
+    );
+
+    controller.failDownloadTask(taskId, 'Network connection lost');
+
+    expect(controller.retryDownloadTask(taskId, status: 'Preparing'), isTrue);
+    final task = controller.value.downloadTasks.single;
+    expect(task.id, taskId);
+    expect(task.running, isTrue);
+    expect(task.error, isNull);
+    expect(task.stage, HomeWorkflowStage.preparing);
+    expect(
+      controller.retryDownloadTask(taskId, status: 'Preparing'),
+      isFalse,
+    );
   });
 }

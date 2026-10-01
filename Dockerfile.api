@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY rust/Cargo.toml rust/Cargo.lock ./rust/
 COPY rust/core ./rust/core
 RUN mkdir -p rust/src/bin rust/src/api \
-    && echo "pub mod api; mod frb_generated; pub mod download_service; pub use ferrisload_core as core;" > rust/src/lib.rs \
+    && echo "pub mod api; mod frb_generated; pub mod download_service; pub use segmeris_core as core;" > rust/src/lib.rs \
     && echo "pub mod downloader;" > rust/src/api/mod.rs \
     && printf '// cache warm-up\n' > rust/src/api/downloader.rs \
     && printf '// cache warm-up\n' > rust/src/download_service.rs \

@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:m3u8_downloader/src/rust/api/downloader.dart';
+import 'package:segmeris/src/rust/api/downloader.dart';
 
 import 'download_engine.dart';
 
-/// Web (WASM) download engine that drives the FerrisLoad HTTP API instead of
+/// Web (WASM) download engine that drives the Segmeris HTTP API instead of
 /// the local Rust runtime.
 ///
 /// The API server (see `Dockerfile.api` / `docker-compose.yml`) executes the
@@ -65,7 +65,7 @@ class ApiDownloadEngine implements DownloadEngine {
     final uri = Uri.tryParse(apiBaseUrl);
     if (uri == null || !uri.hasScheme) {
       throw ApiEngineException(
-        'Invalid FerrisLoad API base URL: $apiBaseUrl',
+        'Invalid Segmeris API base URL: $apiBaseUrl',
       );
     }
     final host = uri.host;
@@ -75,7 +75,7 @@ class ApiDownloadEngine implements DownloadEngine {
         host == '::1';
     if (!isLoopback && uri.scheme != 'https') {
       throw ApiEngineException(
-        'FerrisLoad API base URL must use https for non-local servers '
+        'Segmeris API base URL must use https for non-local servers '
         '(got $apiBaseUrl); refusing to send your session over plaintext HTTP.',
       );
     }

@@ -27,7 +27,7 @@
 @import CoreVideo;
 @import VideoToolbox;
 
-static BOOL ferris_write_error(char *errbuf, size_t errbuf_len, NSString *message) {
+static BOOL segmeris_write_error(char *errbuf, size_t errbuf_len, NSString *message) {
     if (errbuf != NULL && errbuf_len > 0) {
         const char *utf8 = [message UTF8String];
         snprintf(errbuf, errbuf_len, "%s", utf8 != NULL ? utf8 : "unknown error");
@@ -35,7 +35,7 @@ static BOOL ferris_write_error(char *errbuf, size_t errbuf_len, NSString *messag
     return NO;
 }
 
-static NSString *ferris_error_desc(NSError *error, NSString *fallback) {
+static NSString *segmeris_error_desc(NSError *error, NSString *fallback) {
     if (error != nil && error.localizedDescription.length > 0) {
         return error.localizedDescription;
     }
@@ -43,7 +43,7 @@ static NSString *ferris_error_desc(NSError *error, NSString *fallback) {
 }
 
 /// Blocks until the asset tracks are loaded (bounded by `timeout`).
-static BOOL ferris_wait_for_tracks(AVURLAsset *asset, NSTimeInterval timeout) {
+static BOOL segmeris_wait_for_tracks(AVURLAsset *asset, NSTimeInterval timeout) {
     dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
     __block BOOL finished = NO;
     [asset loadValuesAsynchronouslyForKeys:@[ @"tracks" ]
@@ -57,7 +57,7 @@ static BOOL ferris_wait_for_tracks(AVURLAsset *asset, NSTimeInterval timeout) {
 }
 
 /// Whether the audio track is AAC (safe to pass through into MP4).
-static BOOL ferris_is_aac_track(AVAssetTrack *audioTrack) {
+static BOOL segmeris_is_aac_track(AVAssetTrack *audioTrack) {
     NSArray<id> *formats = audioTrack.formatDescriptions;
     if (formats.count == 0) {
         return NO;
@@ -70,7 +70,7 @@ static BOOL ferris_is_aac_track(AVAssetTrack *audioTrack) {
 }
 
 /// Build the H.264 hardware encode settings for a track.
-static NSDictionary *ferris_h264_settings(CGSize size, int videoBitrateKbps) {
+static NSDictionary *segmeris_h264_settings(CGSize size, int videoBitrateKbps) {
     NSInteger width = ((NSInteger)size.width / 2) * 2;
     NSInteger height = ((NSInteger)size.height / 2) * 2;
     if (width <= 0) width = 1280;
@@ -93,7 +93,7 @@ static NSDictionary *ferris_h264_settings(CGSize size, int videoBitrateKbps) {
 }
 
 /// Drain one reader output into one writer input until the track ends.
-static BOOL ferris_drain(AVAssetReaderTrackOutput *output,
+static BOOL segmeris_drain(AVAssetReaderTrackOutput *output,
                          AVAssetWriterInput *input,
                          AVAssetReader *reader,
                          AVAssetWriter *writer,
@@ -101,12 +101,12 @@ static BOOL ferris_drain(AVAssetReaderTrackOutput *output,
                          size_t errbuf_len) {
     while (input.readyForMoreMediaData) {
         if (reader.status == AVAssetReaderStatusFailed) {
-            return ferris_write_error(errbuf, errbuf_len,
-                                      ferris_error_desc(reader.error, @"Reader failed during drain"));
+            return segmeris_write_error(errbuf, errbuf_len,
+                                      segmeris_error_desc(reader.error, @"Reader failed during drain"));
         }
         if (writer.status == AVAssetWriterStatusFailed) {
-            return ferris_write_error(errbuf, errbuf_len,
-                                      ferris_error_desc(writer.error, @"Writer failed during drain"));
+            return segmeris_write_error(errbuf, errbuf_len,
+                                      segmeris_error_desc(writer.error, @"Writer failed during drain"));
         }
         CMSampleBufferRef sample = [output copyNextSampleBuffer];
         if (sample == NULL) {
@@ -114,8 +114,8 @@ static BOOL ferris_drain(AVAssetReaderTrackOutput *output,
         }
         if (![input appendSampleBuffer:sample]) {
             CFRelease(sample);
-            return ferris_write_error(errbuf, errbuf_len,
-                                      ferris_error_desc(writer.error, @"Sample append failed"));
+            return segmeris_write_error(errbuf, errbuf_len,
+                                      segmeris_error_desc(writer.error, @"Sample append failed"));
         }
         CFRelease(sample);
     }
@@ -124,7 +124,7 @@ static BOOL ferris_drain(AVAssetReaderTrackOutput *output,
 }
 
 /// Finalize the writer and validate the output duration.
-static BOOL ferris_finish_writer(AVAssetWriter *writer,
+static BOOL segmeris_finish_writer(AVAssetWriter *writer,
                                  long long expected_ms,
                                  char *errbuf,
                                  size_t errbuf_len) {
@@ -136,8 +136,8 @@ static BOOL ferris_finish_writer(AVAssetWriter *writer,
     dispatch_semaphore_wait(semaphore, deadline);
 
     if (writer.status != AVAssetWriterStatusCompleted) {
-        return ferris_write_error(errbuf, errbuf_len,
-                                  ferris_error_desc(writer.error, @"Writer did not complete"));
+        return segmeris_write_error(errbuf, errbuf_len,
+                                  segmeris_error_desc(writer.error, @"Writer did not complete"));
     }
     if (expected_ms > 0) {
         double seconds = CMTimeGetSeconds(writer.asset.duration);
@@ -145,7 +145,7 @@ static BOOL ferris_finish_writer(AVAssetWriter *writer,
             double expected = expected_ms / 1000.0;
             double tolerance = MAX(expected * 0.85, expected - 5.0);
             if (seconds + 1.0 < tolerance) {
-                return ferris_write_error(
+                return segmeris_write_error(
                     errbuf, errbuf_len,
                     [NSString stringWithFormat:@"Output truncated: expected ~%.1fs but produced %.1fs",
                                                expected, seconds]);
@@ -155,7 +155,7 @@ static BOOL ferris_finish_writer(AVAssetWriter *writer,
     return YES;
 }
 
-static BOOL ferris_transcode_impl(NSString *inputPath,
+static BOOL segmeris_transcode_impl(NSString *inputPath,
                                   NSString *outputPath,
                                   int videoBitrate,
                                   int audioBitrate,
@@ -166,8 +166,8 @@ static BOOL ferris_transcode_impl(NSString *inputPath,
 
     NSError *error = nil;
     AVURLAsset *asset = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:inputPath] options:nil];
-    if (!ferris_wait_for_tracks(asset, 30.0)) {
-        return ferris_write_error(errbuf, errbufLen, @"Timed out loading asset tracks");
+    if (!segmeris_wait_for_tracks(asset, 30.0)) {
+        return segmeris_write_error(errbuf, errbufLen, @"Timed out loading asset tracks");
     }
 
     AVAssetTrack *videoTrack = nil;
@@ -180,14 +180,14 @@ static BOOL ferris_transcode_impl(NSString *inputPath,
         }
     }
     if (videoTrack == nil) {
-        return ferris_write_error(errbuf, errbufLen, @"No video track found in input");
+        return segmeris_write_error(errbuf, errbufLen, @"No video track found in input");
     }
 
     AVAssetReader *reader = [AVAssetReader assetReaderWithAsset:asset error:&error];
     if (reader == nil) {
-        return ferris_write_error(errbuf, errbufLen,
+        return segmeris_write_error(errbuf, errbufLen,
                                   [NSString stringWithFormat:@"Cannot read input: %@",
-                                                             ferris_error_desc(error, @"unknown")]);
+                                                             segmeris_error_desc(error, @"unknown")]);
     }
 
     NSDictionary *videoOutputSettings = @{
@@ -198,7 +198,7 @@ static BOOL ferris_transcode_impl(NSString *inputPath,
                                                    outputSettings:videoOutputSettings];
     videoOutput.alwaysCopiesSampleData = NO;
     if (![reader canAddOutput:videoOutput]) {
-        return ferris_write_error(errbuf, errbufLen, @"Cannot add video reader output");
+        return segmeris_write_error(errbuf, errbufLen, @"Cannot add video reader output");
     }
     [reader addOutput:videoOutput];
 
@@ -216,9 +216,9 @@ static BOOL ferris_transcode_impl(NSString *inputPath,
     }
 
     if (![reader startReading]) {
-        return ferris_write_error(errbuf, errbufLen,
+        return segmeris_write_error(errbuf, errbufLen,
                                   [NSString stringWithFormat:@"Reader failed to start: %@",
-                                                             ferris_error_desc(reader.error, @"unknown")]);
+                                                             segmeris_error_desc(reader.error, @"unknown")]);
     }
 
     AVAssetWriter *writer =
@@ -226,24 +226,24 @@ static BOOL ferris_transcode_impl(NSString *inputPath,
                                  fileType:AVFileTypeMPEG4
                                     error:&error];
     if (writer == nil) {
-        return ferris_write_error(errbuf, errbufLen,
+        return segmeris_write_error(errbuf, errbufLen,
                                   [NSString stringWithFormat:@"Cannot create writer: %@",
-                                                             ferris_error_desc(error, @"unknown")]);
+                                                             segmeris_error_desc(error, @"unknown")]);
     }
 
     AVAssetWriterInput *videoInput =
         [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo
-                                           outputSettings:ferris_h264_settings(videoTrack.naturalSize, videoBitrate)];
+                                           outputSettings:segmeris_h264_settings(videoTrack.naturalSize, videoBitrate)];
     videoInput.expectsMediaDataInRealTime = NO;
     videoInput.transform = videoTrack.preferredTransform;  // preserve rotation
     if (![writer canAddInput:videoInput]) {
-        return ferris_write_error(errbuf, errbufLen, @"Cannot add video writer input");
+        return segmeris_write_error(errbuf, errbufLen, @"Cannot add video writer input");
     }
     [writer addInput:videoInput];
 
     AVAssetWriterInput *audioInput = nil;
     if (audioOutput != nil && audioTrack != nil) {
-        BOOL passthrough = audioBitrate <= 0 && ferris_is_aac_track(audioTrack);
+        BOOL passthrough = audioBitrate <= 0 && segmeris_is_aac_track(audioTrack);
         if (passthrough) {
             audioInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio
                                                             outputSettings:nil];
@@ -266,19 +266,19 @@ static BOOL ferris_transcode_impl(NSString *inputPath,
     }
 
     if (![writer startWriting]) {
-        return ferris_write_error(errbuf, errbufLen,
+        return segmeris_write_error(errbuf, errbufLen,
                                   [NSString stringWithFormat:@"Writer failed to start: %@",
-                                                             ferris_error_desc(writer.error, @"unknown")]);
+                                                             segmeris_error_desc(writer.error, @"unknown")]);
     }
     [writer startSessionAtSourceTime:kCMTimeZero];
 
     // Feed video first, then audio. AVAssetWriter re-interleaves by PTS when
     // finalizing the MP4, so a sequential drain is safe.
-    if (!ferris_drain(videoOutput, videoInput, reader, writer, errbuf, errbufLen)) {
+    if (!segmeris_drain(videoOutput, videoInput, reader, writer, errbuf, errbufLen)) {
         return NO;
     }
     if (audioOutput != nil && audioInput != nil) {
-        if (!ferris_drain(audioOutput, audioInput, reader, writer, errbuf, errbufLen)) {
+        if (!segmeris_drain(audioOutput, audioInput, reader, writer, errbuf, errbufLen)) {
             return NO;
         }
     }
@@ -286,10 +286,10 @@ static BOOL ferris_transcode_impl(NSString *inputPath,
     if (reader.status == AVAssetReaderStatusReading) {
         [reader cancelReading];
     }
-    return ferris_finish_writer(writer, expectedMs, errbuf, errbufLen);
+    return segmeris_finish_writer(writer, expectedMs, errbuf, errbufLen);
 }
 
-static BOOL ferris_mux_impl(NSString *videoPath,
+static BOOL segmeris_mux_impl(NSString *videoPath,
                             NSString *audioPath,
                             NSString *outputPath,
                             long long expectedMs,
@@ -300,21 +300,21 @@ static BOOL ferris_mux_impl(NSString *videoPath,
     NSError *error = nil;
     AVURLAsset *videoAsset = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:videoPath] options:nil];
     AVURLAsset *audioAsset = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:audioPath] options:nil];
-    if (!ferris_wait_for_tracks(videoAsset, 30.0) || !ferris_wait_for_tracks(audioAsset, 30.0)) {
-        return ferris_write_error(errbuf, errbufLen, @"Timed out loading tracks for mux");
+    if (!segmeris_wait_for_tracks(videoAsset, 30.0) || !segmeris_wait_for_tracks(audioAsset, 30.0)) {
+        return segmeris_write_error(errbuf, errbufLen, @"Timed out loading tracks for mux");
     }
 
     AVAssetTrack *videoTrack = [videoAsset tracksWithMediaType:AVMediaTypeVideo].firstObject;
     AVAssetTrack *audioTrack = [audioAsset tracksWithMediaType:AVMediaTypeAudio].firstObject;
     if (videoTrack == nil) {
-        return ferris_write_error(errbuf, errbufLen, @"No video track found for mux");
+        return segmeris_write_error(errbuf, errbufLen, @"No video track found for mux");
     }
 
     AVAssetReader *videoReader = [AVAssetReader assetReaderWithAsset:videoAsset error:&error];
     if (videoReader == nil) {
-        return ferris_write_error(errbuf, errbufLen,
+        return segmeris_write_error(errbuf, errbufLen,
                                   [NSString stringWithFormat:@"Cannot read video: %@",
-                                                             ferris_error_desc(error, @"unknown")]);
+                                                             segmeris_error_desc(error, @"unknown")]);
     }
     NSDictionary *videoOutputSettings = @{
         (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
@@ -345,14 +345,14 @@ static BOOL ferris_mux_impl(NSString *videoPath,
     }
 
     if (![videoReader startReading]) {
-        return ferris_write_error(errbuf, errbufLen,
+        return segmeris_write_error(errbuf, errbufLen,
                                   [NSString stringWithFormat:@"Video reader failed to start: %@",
-                                                             ferris_error_desc(videoReader.error, @"unknown")]);
+                                                             segmeris_error_desc(videoReader.error, @"unknown")]);
     }
     if (audioReader != nil && ![audioReader startReading]) {
-        return ferris_write_error(errbuf, errbufLen,
+        return segmeris_write_error(errbuf, errbufLen,
                                   [NSString stringWithFormat:@"Audio reader failed to start: %@",
-                                                             ferris_error_desc(audioReader.error, @"unknown")]);
+                                                             segmeris_error_desc(audioReader.error, @"unknown")]);
     }
 
     AVAssetWriter *writer =
@@ -360,24 +360,24 @@ static BOOL ferris_mux_impl(NSString *videoPath,
                                  fileType:AVFileTypeMPEG4
                                     error:&error];
     if (writer == nil) {
-        return ferris_write_error(errbuf, errbufLen,
+        return segmeris_write_error(errbuf, errbufLen,
                                   [NSString stringWithFormat:@"Cannot create mux writer: %@",
-                                                             ferris_error_desc(error, @"unknown")]);
+                                                             segmeris_error_desc(error, @"unknown")]);
     }
 
     AVAssetWriterInput *videoInput =
         [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo
-                                           outputSettings:ferris_h264_settings(videoTrack.naturalSize, 0)];
+                                           outputSettings:segmeris_h264_settings(videoTrack.naturalSize, 0)];
     videoInput.expectsMediaDataInRealTime = NO;
     videoInput.transform = videoTrack.preferredTransform;
     if (![writer canAddInput:videoInput]) {
-        return ferris_write_error(errbuf, errbufLen, @"Cannot add video writer input (mux)");
+        return segmeris_write_error(errbuf, errbufLen, @"Cannot add video writer input (mux)");
     }
     [writer addInput:videoInput];
 
     AVAssetWriterInput *audioInput = nil;
     if (audioOutput != nil && audioTrack != nil) {
-        BOOL passthrough = ferris_is_aac_track(audioTrack);
+        BOOL passthrough = segmeris_is_aac_track(audioTrack);
         if (passthrough) {
             audioInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio
                                                             outputSettings:nil];
@@ -399,17 +399,17 @@ static BOOL ferris_mux_impl(NSString *videoPath,
     }
 
     if (![writer startWriting]) {
-        return ferris_write_error(errbuf, errbufLen,
+        return segmeris_write_error(errbuf, errbufLen,
                                   [NSString stringWithFormat:@"Mux writer failed to start: %@",
-                                                             ferris_error_desc(writer.error, @"unknown")]);
+                                                             segmeris_error_desc(writer.error, @"unknown")]);
     }
     [writer startSessionAtSourceTime:kCMTimeZero];
 
-    if (!ferris_drain(videoOutput, videoInput, videoReader, writer, errbuf, errbufLen)) {
+    if (!segmeris_drain(videoOutput, videoInput, videoReader, writer, errbuf, errbufLen)) {
         return NO;
     }
     if (audioOutput != nil && audioInput != nil && audioReader != nil) {
-        if (!ferris_drain(audioOutput, audioInput, audioReader, writer, errbuf, errbufLen)) {
+        if (!segmeris_drain(audioOutput, audioInput, audioReader, writer, errbuf, errbufLen)) {
             return NO;
         }
     }
@@ -420,12 +420,12 @@ static BOOL ferris_mux_impl(NSString *videoPath,
     if (audioReader != nil && audioReader.status == AVAssetReaderStatusReading) {
         [audioReader cancelReading];
     }
-    return ferris_finish_writer(writer, expectedMs, errbuf, errbufLen);
+    return segmeris_finish_writer(writer, expectedMs, errbuf, errbufLen);
 }
 
 /// Pick the AVAssetExportSession preset that best preserves the source
 /// resolution (export presets only scale down, never up).
-static NSString *ferris_export_preset(CGFloat dimension) {
+static NSString *segmeris_export_preset(CGFloat dimension) {
     if (dimension > 1920.0) {
         if (@available(iOS 9.0, *)) {
             return AVAssetExportPreset3840x2160;
@@ -449,7 +449,7 @@ static NSString *ferris_export_preset(CGFloat dimension) {
 /// few seconds survive" failure mode of a naively concatenated TS. Audio is
 /// only included when a track is present; a corrupt segment is skipped rather
 /// than failing the whole merge.
-static BOOL ferris_merge_segments_impl(NSString *dir,
+static BOOL segmeris_merge_segments_impl(NSString *dir,
                                        NSString *prefix,
                                        NSInteger count,
                                        NSString *outputPath,
@@ -467,7 +467,7 @@ static BOOL ferris_merge_segments_impl(NSString *dir,
         }
     }
     if (paths.count == 0) {
-        return ferris_write_error(errbuf, errbufLen, @"No segment files found to merge");
+        return segmeris_write_error(errbuf, errbufLen, @"No segment files found to merge");
     }
 
     AVMutableComposition *composition = [AVMutableComposition composition];
@@ -482,14 +482,14 @@ static BOOL ferris_merge_segments_impl(NSString *dir,
         AVURLAsset *asset =
             [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:path]
                                 options:@{AVURLAssetPreferPreciseDurationAndTimingKey : @YES}];
-        if (!ferris_wait_for_tracks(asset, 30.0)) {
-            NSLog(@"[FerrisLoad] merge: skipping unreadable segment %@", path);
+        if (!segmeris_wait_for_tracks(asset, 30.0)) {
+            NSLog(@"[Segmeris] merge: skipping unreadable segment %@", path);
             continue;
         }
         AVAssetTrack *v = [asset tracksWithMediaType:AVMediaTypeVideo].firstObject;
         AVAssetTrack *a = [asset tracksWithMediaType:AVMediaTypeAudio].firstObject;
         if (v == nil && a == nil) {
-            NSLog(@"[FerrisLoad] merge: skipping segment with no usable tracks %@", path);
+            NSLog(@"[Segmeris] merge: skipping segment with no usable tracks %@", path);
             continue;
         }
         if (v != nil) {
@@ -497,7 +497,7 @@ static BOOL ferris_merge_segments_impl(NSString *dir,
                 videoTrack = [composition addMutableTrackWithMediaType:AVMediaTypeVideo
                                                        preferredTrackID:kCMPersistentTrackID_Invalid];
                 if (videoTrack == nil) {
-                    return ferris_write_error(errbuf, errbufLen,
+                    return segmeris_write_error(errbuf, errbufLen,
                                               @"Cannot create composition video track");
                 }
                 CGSize size = v.naturalSize;
@@ -510,7 +510,7 @@ static BOOL ferris_merge_segments_impl(NSString *dir,
                                      ofTrack:v
                                       atTime:videoCursor
                                        error:&error]) {
-                NSLog(@"[FerrisLoad] merge: dropping unreadable video in %@ (%@)", path,
+                NSLog(@"[Segmeris] merge: dropping unreadable video in %@ (%@)", path,
                       error.localizedDescription);
             } else {
                 videoCursor = CMTimeAdd(videoCursor, v.timeRange.duration);
@@ -527,7 +527,7 @@ static BOOL ferris_merge_segments_impl(NSString *dir,
                                          ofTrack:a
                                           atTime:audioCursor
                                            error:&error]) {
-                    NSLog(@"[FerrisLoad] merge: dropping unreadable audio in %@ (%@)", path,
+                    NSLog(@"[Segmeris] merge: dropping unreadable audio in %@ (%@)", path,
                           error.localizedDescription);
                 } else {
                     audioCursor = CMTimeAdd(audioCursor, a.timeRange.duration);
@@ -538,15 +538,15 @@ static BOOL ferris_merge_segments_impl(NSString *dir,
     }
 
     if (videoTrack == nil) {
-        return ferris_write_error(errbuf, errbufLen, @"No readable video segments to merge");
+        return segmeris_write_error(errbuf, errbufLen, @"No readable video segments to merge");
     }
     double assembledSeconds = CMTimeGetSeconds(assembled);
 
-    NSString *preset = ferris_export_preset(largestDimension);
+    NSString *preset = segmeris_export_preset(largestDimension);
     AVAssetExportSession *export =
         [[AVAssetExportSession alloc] initWithAsset:composition presetName:preset];
     if (export == nil) {
-        return ferris_write_error(
+        return segmeris_write_error(
             errbuf, errbufLen,
             [NSString stringWithFormat:@"Cannot create export session for preset %@", preset]);
     }
@@ -572,7 +572,7 @@ static BOOL ferris_merge_segments_impl(NSString *dir,
     }
     if (!finished || export.status != AVAssetExportSessionStatusCompleted) {
         NSString *reason = export.error.localizedDescription;
-        return ferris_write_error(errbuf, errbufLen,
+        return segmeris_write_error(errbuf, errbufLen,
                                   [NSString stringWithFormat:@"Export did not complete%@%@",
                                                              reason != nil ? @": " : @"",
                                                              reason != nil ? reason : @"(timed out)"]);
@@ -581,7 +581,7 @@ static BOOL ferris_merge_segments_impl(NSString *dir,
         double expected = expectedMs / 1000.0;
         double tolerance = MAX(expected * 0.85, expected - 5.0);
         if (assembledSeconds + 1.0 < tolerance) {
-            return ferris_write_error(errbuf, errbufLen,
+            return segmeris_write_error(errbuf, errbufLen,
                                       [NSString stringWithFormat:
                                                      @"Output truncated: expected ~%.1fs but assembled %.1fs",
                                                      expected, assembledSeconds]);
@@ -592,7 +592,7 @@ static BOOL ferris_merge_segments_impl(NSString *dir,
 
 #pragma mark - C entry points
 
-int ferrisload_videotoolbox_available(void) {
+int segmeris_videotoolbox_available(void) {
     @autoreleasepool {
         // AVAssetWriter is backed by VideoToolbox on every iOS device;
         // H.264 is universally supported by the hardware encoder.
@@ -600,7 +600,7 @@ int ferrisload_videotoolbox_available(void) {
     }
 }
 
-int ferrisload_videotoolbox_transcode(const char *input,
+int segmeris_videotoolbox_transcode(const char *input,
                                       const char *output,
                                       int video_bitrate,
                                       int audio_bitrate,
@@ -608,44 +608,44 @@ int ferrisload_videotoolbox_transcode(const char *input,
                                       char *errbuf,
                                       size_t errbuf_len) {
     if (input == NULL || output == NULL) {
-        return ferris_write_error(errbuf, errbuf_len, @"Null input or output path");
+        return segmeris_write_error(errbuf, errbuf_len, @"Null input or output path");
     }
     @autoreleasepool {
         NSString *inputPath = [NSString stringWithUTF8String:input];
         NSString *outputPath = [NSString stringWithUTF8String:output];
         if (inputPath == nil || outputPath == nil) {
-            return ferris_write_error(errbuf, errbuf_len, @"Paths are not valid UTF-8");
+            return segmeris_write_error(errbuf, errbuf_len, @"Paths are not valid UTF-8");
         }
-        return ferris_transcode_impl(inputPath, outputPath, video_bitrate,
+        return segmeris_transcode_impl(inputPath, outputPath, video_bitrate,
                                      audio_bitrate, expected_ms, errbuf, errbuf_len)
                    ? 1
                    : 0;
     }
 }
 
-int ferrisload_videotoolbox_mux(const char *video,
+int segmeris_videotoolbox_mux(const char *video,
                                 const char *audio,
                                 const char *output,
                                 long long expected_ms,
                                 char *errbuf,
                                 size_t errbuf_len) {
     if (video == NULL || audio == NULL || output == NULL) {
-        return ferris_write_error(errbuf, errbuf_len, @"Null mux path");
+        return segmeris_write_error(errbuf, errbuf_len, @"Null mux path");
     }
     @autoreleasepool {
         NSString *videoPath = [NSString stringWithUTF8String:video];
         NSString *audioPath = [NSString stringWithUTF8String:audio];
         NSString *outputPath = [NSString stringWithUTF8String:output];
         if (videoPath == nil || audioPath == nil || outputPath == nil) {
-            return ferris_write_error(errbuf, errbuf_len, @"Mux paths are not valid UTF-8");
+            return segmeris_write_error(errbuf, errbuf_len, @"Mux paths are not valid UTF-8");
         }
-        return ferris_mux_impl(videoPath, audioPath, outputPath, expected_ms, errbuf, errbuf_len)
+        return segmeris_mux_impl(videoPath, audioPath, outputPath, expected_ms, errbuf, errbuf_len)
                    ? 1
                    : 0;
     }
 }
 
-int ferrisload_videotoolbox_merge_segments(const char *dir,
+int segmeris_videotoolbox_merge_segments(const char *dir,
                                            const char *prefix,
                                            int count,
                                            const char *output,
@@ -653,16 +653,16 @@ int ferrisload_videotoolbox_merge_segments(const char *dir,
                                            char *errbuf,
                                            size_t errbuf_len) {
     if (dir == NULL || prefix == NULL || output == NULL || count < 0) {
-        return ferris_write_error(errbuf, errbuf_len, @"Null or invalid merge argument");
+        return segmeris_write_error(errbuf, errbuf_len, @"Null or invalid merge argument");
     }
     @autoreleasepool {
         NSString *dirPath = [NSString stringWithUTF8String:dir];
         NSString *prefixName = [NSString stringWithUTF8String:prefix];
         NSString *outputPath = [NSString stringWithUTF8String:output];
         if (dirPath == nil || prefixName == nil || outputPath == nil) {
-            return ferris_write_error(errbuf, errbuf_len, @"Merge paths are not valid UTF-8");
+            return segmeris_write_error(errbuf, errbuf_len, @"Merge paths are not valid UTF-8");
         }
-        return ferris_merge_segments_impl(dirPath, prefixName, (NSInteger)count, outputPath,
+        return segmeris_merge_segments_impl(dirPath, prefixName, (NSInteger)count, outputPath,
                                           expected_ms, errbuf, errbuf_len)
                    ? 1
                    : 0;

@@ -2,12 +2,12 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:m3u8_downloader/src/app/app_localizations.dart';
-import 'package:m3u8_downloader/src/app/app_settings.dart';
-import 'package:m3u8_downloader/src/app/app_theme.dart';
-import 'package:m3u8_downloader/src/app/platform_bridge.dart';
-import 'package:m3u8_downloader/src/home/home_page.dart';
-import 'package:m3u8_downloader/src/rust/frb_generated.dart';
+import 'package:segmeris/src/app/app_localizations.dart';
+import 'package:segmeris/src/app/app_settings.dart';
+import 'package:segmeris/src/app/app_theme.dart';
+import 'package:segmeris/src/app/platform_bridge.dart';
+import 'package:segmeris/src/home/home_page.dart';
+import 'package:segmeris/src/rust/frb_generated.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,11 +20,11 @@ Future<void> main() async {
       debugPrint('RustLib.init() failed: $error');
     }
   }
-  runApp(FerrisLoadApp(initialSettings: settings));
+  runApp(SegmerisApp(initialSettings: settings));
 }
 
-class _FerrisScrollBehavior extends MaterialScrollBehavior {
-  const _FerrisScrollBehavior();
+class _SegmerisScrollBehavior extends MaterialScrollBehavior {
+  const _SegmerisScrollBehavior();
 
   @override
   ScrollPhysics getScrollPhysics(BuildContext context) {
@@ -34,16 +34,16 @@ class _FerrisScrollBehavior extends MaterialScrollBehavior {
   }
 }
 
-class FerrisLoadApp extends StatefulWidget {
-  const FerrisLoadApp({super.key, required this.initialSettings});
+class SegmerisApp extends StatefulWidget {
+  const SegmerisApp({super.key, required this.initialSettings});
 
   final AppSettings initialSettings;
 
   @override
-  State<FerrisLoadApp> createState() => _FerrisLoadAppState();
+  State<SegmerisApp> createState() => _SegmerisAppState();
 }
 
-class _FerrisLoadAppState extends State<FerrisLoadApp> {
+class _SegmerisAppState extends State<SegmerisApp> {
   late AppSettings _settings = widget.initialSettings;
 
   Future<void> _updateSettings(AppSettings next) async {
@@ -58,8 +58,8 @@ class _FerrisLoadAppState extends State<FerrisLoadApp> {
         final locale = AppLocalizations.resolveLocale(_settings.locale);
         return MaterialApp(
           debugShowCheckedModeBanner: false,
-          title: 'FerrisLoad',
-          scrollBehavior: const _FerrisScrollBehavior(),
+          title: 'Segmeris',
+          scrollBehavior: const _SegmerisScrollBehavior(),
           locale: locale,
           localeResolutionCallback: (deviceLocale, _) {
             return AppLocalizations.resolveLocale(deviceLocale);

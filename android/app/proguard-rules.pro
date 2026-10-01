@@ -1,5 +1,5 @@
 # Keep MediaTranscoder class for JNI access from Rust
--keep class com.bluevale.m3u8_downloader.MediaTranscoder {
+-keep class com.bluevale.segmeris.MediaTranscoder {
     public static *;
 }
 
@@ -10,7 +10,7 @@
 #   mux(String video, String audio, String output, long expectedDurationMs) -> boolean
 #   muxDirs(String videoDir, String videoPrefix, int videoTotal, String audioDir, String audioPrefix, int audioTotal, String output, long expectedDurationMs) -> boolean
 #   capabilityReport() -> String
--keepclassmembers class com.bluevale.m3u8_downloader.MediaTranscoder {
+-keepclassmembers class com.bluevale.segmeris.MediaTranscoder {
     public static boolean transcode(java.lang.String, java.lang.String, int, int, long);
     public static boolean transcodeDir(java.lang.String, java.lang.String, int, java.lang.String, int, int, long);
     public static boolean mux(java.lang.String, java.lang.String, java.lang.String, long);
@@ -19,7 +19,7 @@
 }
 
 # Keep MainActivity (loads native Rust library)
--keep class com.bluevale.m3u8_downloader.MainActivity { *; }
+-keep class com.bluevale.segmeris.MainActivity { *; }
 
 # Keep all JNI / native methods
 -keepclasseswithmembernames class * {
@@ -31,10 +31,10 @@
 -keep class ** extends io.flutter.embedding.engine.FlutterJNI { *; }
 
 # Keep DownloadForegroundService
--keep class com.bluevale.m3u8_downloader.DownloadForegroundService { *; }
+-keep class com.bluevale.segmeris.DownloadForegroundService { *; }
 
 # Keep MediaStoreHelper
--keep class com.bluevale.m3u8_downloader.MediaStoreHelper { *; }
+-keep class com.bluevale.segmeris.MediaStoreHelper { *; }
 
 # Keep Flutter embedding
 -keep class io.flutter.** { *; }

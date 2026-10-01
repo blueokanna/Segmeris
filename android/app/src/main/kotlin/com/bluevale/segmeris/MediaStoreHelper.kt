@@ -1,4 +1,4 @@
-package com.bluevale.m3u8_downloader
+package com.bluevale.segmeris
 
 import android.content.ContentValues
 import android.content.Context
@@ -25,7 +25,7 @@ object MediaStoreHelper {
      * @param srcPath absolute source path (app-private)
      * @param fileName target file name, e.g. "output.mp4"
      * @param mimeType MIME type, e.g. "video/mp4"
-     * @param subDir sub-directory under Downloads, e.g. "FerrisLoad"
+     * @param subDir sub-directory under Downloads, e.g. "Segmeris"
      * @return the saved public path, or null on failure
      */
     @JvmStatic
@@ -76,7 +76,7 @@ object MediaStoreHelper {
         val cleaned = subDir
             .replace(Regex("[\\\\/:*?\"<>|\\x00-\\x1f]"), "_")
             .trim('.', ' ')
-        return cleaned.ifEmpty { "FerrisLoad" }
+        return cleaned.ifEmpty { "Segmeris" }
     }
 
     /**

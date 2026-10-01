@@ -1,6 +1,6 @@
 {
-    "name": "m3u8_downloader",
-    "short_name": "m3u8_downloader",
+    "name": "segmeris",
+    "short_name": "segmeris",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#6750A4",

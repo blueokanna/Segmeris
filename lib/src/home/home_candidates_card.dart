@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:m3u8_downloader/src/app/app_localizations.dart';
-import 'package:m3u8_downloader/src/app/app_theme.dart';
-import 'package:m3u8_downloader/src/home/home_widgets.dart';
-import 'package:m3u8_downloader/src/rust/api/downloader.dart';
+import 'package:segmeris/src/app/app_localizations.dart';
+import 'package:segmeris/src/app/app_theme.dart';
+import 'package:segmeris/src/home/home_widgets.dart';
+import 'package:segmeris/src/rust/api/downloader.dart';
 
 class HomeCandidatesCard extends StatelessWidget {
   const HomeCandidatesCard({
@@ -60,7 +60,7 @@ class HomeCandidatesCard extends StatelessWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  borderRadius: FerrisShapes.of(context).md,
+                  borderRadius: SegmerisShapes.of(context).md,
                   color: cs.errorContainer,
                 ),
                 child: Column(
@@ -99,10 +99,10 @@ class HomeCandidatesCard extends StatelessWidget {
               ),
             ),
           AnimatedSwitcher(
-            duration: FerrisMotion.slow,
-            switchInCurve: FerrisMotion.decelerate,
-            switchOutCurve: FerrisMotion.accelerate,
-            transitionBuilder: ferrisFadeScaleTransition,
+            duration: SegmerisMotion.slow,
+            switchInCurve: SegmerisMotion.decelerate,
+            switchOutCurve: SegmerisMotion.accelerate,
+            transitionBuilder: segmerisFadeScaleTransition,
             child: selectedCandidate == null
                 ? const SizedBox.shrink()
                 : Container(
@@ -113,7 +113,7 @@ class HomeCandidatesCard extends StatelessWidget {
                     margin: const EdgeInsets.only(bottom: 14),
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      borderRadius: FerrisShapes.of(context).md,
+                      borderRadius: SegmerisShapes.of(context).md,
                       color: cs.primaryContainer,
                       border: Border.all(
                         color: cs.primary.withValues(alpha: 0.35),
@@ -164,17 +164,17 @@ class HomeCandidatesCard extends StatelessWidget {
                   ),
           ),
           AnimatedSwitcher(
-            duration: FerrisMotion.slow,
-            switchInCurve: FerrisMotion.decelerate,
-            switchOutCurve: FerrisMotion.accelerate,
-            transitionBuilder: ferrisFadeScaleTransition,
+            duration: SegmerisMotion.slow,
+            switchInCurve: SegmerisMotion.decelerate,
+            switchOutCurve: SegmerisMotion.accelerate,
+            transitionBuilder: segmerisFadeScaleTransition,
             child: inspection == null || inspection!.candidates.isEmpty
                 ? Container(
                     key: const ValueKey('empty-candidates'),
                     width: double.infinity,
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      borderRadius: FerrisShapes.of(context).md,
+                      borderRadius: SegmerisShapes.of(context).md,
                       color: cs.surfaceContainerHigh.withValues(alpha: 0.55),
                     ),
                     child: Text(

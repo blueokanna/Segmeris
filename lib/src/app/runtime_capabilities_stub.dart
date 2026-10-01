@@ -13,12 +13,12 @@ import 'capability_snapshot.dart';
 Future<PlatformCapabilitySnapshot> probeDesktopCapabilities() async {
   return const PlatformCapabilitySnapshot(
     platform: 'web',
-    transcoderBackend: 'Unavailable',
-    hardwareAccelerated: false,
+    transcoderBackend: 'Not reported',
+    hardwareAccelerated: null,
     videoEncoders: [],
     videoDecoders: [],
-    ffmpegAvailable: false,
-    ytdlpAvailable: false,
-    notes: ['Desktop probing is not available on the web.'],
+    ffmpegAvailable: null,
+    ytdlpAvailable: null,
+    notes: ['Desktop probing is not available on this platform.'],
   );
 }

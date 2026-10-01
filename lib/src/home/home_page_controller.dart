@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:m3u8_downloader/src/home/home_widgets.dart';
-import 'package:m3u8_downloader/src/rust/api/downloader.dart';
+import 'package:segmeris/src/home/home_widgets.dart';
+import 'package:segmeris/src/rust/api/downloader.dart';
 
 enum HomeWorkflowStage {
   idle,
@@ -619,6 +619,39 @@ class HomePageController extends ChangeNotifier {
       ),
       stage: HomeWorkflowStage.failed,
     );
+  }
+
+  bool retryDownloadTask(String id, {required String status}) {
+    final canRetry = _value.downloadTasks.any(
+      (task) => task.id == id && !task.running && task.error != null,
+    );
+    if (!canRetry) {
+      return false;
+    }
+
+    final tasks = _replaceTask(
+      id,
+      (task) => task.copyWith(
+        status: status,
+        progress: 0.02,
+        stage: HomeWorkflowStage.preparing,
+        running: true,
+        error: null,
+      ),
+    );
+    _apply(
+      _value.copyWith(
+        running: true,
+        error: null,
+        status: status,
+        progress: 0.02,
+        recoveryMessage: null,
+        retryAction: HomeRetryAction.download,
+        downloadTasks: tasks,
+      ),
+      stage: HomeWorkflowStage.preparing,
+    );
+    return true;
   }
 
   void finishDownload() {

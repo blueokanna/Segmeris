@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:m3u8_downloader/src/app/app_theme.dart';
-import 'package:m3u8_downloader/src/home/home_candidates_card.dart';
-import 'package:m3u8_downloader/src/rust/api/downloader.dart';
+import 'package:segmeris/src/app/app_theme.dart';
+import 'package:segmeris/src/home/home_candidates_card.dart';
+import 'package:segmeris/src/rust/api/downloader.dart';
 
 import '../widget_test_harness.dart';
 

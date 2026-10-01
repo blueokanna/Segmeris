@@ -1,7 +1,7 @@
 @echo off
-REM M3U8下载器 Docker构建脚本 (Windows)
+REM Segmeris Docker构建脚本 (Windows)
 
-echo 开始构建M3U8下载器Docker镜像...
+echo 开始构建Segmeris Docker镜像...
 
 REM 检查参数
 if "%1"=="" (
@@ -12,14 +12,14 @@ if "%1"=="" (
 
 if "%BUILD_TYPE%"=="desktop" (
     echo 构建桌面应用版本...
-    docker build -t m3u8-downloader:desktop -f Dockerfile .
+    docker build -t segmeris:desktop -f Dockerfile .
 ) else if "%BUILD_TYPE%"=="api" (
     echo 构建API服务版本...
-    docker build -t m3u8-downloader:api -f Dockerfile.api .
+    docker build -t segmeris:api -f Dockerfile.api .
 ) else if "%BUILD_TYPE%"=="all" (
     echo 构建所有版本...
-    docker build -t m3u8-downloader:desktop -f Dockerfile .
-    docker build -t m3u8-downloader:api -f Dockerfile.api .
+    docker build -t segmeris:desktop -f Dockerfile .
+    docker build -t segmeris:api -f Dockerfile.api .
 ) else (
     echo 用法: %0 [desktop^|api^|all]
     echo   desktop - 构建桌面GUI应用 (默认)
@@ -40,14 +40,14 @@ if %errorlevel% equ 0 (
     echo      -e DISPLAY=%%DISPLAY%% ^
     echo      -v /tmp/.X11-unix:/tmp/.X11-unix ^
     echo      -v %%cd%%\downloads:/app/downloads ^
-    echo      m3u8-downloader:desktop
+    echo      segmeris:desktop
     echo.
     echo 2. 使用docker-compose运行GUI版本：
     echo    docker-compose up -d
     echo.
     echo API服务版本：
     echo 1. 使用Docker直接运行API版本：
-    echo    docker run -p 3000:3000 -v %%cd%%\downloads:/app/downloads m3u8-downloader:api
+    echo    docker run -p 3000:3000 -v %%cd%%\downloads:/app/downloads segmeris:api
     echo.
     echo 2. 使用docker-compose运行API版本：
     echo    docker-compose --profile api up -d

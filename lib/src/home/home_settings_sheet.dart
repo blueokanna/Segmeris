@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:m3u8_downloader/src/app/app_localizations.dart';
-import 'package:m3u8_downloader/src/app/app_settings.dart';
-import 'package:m3u8_downloader/src/app/app_theme.dart';
-import 'package:m3u8_downloader/src/app/platform_utils.dart';
-import 'package:m3u8_downloader/src/app/runtime_capabilities.dart';
-import 'package:m3u8_downloader/src/home/auth_context_editor.dart';
-import 'package:m3u8_downloader/src/home/home_widgets.dart';
-import 'package:m3u8_downloader/src/rust/api/downloader.dart';
+import 'package:segmeris/src/app/app_localizations.dart';
+import 'package:segmeris/src/app/app_settings.dart';
+import 'package:segmeris/src/app/app_theme.dart';
+import 'package:segmeris/src/app/platform_utils.dart';
+import 'package:segmeris/src/app/runtime_capabilities.dart';
+import 'package:segmeris/src/home/auth_context_editor.dart';
+import 'package:segmeris/src/home/home_widgets.dart';
+import 'package:segmeris/src/rust/api/downloader.dart';
 
 class HomeSettingsSheet extends StatefulWidget {
   const HomeSettingsSheet({
@@ -108,7 +108,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
               delay: const Duration(milliseconds: 110),
               child: RuntimeCapabilitiesPanel(capabilities: _capabilities),
             ),
-            if (FerrisPlatform.isWeb) ...[
+            if (SegmerisPlatform.isWeb) ...[
               const SizedBox(height: 18),
               RevealMotion(
                 delay: const Duration(milliseconds: 125),
@@ -132,7 +132,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                         hintText: 'http://localhost:3000',
                         helperText: l.text('api_base_url_hint'),
                         border: OutlineInputBorder(
-                          borderRadius: FerrisShapes.of(context).md,
+                          borderRadius: SegmerisShapes.of(context).md,
                         ),
                       ),
                       onChanged: (value) {
@@ -153,7 +153,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                         hintText: 'Bearer token',
                         helperText: l.text('api_token_hint'),
                         border: OutlineInputBorder(
-                          borderRadius: FerrisShapes.of(context).md,
+                          borderRadius: SegmerisShapes.of(context).md,
                         ),
                       ),
                       onChanged: (value) {
@@ -183,7 +183,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                     curve: Curves.easeOutCubic,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      borderRadius: FerrisShapes.of(context).md,
+                      borderRadius: SegmerisShapes.of(context).md,
                       color: cs.surfaceContainerHigh.withValues(alpha: 0.52),
                     ),
                     child: SegmentedButton<ThemeMode>(
@@ -262,7 +262,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                           width: profile.id == item.id ? 20 : 6,
                           height: 6,
                           decoration: BoxDecoration(
-                            borderRadius: FerrisShapes.of(context).pill,
+                            borderRadius: SegmerisShapes.of(context).pill,
                             color: profile.id == item.id
                                 ? cs.primary
                                 : cs.outlineVariant,
@@ -281,7 +281,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                 curve: Curves.easeOutCubic,
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                  borderRadius: FerrisShapes.of(context).md,
+                  borderRadius: SegmerisShapes.of(context).md,
                   color: cs.surfaceContainerHigh.withValues(alpha: 0.52),
                 ),
                 child: Column(

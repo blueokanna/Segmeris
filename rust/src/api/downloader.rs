@@ -1,19 +1,19 @@
 #![allow(unused_imports, unused_variables, dead_code)]
-use crate::api::site_adapters::{SiteWarning, extractor_name_for_host, inspect_page_candidates};
-use crate::crypto::{Sha256, aes_128_cbc_decrypt, sha256};
+use crate::api::site_adapters::{extractor_name_for_host, inspect_page_candidates, SiteWarning};
+use crate::crypto::{aes_128_cbc_decrypt, sha256, Sha256};
 use crate::frb_generated::StreamSink;
 use crate::hls::{
-    AlternativeMedia, AlternativeMediaType, ByteRange, KeyMethod, Map, MasterPlaylist,
-    MediaPlaylist, Playlist, VariantStream, parse_playlist,
+    parse_playlist, AlternativeMedia, AlternativeMediaType, ByteRange, KeyMethod, Map,
+    MasterPlaylist, MediaPlaylist, Playlist, VariantStream,
 };
 use crate::net::SyncHttpClient;
 use crate::xml::{self, Element};
-use anyhow::{Context, Result, anyhow, bail};
-use ferrisload_core::{DOWNLOAD_PLAN_VERSION, DownloadPlan};
+use anyhow::{anyhow, bail, Context, Result};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{error, info, warn};
 use nextjson::Value;
 use regex::Regex;
+use segmeris_core::{DownloadPlan, DOWNLOAD_PLAN_VERSION};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -28,11 +28,11 @@ use url::Url;
 use uuid::Uuid;
 
 #[cfg(target_os = "android")]
+use jni::objects::{GlobalRef, JClass, JObject, JValue};
+#[cfg(target_os = "android")]
 use jni::JNIEnv;
 #[cfg(target_os = "android")]
 use jni::JavaVM;
-#[cfg(target_os = "android")]
-use jni::objects::{GlobalRef, JClass, JObject, JValue};
 
 pub(crate) type ProgressReporter = Arc<dyn Fn(ProgressUpdate) + Send + Sync>;
 
@@ -84,12 +84,11 @@ enum TranscoderKind {
 // FFI into the native iOS transcoder (`ios/Runner/VideoToolboxBridge.m`).
 //
 // The symbols are provided by the Runner app target, which links the Rust
-// static library; they only exist on iOS, hence the `cfg` gate. Edition 2024
-// requires extern blocks to be marked `unsafe`.
+// static library; they only exist on iOS, hence the `cfg` gate.
 #[cfg(target_os = "ios")]
 unsafe extern "C" {
-    fn ferrisload_videotoolbox_available() -> i32;
-    fn ferrisload_videotoolbox_transcode(
+    fn segmeris_videotoolbox_available() -> i32;
+    fn segmeris_videotoolbox_transcode(
         input: *const std::os::raw::c_char,
         output: *const std::os::raw::c_char,
         video_bitrate: i32,
@@ -98,7 +97,7 @@ unsafe extern "C" {
         errbuf: *mut std::os::raw::c_char,
         errbuf_len: usize,
     ) -> i32;
-    fn ferrisload_videotoolbox_mux(
+    fn segmeris_videotoolbox_mux(
         video: *const std::os::raw::c_char,
         audio: *const std::os::raw::c_char,
         output: *const std::os::raw::c_char,
@@ -106,7 +105,7 @@ unsafe extern "C" {
         errbuf: *mut std::os::raw::c_char,
         errbuf_len: usize,
     ) -> i32;
-    fn ferrisload_videotoolbox_merge_segments(
+    fn segmeris_videotoolbox_merge_segments(
         dir: *const std::os::raw::c_char,
         prefix: *const std::os::raw::c_char,
         count: i32,
@@ -127,20 +126,20 @@ mod ios_videotoolbox {
     use std::os::raw::c_char;
     use std::time::Duration;
 
-    use anyhow::{Context, Result, anyhow};
+    use anyhow::{anyhow, Context, Result};
 
     // The `extern "C"` items live in the parent module; bring them into scope
     // explicitly (they do not resolve through parent-module lookup).
     use super::{
-        ferrisload_videotoolbox_available, ferrisload_videotoolbox_merge_segments,
-        ferrisload_videotoolbox_mux, ferrisload_videotoolbox_transcode,
+        segmeris_videotoolbox_available, segmeris_videotoolbox_merge_segments,
+        segmeris_videotoolbox_mux, segmeris_videotoolbox_transcode,
     };
 
     const ERROR_BUF_LEN: usize = 512;
 
     pub fn available() -> bool {
         // SAFETY: no arguments; a plain boolean probe into a fixed symbol.
-        unsafe { ferrisload_videotoolbox_available() != 0 }
+        unsafe { segmeris_videotoolbox_available() != 0 }
     }
 
     fn take_error(errbuf: &[c_char]) -> String {
@@ -163,12 +162,12 @@ mod ios_videotoolbox {
         let expected_ms = (expected_duration.unwrap_or(0.0) * 1000.0).round() as i64;
         let (tx, rx) = std::sync::mpsc::channel::<Result<()>>();
         std::thread::Builder::new()
-            .name("ferrisload-ios-videotoolbox".into())
+            .name("segmeris-ios-videotoolbox".into())
             .spawn(move || {
                 let result = (|| {
                     let mut errbuf = [0 as c_char; ERROR_BUF_LEN];
                     let ok = unsafe {
-                        ferrisload_videotoolbox_transcode(
+                        segmeris_videotoolbox_transcode(
                             input_c.as_ptr(),
                             output_c.as_ptr(),
                             video_bitrate as i32,
@@ -211,12 +210,12 @@ mod ios_videotoolbox {
         let expected_ms = (expected_duration.unwrap_or(0.0) * 1000.0).round() as i64;
         let (tx, rx) = std::sync::mpsc::channel::<Result<()>>();
         std::thread::Builder::new()
-            .name("ferrisload-ios-videotoolbox-mux".into())
+            .name("segmeris-ios-videotoolbox-mux".into())
             .spawn(move || {
                 let result = (|| {
                     let mut errbuf = [0 as c_char; ERROR_BUF_LEN];
                     let ok = unsafe {
-                        ferrisload_videotoolbox_mux(
+                        segmeris_videotoolbox_mux(
                             video_c.as_ptr(),
                             audio_c.as_ptr(),
                             output_c.as_ptr(),
@@ -264,12 +263,12 @@ mod ios_videotoolbox {
         let count_i32 = i32::try_from(count).context("too many iOS segments")?;
         let (tx, rx) = std::sync::mpsc::channel::<Result<()>>();
         std::thread::Builder::new()
-            .name("ferrisload-ios-videotoolbox-merge".into())
+            .name("segmeris-ios-videotoolbox-merge".into())
             .spawn(move || {
                 let result = (|| {
                     let mut errbuf = [0 as c_char; ERROR_BUF_LEN];
                     let ok = unsafe {
-                        ferrisload_videotoolbox_merge_segments(
+                        segmeris_videotoolbox_merge_segments(
                             dir_c.as_ptr(),
                             prefix_c.as_ptr(),
                             count_i32,
@@ -337,7 +336,7 @@ fn command_with_timeout(
     )));
     let child_for_thread = child.clone();
     let handle = std::thread::Builder::new()
-        .name("ferrisload-command".into())
+        .name("segmeris-command".into())
         .spawn(move || {
             let child = child_for_thread.lock().unwrap().take();
             match child {
@@ -360,10 +359,10 @@ fn command_with_timeout(
         Err(_) => {
             // Timeout: kill the child if it still exists, then wait for
             // the worker to finish draining pipes.
-            if let Ok(mut guard) = child.lock()
-                && let Some(child) = guard.as_mut()
-            {
-                let _ = child.kill();
+            if let Ok(mut guard) = child.lock() {
+                if let Some(child) = guard.as_mut() {
+                    let _ = child.kill();
+                }
             }
             let _ = handle.join();
             None
@@ -381,7 +380,7 @@ const FFMPEG_TIMEOUT_EXIT: i32 = 124;
 fn failed_exit_status() -> std::process::ExitStatus {
     static FAILED: std::sync::OnceLock<std::process::ExitStatus> = std::sync::OnceLock::new();
     *FAILED.get_or_init(|| {
-        std::process::Command::new("ferrisload-ffmpeg-timeout-sentinel")
+        std::process::Command::new("segmeris-ffmpeg-timeout-sentinel")
             .status()
             .ok()
             .filter(|status| !status.success())
@@ -467,11 +466,11 @@ fn resolve_ffmpeg_path() -> Option<PathBuf> {
     if let Some(configured) = env::var_os("FERRISLOAD_FFMPEG_PATH") {
         candidates.push(PathBuf::from(configured));
     }
-    if let Ok(current_exe) = env::current_exe()
-        && let Some(directory) = current_exe.parent()
-    {
-        candidates.push(directory.join("tools").join(executable_name));
-        candidates.push(directory.join(executable_name));
+    if let Ok(current_exe) = env::current_exe() {
+        if let Some(directory) = current_exe.parent() {
+            candidates.push(directory.join("tools").join(executable_name));
+            candidates.push(directory.join(executable_name));
+        }
     }
     candidates.push(PathBuf::from(executable_name));
 
@@ -494,17 +493,17 @@ fn resolve_ytdlp_command() -> Option<ExternalCommandSpec> {
             prefix_args: Vec::new(),
         });
     }
-    if let Ok(current_exe) = env::current_exe()
-        && let Some(directory) = current_exe.parent()
-    {
-        candidates.push(ExternalCommandSpec {
-            program: directory.join("tools").join(executable_name),
-            prefix_args: Vec::new(),
-        });
-        candidates.push(ExternalCommandSpec {
-            program: directory.join(executable_name),
-            prefix_args: Vec::new(),
-        });
+    if let Ok(current_exe) = env::current_exe() {
+        if let Some(directory) = current_exe.parent() {
+            candidates.push(ExternalCommandSpec {
+                program: directory.join("tools").join(executable_name),
+                prefix_args: Vec::new(),
+            });
+            candidates.push(ExternalCommandSpec {
+                program: directory.join(executable_name),
+                prefix_args: Vec::new(),
+            });
+        }
     }
     if let Ok(cached) = ytdlp_cache_path() {
         candidates.push(ExternalCommandSpec {
@@ -558,14 +557,14 @@ fn ytdlp_cache_path() -> Result<PathBuf> {
         env::var_os("LOCALAPPDATA")
             .map(PathBuf::from)
             .unwrap_or_else(env::temp_dir)
-            .join("FerrisLoad")
+            .join("Segmeris")
     } else if cfg!(target_os = "macos") {
         env::var_os("HOME")
             .map(PathBuf::from)
             .unwrap_or_else(env::temp_dir)
             .join("Library")
             .join("Application Support")
-            .join("FerrisLoad")
+            .join("Segmeris")
     } else {
         env::var_os("XDG_DATA_HOME")
             .map(PathBuf::from)
@@ -573,7 +572,7 @@ fn ytdlp_cache_path() -> Result<PathBuf> {
                 env::var_os("HOME").map(|home| PathBuf::from(home).join(".local").join("share"))
             })
             .unwrap_or_else(env::temp_dir)
-            .join("ferrisload")
+            .join("segmeris")
     };
     let executable = if cfg!(target_os = "windows") {
         "yt-dlp.exe"
@@ -841,7 +840,7 @@ impl AndroidMediaCodecTranscoder {
             .clone();
         let (tx, rx) = std::sync::mpsc::channel::<Result<T>>();
         std::thread::Builder::new()
-            .name("ferrisload-jni".into())
+            .name("segmeris-jni".into())
             .spawn(move || {
                 let result = (|| {
                     let _guard = gate
@@ -1118,11 +1117,7 @@ fn media_transcoder_class<'local>(env: &mut JNIEnv<'local>) -> Result<JClass<'lo
         .map_err(|e| anyhow!("Failed to get ClassLoader: {:?}", e))?
         .l()
         .map_err(|e| anyhow!("ClassLoader is not an object: {:?}", e))?;
-    let class_name = jni_string!(
-        env,
-        "com.bluevale.m3u8_downloader.MediaTranscoder",
-        "class_name"
-    );
+    let class_name = jni_string!(env, "com.bluevale.segmeris.MediaTranscoder", "class_name");
     let loaded_class = env
         .call_method(
             &class_loader,
@@ -1551,15 +1546,16 @@ pub(crate) fn inspect_media_with_context_sync(
             &request_context,
             &mut collector,
             &mut warnings,
-        ) && !had_candidates
-        {
-            warnings.push(SiteWarning::site(
-                "bilibili-playurl-fallback-failed",
-                format!(
-                    "Bilibili playurl API could not resolve this video: {}",
-                    error
-                ),
-            ));
+        ) {
+            if !had_candidates {
+                warnings.push(SiteWarning::site(
+                    "bilibili-playurl-fallback-failed",
+                    format!(
+                        "Bilibili playurl API could not resolve this video: {}",
+                        error
+                    ),
+                ));
+            }
         }
     }
 
@@ -1584,22 +1580,22 @@ pub(crate) fn inspect_media_with_context_sync(
 
     let candidates = score_candidates(collector.finish(), &request_context);
 
-    if candidates.is_empty()
-        && let Some(auth_warning) = warnings.iter().find(|warning| warning.scope() == "auth")
-    {
-        let challenge_reason = auth_warning.message().to_string();
-        return Ok(MediaInspectionResult {
-            page_url: url,
-            page_title,
-            extractor,
-            candidates,
-            warnings: warnings
-                .into_iter()
-                .map(SiteWarning::into_display)
-                .collect(),
-            auth_required: true,
-            challenge_reason,
-        });
+    if candidates.is_empty() {
+        if let Some(auth_warning) = warnings.iter().find(|warning| warning.scope() == "auth") {
+            let challenge_reason = auth_warning.message().to_string();
+            return Ok(MediaInspectionResult {
+                page_url: url,
+                page_title,
+                extractor,
+                candidates,
+                warnings: warnings
+                    .into_iter()
+                    .map(SiteWarning::into_display)
+                    .collect(),
+                auth_required: true,
+                challenge_reason,
+            });
+        }
     }
 
     if candidates.is_empty() {
@@ -1980,7 +1976,10 @@ fn run_ytdlp_site_pipeline(
         bail!("FFmpeg is required when bitrate controls request re-encoding");
     }
 
-    let (output_path, temp_dir) = prepare_output_path(output)?;
+    let mut resume_identity = page_url.as_bytes().to_vec();
+    resume_identity.push(0);
+    resume_identity.extend_from_slice(media_url.as_bytes());
+    let (output_path, temp_dir) = prepare_output_path(output, &resume_identity)?;
     let download_template = if requires_reencode {
         temp_dir.join("site_input.%(ext)s")
     } else {
@@ -2419,7 +2418,12 @@ pub(crate) fn download_media_with_context_core(
     let page_url = Url::parse(&page_url).ok();
     let client =
         create_http_client_for_context(page_url.as_ref().map(Url::as_str), &request_context)?;
-    let (output_path, temp_dir) = prepare_output_path(&output)?;
+    let mut resume_identity = media_url.as_bytes().to_vec();
+    if let Some(audio_url) = &audio_url {
+        resume_identity.push(0);
+        resume_identity.extend_from_slice(audio_url.as_bytes());
+    }
+    let (output_path, temp_dir) = prepare_output_path(&output, &resume_identity)?;
     // Build the authenticated headers once and reuse them for every
     // stream so Referer/Origin/Cookie stay consistent across retries.
     let headers = match page_url.as_ref() {
@@ -2441,6 +2445,7 @@ pub(crate) fn download_media_with_context_core(
                 &media_url,
                 &headers,
                 &video_temp,
+                true,
                 retries.max(1) as u8,
                 0.04,
                 0.44,
@@ -2452,6 +2457,7 @@ pub(crate) fn download_media_with_context_core(
                 &audio,
                 &headers,
                 &audio_temp,
+                true,
                 retries.max(1) as u8,
                 0.46,
                 0.80,
@@ -2481,6 +2487,7 @@ pub(crate) fn download_media_with_context_core(
                     &media_url,
                     &headers,
                     &output_path,
+                    false,
                     retries.max(1) as u8,
                     0.04,
                     0.92,
@@ -2494,6 +2501,7 @@ pub(crate) fn download_media_with_context_core(
                     &media_url,
                     &headers,
                     &temp_input,
+                    true,
                     retries.max(1) as u8,
                     0.04,
                     0.72,
@@ -2533,7 +2541,7 @@ fn run_dash_pipeline(
     emit_progress(reporter, "Resolving DASH manifest...", 0.02);
 
     let plan = resolve_dash_download_plan(manifest_url, request_context)?;
-    let (output_path, temp_dir) = prepare_output_path(output)?;
+    let (output_path, temp_dir) = prepare_output_path(output, manifest_url.as_bytes())?;
 
     let client = create_http_client_for_context(Some(&plan.video_url), request_context)?;
     let retries = retries.max(1) as u8;
@@ -2547,6 +2555,7 @@ fn run_dash_pipeline(
         &plan.video_url,
         &headers,
         &video_temp,
+        true,
         retries,
         0.04,
         0.46,
@@ -2564,6 +2573,7 @@ fn run_dash_pipeline(
                 &audio_url,
                 &headers,
                 &audio_temp,
+                true,
                 retries,
                 0.48,
                 0.78,
@@ -2637,12 +2647,12 @@ pub(crate) fn run_hls_pipeline(
     // file) when the output's parent directory does not exist — e.g. when the
     // external files dir has not been materialised yet. Create it up-front so
     // a missing directory can never cause a spurious "no output file".
-    if let Some(parent) = Path::new(output).parent()
-        && !parent.as_os_str().is_empty()
-        && !parent.exists()
-    {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create output directory: {}", parent.display()))?;
+    if let Some(parent) = Path::new(output).parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create output directory: {}", parent.display())
+            })?;
+        }
     }
 
     let concurrency = concurrency.max(1) as usize;
@@ -2747,7 +2757,10 @@ pub(crate) fn run_hls_pipeline(
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."))
     };
-    let temp_dir = create_unique_temp_dir(&temp_root, Path::new(output))?;
+    let mut resume_identity = url.as_bytes().to_vec();
+    resume_identity.push(0);
+    resume_identity.extend_from_slice(&m3u8_content);
+    let temp_dir = create_resume_temp_dir(&temp_root, Path::new(output), &resume_identity)?;
 
     let temp_primary = temp_dir.join("temp_primary.ts");
     let temp_primary_str = temp_primary.to_string_lossy().to_string();
@@ -3141,10 +3154,10 @@ fn normalize_source_url(input: &str) -> Result<String> {
         bail!("Source URL is empty");
     }
 
-    if let Ok(url) = Url::parse(input)
-        && matches!(url.scheme(), "http" | "https")
-    {
-        return Ok(url.to_string());
+    if let Ok(url) = Url::parse(input) {
+        if matches!(url.scheme(), "http" | "https") {
+            return Ok(url.to_string());
+        }
     }
 
     let url_pattern = Regex::new(r#"https?://[^\s<>\"']+"#)?;
@@ -3240,17 +3253,18 @@ fn protocol_from_url(url: &str) -> String {
 }
 
 fn container_from_url(url: &str) -> String {
-    if let Ok(parsed) = Url::parse(url)
-        && let Some((_, mime)) = parsed
+    if let Ok(parsed) = Url::parse(url) {
+        if let Some((_, mime)) = parsed
             .query_pairs()
             .find(|(name, _)| name == "mime" || name == "type")
-    {
-        let mime = mime.to_ascii_lowercase();
-        if mime.contains("mp4") {
-            return "mp4".to_string();
-        }
-        if mime.contains("webm") {
-            return "webm".to_string();
+        {
+            let mime = mime.to_ascii_lowercase();
+            if mime.contains("mp4") {
+                return "mp4".to_string();
+            }
+            if mime.contains("webm") {
+                return "webm".to_string();
+            }
         }
     }
     let without_query = url.split('?').next().unwrap_or(url);
@@ -3281,7 +3295,7 @@ fn mime_from_urls(split_streams: bool) -> &'static str {
     }
 }
 
-fn prepare_output_path(output: &str) -> Result<(PathBuf, PathBuf)> {
+fn prepare_output_path(output: &str, resume_identity: &[u8]) -> Result<(PathBuf, PathBuf)> {
     let output_path = PathBuf::from(output);
     let output_dir = output_path
         .parent()
@@ -3297,11 +3311,15 @@ fn prepare_output_path(output: &str) -> Result<(PathBuf, PathBuf)> {
         })?;
     }
 
-    let temp_dir = create_unique_temp_dir(&output_dir, &output_path)?;
+    let temp_dir = create_resume_temp_dir(&output_dir, &output_path, resume_identity)?;
     Ok((output_path, temp_dir))
 }
 
-fn create_unique_temp_dir(root: &Path, output_path: &Path) -> Result<PathBuf> {
+fn create_resume_temp_dir(
+    root: &Path,
+    output_path: &Path,
+    resume_identity: &[u8],
+) -> Result<PathBuf> {
     if !root.exists() {
         std::fs::create_dir_all(root)
             .with_context(|| format!("Failed to create temporary root: {}", root.display()))?;
@@ -3322,11 +3340,11 @@ fn create_unique_temp_dir(root: &Path, output_path: &Path) -> Result<PathBuf> {
         })
         .take(48)
         .collect::<String>();
-    let temp_dir = root.join(format!(
-        ".ferrisload-{}-{}",
-        safe_stem,
-        Uuid::new_v4().simple()
-    ));
+    let mut identity = output_path.to_string_lossy().as_bytes().to_vec();
+    identity.push(0);
+    identity.extend_from_slice(resume_identity);
+    let digest = crate::crypto::sha256_hex(&identity);
+    let temp_dir = root.join(format!(".segmeris-{}-{}", safe_stem, &digest[..24]));
     std::fs::create_dir_all(&temp_dir).with_context(|| {
         format!(
             "Failed to create temporary directory: {}",
@@ -3472,6 +3490,11 @@ fn ensure_output_file_ready(path: &Path) -> Result<()> {
                 path.display()
             );
         }
+    } else {
+        warn!(
+            "ffprobe is unavailable; output passed only basic file checks and its video track was not verified: {}",
+            path.display()
+        );
     }
     Ok(())
 }
@@ -3489,6 +3512,209 @@ fn human_bytes(bytes: u64) -> String {
     } else {
         format!("{:.1} {}", value, UNITS[unit])
     }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct ResumableMetadata {
+    etag: Option<String>,
+    last_modified: Option<String>,
+    total_length: Option<u64>,
+}
+
+impl ResumableMetadata {
+    fn if_range_value(&self) -> Option<&str> {
+        self.etag.as_deref().or(self.last_modified.as_deref())
+    }
+
+    fn has_resume_validator(&self) -> bool {
+        self.etag.is_some() || self.last_modified.is_some()
+    }
+}
+
+fn resumable_metadata_path(partial_path: &Path) -> PathBuf {
+    let mut name = partial_path.file_name().unwrap_or_default().to_os_string();
+    name.push(".meta");
+    partial_path.with_file_name(name)
+}
+
+fn response_header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(header_name, _)| header_name.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.trim())
+}
+
+fn resumable_metadata_from_response(
+    headers: &[(String, String)],
+    total_length: Option<u64>,
+) -> ResumableMetadata {
+    let etag = response_header(headers, "etag")
+        .filter(|value| !value.to_ascii_lowercase().starts_with("w/"))
+        .map(str::to_string);
+    ResumableMetadata {
+        etag,
+        last_modified: response_header(headers, "last-modified").map(str::to_string),
+        total_length,
+    }
+}
+
+fn resumable_metadata_matches_response(
+    saved: &ResumableMetadata,
+    headers: &[(String, String)],
+    response_total: Option<u64>,
+) -> bool {
+    let validator_matches = match saved.etag.as_deref() {
+        Some(saved_etag) => response_header(headers, "etag") == Some(saved_etag),
+        None => match saved.last_modified.as_deref() {
+            Some(saved_last_modified) => {
+                response_header(headers, "last-modified") == Some(saved_last_modified)
+            }
+            None => true,
+        },
+    };
+    if !validator_matches {
+        return false;
+    }
+    if saved
+        .total_length
+        .zip(response_total)
+        .is_some_and(|(saved_total, current_total)| saved_total != current_total)
+    {
+        return false;
+    }
+    if let (Some(saved_etag), Some(response_etag)) =
+        (saved.etag.as_deref(), response_header(headers, "etag"))
+    {
+        if saved_etag != response_etag {
+            return false;
+        }
+    }
+    if let (Some(saved_last_modified), Some(response_last_modified)) = (
+        saved.last_modified.as_deref(),
+        response_header(headers, "last-modified"),
+    ) {
+        if saved_last_modified != response_last_modified {
+            return false;
+        }
+    }
+    true
+}
+
+fn read_resumable_metadata(partial_path: &Path) -> Option<ResumableMetadata> {
+    let contents = std::fs::read_to_string(resumable_metadata_path(partial_path)).ok()?;
+    let mut lines = contents.lines();
+    if lines.next() != Some("v1") {
+        return None;
+    }
+    let total_length = match lines.next()? {
+        "" => None,
+        value => Some(value.parse::<u64>().ok()?),
+    };
+    let etag = lines
+        .next()
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let last_modified = lines
+        .next()
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    if lines.next().is_some() {
+        return None;
+    }
+    Some(ResumableMetadata {
+        etag,
+        last_modified,
+        total_length,
+    })
+}
+
+fn write_resumable_metadata(partial_path: &Path, metadata: &ResumableMetadata) -> Result<()> {
+    for value in [metadata.etag.as_deref(), metadata.last_modified.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        if value.contains(['\r', '\n']) {
+            bail!("Invalid line break in media response validator");
+        }
+    }
+
+    let metadata_path = resumable_metadata_path(partial_path);
+    let token = Uuid::new_v4().simple().to_string();
+    let temporary_path = metadata_path.with_file_name(format!(
+        "{}.tmp-{}",
+        metadata_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy(),
+        token
+    ));
+    let contents = format!(
+        "v1\n{}\n{}\n{}\n",
+        metadata
+            .total_length
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
+        metadata.etag.as_deref().unwrap_or_default(),
+        metadata.last_modified.as_deref().unwrap_or_default(),
+    );
+
+    let result = (|| -> Result<()> {
+        let mut file = std::fs::File::create(&temporary_path)?;
+        file.write_all(contents.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        match std::fs::remove_file(&metadata_path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        std::fs::rename(&temporary_path, &metadata_path)?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(temporary_path);
+    }
+    result.with_context(|| {
+        format!(
+            "Failed to persist media resume metadata: {}",
+            metadata_path.display()
+        )
+    })
+}
+
+fn clear_resumable_partial(partial_path: &Path) -> Result<()> {
+    for path in [
+        partial_path.to_path_buf(),
+        resumable_metadata_path(partial_path),
+    ] {
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("Failed to clear stale partial file: {}", path.display())
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_complete_unsatisfied_range(range: ContentRange, downloaded: u64) -> bool {
+    range.start.is_none()
+        && range.end.is_none()
+        && range.total == Some(downloaded)
+        && downloaded > 0
+}
+
+fn range_response_has_safe_resume_identity(
+    metadata: &ResumableMetadata,
+    start: u64,
+    total: Option<u64>,
+    response_length: u64,
+) -> bool {
+    metadata.has_resume_validator() || (start == 0 && total == Some(response_length))
 }
 
 /// Stream a large payload to `path` using bounded Range chunks.
@@ -3510,114 +3736,217 @@ fn stream_media_response_to_file(
 ) -> Result<()> {
     const CHUNK: u64 = 8 * 1024 * 1024;
 
-    let mut output = std::fs::File::create(path)
-        .with_context(|| format!("Failed to create media file: {}", path.display()))?;
-    let mut downloaded = 0u64;
+    let partial_path = resumable_partial_path(path, url, headers);
+    let mut downloaded = std::fs::metadata(&partial_path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0);
+    let mut resume_metadata = if downloaded > 0 {
+        match read_resumable_metadata(&partial_path) {
+            Some(metadata) if metadata.has_resume_validator() => Some(metadata),
+            None => {
+                clear_resumable_partial(&partial_path)?;
+                downloaded = 0;
+                None
+            }
+            Some(_) => {
+                clear_resumable_partial(&partial_path)?;
+                downloaded = 0;
+                None
+            }
+        }
+    } else {
+        None
+    };
     let mut last_reported = 0u64;
     emit_progress(reporter, label, progress_start);
 
-    // First request asks for a bounded first chunk (Range). A server that
-    // honors Range answers `206` with a partial body; one that ignores it
-    // answers `200` with the whole body. Both cases are handled below.
-    let (first_status, first_headers, first_body) = client.get_range(url, headers, 0, CHUNK - 1)?;
-    if !(200..300).contains(&first_status) {
-        bail!("Media request returned HTTP {}", first_status);
-    }
-    // Reject HTML/JSON responses that indicate a captcha or error page.
-    if let Some(content_type) = first_headers
-        .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
-        .map(|(_, value)| value.to_ascii_lowercase())
-        && (content_type.starts_with("text/html")
-            || content_type.starts_with("application/json")
-            || content_type.starts_with("text/json"))
-    {
-        bail!(
-            "Media request returned non-media content type {}",
-            content_type
-        );
-    }
+    loop {
+        let start = downloaded;
+        let end = start.saturating_add(CHUNK - 1);
+        let mut range_headers = headers.to_vec();
+        if start > 0 {
+            if let Some(if_range) = resume_metadata
+                .as_ref()
+                .and_then(ResumableMetadata::if_range_value)
+            {
+                range_headers.retain(|(name, _)| !name.eq_ignore_ascii_case("if-range"));
+                range_headers.push(("If-Range".to_string(), if_range.to_string()));
+            }
+        }
+        let (status, response_headers, body) = client.get_range(url, &range_headers, start, end)?;
+        if let Some(content_type) = response_headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+            .map(|(_, value)| value.to_ascii_lowercase())
+        {
+            if content_type.starts_with("text/html")
+                || content_type.starts_with("application/json")
+                || content_type.starts_with("text/json")
+            {
+                bail!(
+                    "Media request returned non-media content type {}",
+                    content_type
+                );
+            }
+        }
 
-    let total = first_headers
-        .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
-        .and_then(|(_, value)| value.trim().parse::<u64>().ok());
+        if status == 416 {
+            let range = parse_content_range(&response_headers)?;
+            let validators_match = resume_metadata.as_ref().map_or(true, |saved| {
+                resumable_metadata_matches_response(saved, &response_headers, range.total)
+            });
+            if is_complete_unsatisfied_range(range, downloaded) && validators_match {
+                replace_download_output(&partial_path, path)?;
+                let _ = std::fs::remove_file(resumable_metadata_path(&partial_path));
+                break;
+            }
+            if start > 0 {
+                clear_resumable_partial(&partial_path)?;
+                downloaded = 0;
+                resume_metadata = None;
+                continue;
+            }
+            bail!("Media Range request returned HTTP 416 at byte {}", start);
+        }
+        if !(200..300).contains(&status) {
+            bail!("Media request returned HTTP {}", status);
+        }
 
-    let write_and_report = |output: &mut std::fs::File,
-                            data: &[u8],
-                            downloaded: &mut u64,
-                            last_reported: &mut u64|
-     -> Result<()> {
-        output.write_all(data)?;
-        *downloaded = downloaded.saturating_add(data.len() as u64);
-        if downloaded.saturating_sub(*last_reported) >= 512 * 1024 {
+        let total = if status == 206 {
+            let range = parse_content_range(&response_headers)?;
+            if range.start != Some(start) {
+                clear_resumable_partial(&partial_path)?;
+                bail!(
+                    "Media Range response did not start at requested byte {}",
+                    start
+                );
+            }
+            let range_end = range
+                .end
+                .ok_or_else(|| anyhow!("Media Range response omitted its end offset"))?;
+            let range_length = range_end
+                .checked_sub(start)
+                .and_then(|length| length.checked_add(1));
+            if range_end > end || range_length != Some(body.len() as u64) {
+                bail!(
+                    "Media Range response length mismatch: received {} bytes for {}-{}",
+                    body.len(),
+                    start,
+                    range_end
+                );
+            }
+            range.total
+        } else {
+            if start > 0 {
+                downloaded = 0;
+            }
+            response_headers
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                .and_then(|(_, value)| value.trim().parse::<u64>().ok())
+        };
+
+        if body.is_empty() {
+            bail!("Media response was empty at byte {}", start);
+        }
+        if status == 206
+            && start > 0
+            && resume_metadata.as_ref().is_some_and(|saved| {
+                !resumable_metadata_matches_response(saved, &response_headers, total)
+            })
+        {
+            clear_resumable_partial(&partial_path)?;
+            downloaded = 0;
+            resume_metadata = None;
+            continue;
+        }
+        let response_metadata = resumable_metadata_from_response(&response_headers, total);
+        let mut next_metadata = if status == 200 || start == 0 {
+            response_metadata
+        } else {
+            let mut metadata = resume_metadata.clone().unwrap_or_default();
+            if metadata.etag.is_none() {
+                metadata.etag = response_metadata.etag;
+            }
+            if metadata.last_modified.is_none() {
+                metadata.last_modified = response_metadata.last_modified;
+            }
+            if metadata.total_length.is_none() {
+                metadata.total_length = response_metadata.total_length;
+            }
+            metadata
+        };
+        if status == 200 {
+            next_metadata.total_length = total;
+        }
+        if status == 206
+            && !range_response_has_safe_resume_identity(
+                &next_metadata,
+                start,
+                total,
+                body.len() as u64,
+            )
+        {
+            clear_resumable_partial(&partial_path)?;
+            bail!("Range response omitted ETag and Last-Modified; safe multi-part resumption is unavailable");
+        }
+        write_resumable_metadata(&partial_path, &next_metadata)?;
+        resume_metadata = Some(next_metadata);
+        let mut output = if status == 200 {
+            std::fs::File::create(&partial_path)
+        } else {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&partial_path)
+        }
+        .with_context(|| format!("Failed to create media file: {}", partial_path.display()))?;
+        output.write_all(&body)?;
+        output.flush()?;
+        output.sync_data()?;
+        downloaded = downloaded.saturating_add(body.len() as u64);
+
+        if total.is_some_and(|total| downloaded > total) {
+            bail!("Media response exceeded its declared total length");
+        }
+        if total.is_some_and(|total| downloaded == total) {
+            replace_download_output(&partial_path, path)?;
+            let _ = std::fs::remove_file(resumable_metadata_path(&partial_path));
+            break;
+        }
+        if status == 200 {
+            if let Some(total) = total {
+                bail!(
+                    "Media response was truncated: expected {} bytes, received {}",
+                    total,
+                    downloaded
+                );
+            }
+            replace_download_output(&partial_path, path)?;
+            let _ = std::fs::remove_file(resumable_metadata_path(&partial_path));
+            break;
+        }
+        if total.is_none() && (body.len() as u64) < CHUNK {
+            bail!("Media server omitted the total length; completion cannot be verified");
+        }
+
+        if downloaded.saturating_sub(last_reported) >= 512 * 1024 {
             let progress = total
                 .filter(|total| *total > 0)
                 .map(|total| {
                     progress_start
-                        + (*downloaded as f64 / total as f64).clamp(0.0, 1.0)
+                        + (downloaded as f64 / total as f64).clamp(0.0, 1.0)
                             * (progress_end - progress_start)
                 })
                 .unwrap_or(progress_start);
             let detail = total
-                .map(|total| format!("{} / {}", human_bytes(*downloaded), human_bytes(total)))
-                .unwrap_or_else(|| human_bytes(*downloaded));
+                .map(|total| format!("{} / {}", human_bytes(downloaded), human_bytes(total)))
+                .unwrap_or_else(|| human_bytes(downloaded));
             emit_progress(reporter, format!("{} [{}]", label, detail), progress);
-            *last_reported = *downloaded;
+            last_reported = downloaded;
         }
-        Ok(())
-    };
-
-    if first_status == 206 {
-        // Server honors Range: write the first chunk, then pull the rest.
-        if !first_body.is_empty() {
-            write_and_report(
-                &mut output,
-                &first_body,
-                &mut downloaded,
-                &mut last_reported,
-            )?;
-        }
-        let total = total.unwrap_or(0);
-        let mut offset = first_body.len() as u64;
-        while total == 0 || offset < total {
-            let end = if total > 0 {
-                (offset + CHUNK - 1).min(total - 1)
-            } else {
-                offset + CHUNK - 1
-            };
-            let (status, _, body) = client.get_range(url, headers, offset, end)?;
-            if !(200..300).contains(&status) {
-                bail!("Media Range request returned HTTP {}", status);
-            }
-            if body.is_empty() {
-                break;
-            }
-            write_and_report(&mut output, &body, &mut downloaded, &mut last_reported)?;
-            offset = offset.saturating_add(body.len() as u64);
-            // Stop when we have reached the declared length, or when the
-            // server returned a short chunk with no declared length.
-            if total > 0 && offset >= total {
-                break;
-            }
-            if total == 0 && (body.len() as u64) < CHUNK {
-                break;
-            }
-        }
-    } else {
-        // Server ignored Range and returned the whole body in one shot.
-        write_and_report(
-            &mut output,
-            &first_body,
-            &mut downloaded,
-            &mut last_reported,
-        )?;
     }
 
-    output.flush()?;
-    if downloaded == 0 {
-        bail!("Media response was empty");
-    }
     emit_progress(
         reporter,
         format!("{} [{}]", label, human_bytes(downloaded)),
@@ -3626,20 +3955,129 @@ fn stream_media_response_to_file(
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ContentRange {
+    start: Option<u64>,
+    end: Option<u64>,
+    total: Option<u64>,
+}
+
+fn parse_content_range(headers: &[(String, String)]) -> Result<ContentRange> {
+    let value = headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("content-range"))
+        .map(|(_, value)| value.trim())
+        .ok_or_else(|| anyhow!("Media server omitted the Content-Range header"))?;
+    let (unit, value) = value
+        .split_once(' ')
+        .ok_or_else(|| anyhow!("Invalid Content-Range header"))?;
+    if !unit.eq_ignore_ascii_case("bytes") {
+        bail!("Unsupported Content-Range unit: {}", unit);
+    }
+    let (range, total) = value
+        .split_once('/')
+        .ok_or_else(|| anyhow!("Invalid Content-Range header"))?;
+    let total = if total == "*" {
+        None
+    } else {
+        Some(
+            total
+                .parse::<u64>()
+                .context("Invalid Content-Range total length")?,
+        )
+    };
+    if range == "*" {
+        return Ok(ContentRange {
+            start: None,
+            end: None,
+            total,
+        });
+    }
+    let (start, end) = range
+        .split_once('-')
+        .ok_or_else(|| anyhow!("Invalid Content-Range byte interval"))?;
+    let start = start
+        .parse::<u64>()
+        .context("Invalid Content-Range start offset")?;
+    let end = end
+        .parse::<u64>()
+        .context("Invalid Content-Range end offset")?;
+    if end < start || total.is_some_and(|total| end >= total) {
+        bail!("Invalid Content-Range bounds");
+    }
+    Ok(ContentRange {
+        start: Some(start),
+        end: Some(end),
+        total,
+    })
+}
+
+fn resumable_partial_path(path: &Path, url: &str, headers: &[(String, String)]) -> PathBuf {
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("download");
+    let mut hasher = Sha256::new();
+    for value in std::iter::once(url).chain(
+        headers
+            .iter()
+            .flat_map(|(name, value)| [name.as_str(), value.as_str()]),
+    ) {
+        hasher.update(&(value.len() as u64).to_be_bytes());
+        hasher.update(value.as_bytes());
+    }
+    let identity = hex::encode(hasher.finalize());
+    path.with_file_name(format!("{}.{}.part", filename, &identity[..24]))
+}
+
+fn replace_download_output(partial_path: &Path, output_path: &Path) -> Result<()> {
+    if output_path.exists() {
+        let filename = output_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("download");
+        let backup_path =
+            output_path.with_file_name(format!(".{}.{}.backup", filename, Uuid::new_v4().simple()));
+        std::fs::rename(output_path, &backup_path).with_context(|| {
+            format!(
+                "Failed to preserve existing output: {}",
+                output_path.display()
+            )
+        })?;
+        if let Err(error) = std::fs::rename(partial_path, output_path) {
+            let _ = std::fs::rename(&backup_path, output_path);
+            return Err(error).with_context(|| {
+                format!("Failed to finalize media output: {}", output_path.display())
+            });
+        }
+        let _ = std::fs::remove_file(backup_path);
+        return Ok(());
+    }
+    std::fs::rename(partial_path, output_path)
+        .with_context(|| format!("Failed to finalize media output: {}", output_path.display()))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn download_with_retries(
     client: &SyncHttpClient,
     url: &str,
     headers: &[(String, String)],
     path: &Path,
+    reuse_completed_file: bool,
     retries: u8,
     progress_start: f64,
     progress_end: f64,
     reporter: &ProgressReporter,
     label: &str,
 ) -> Result<()> {
+    if reuse_completed_file
+        && std::fs::metadata(path)
+            .map(|metadata| metadata.is_file() && metadata.len() > 0)
+            .unwrap_or(false)
+    {
+        return Ok(());
+    }
     for attempt in 1..=retries {
-        let _ = std::fs::remove_file(path);
         let result = stream_media_response_to_file(
             client,
             url,
@@ -3838,12 +4276,17 @@ fn join_manifest_url(
 #[cfg(test)]
 mod tests {
     use super::{
-        ByteRange, Playlist, bilibili_playurl_api_url, canonical_site_context,
-        checksum_for_release_asset, has_mp4_signature, hls_response_bytes,
-        is_valid_header_value_byte, normalize_source_url, parse_ytdlp_progress, playlist_base_url,
-        resolve_dash_download_plan_from_manifest, resolve_hls_byte_range, select_best_hls_variant,
-        select_hls_audio_rendition, should_auto_inspect_download_target,
-        youtube_itag_from_media_url,
+        bilibili_playurl_api_url, canonical_site_context, checksum_for_release_asset,
+        clear_resumable_partial, has_mp4_signature, hls_response_bytes, hls_segment_cache_key,
+        is_complete_unsatisfied_range, is_valid_header_value_byte, is_valid_hls_segment_cache,
+        normalize_source_url, parse_content_range, parse_ytdlp_progress, playlist_base_url,
+        range_response_has_safe_resume_identity, read_resumable_metadata,
+        resolve_dash_download_plan_from_manifest, resolve_hls_byte_range,
+        resumable_metadata_from_response, resumable_metadata_matches_response,
+        resumable_partial_path, select_best_hls_variant, select_hls_audio_rendition,
+        should_auto_inspect_download_target, write_hls_segment_cache, write_resumable_metadata,
+        youtube_itag_from_media_url, ByteRange, ContentRange, HlsResourceRequest, Playlist,
+        ResumableMetadata, Uuid,
     };
     use crate::hls::parse_playlist;
     use url::Url;
@@ -3897,11 +4340,9 @@ mod tests {
             .expect("episode API URL should resolve")
             .expect("episode id should be sufficient");
         assert_eq!(episode_api.path(), "/pgc/player/web/playurl");
-        assert!(
-            episode_api
-                .query_pairs()
-                .any(|(name, value)| { name == "ep_id" && value == "987654" })
-        );
+        assert!(episode_api
+            .query_pairs()
+            .any(|(name, value)| { name == "ep_id" && value == "987654" }));
     }
 
     #[test]
@@ -3928,20 +4369,16 @@ mod tests {
                 .bytes()
                 .all(is_valid_header_value_byte)
         );
-        assert!(
-            "Mozilla/5.0 (中文设备) Chrome/120"
-                .bytes()
-                .all(is_valid_header_value_byte)
-        );
+        assert!("Mozilla/5.0 (中文设备) Chrome/120"
+            .bytes()
+            .all(is_valid_header_value_byte));
         assert!(!b"\r".iter().copied().all(is_valid_header_value_byte));
         assert!(!b"\n".iter().copied().all(is_valid_header_value_byte));
         assert!(!b"\x00".iter().copied().all(is_valid_header_value_byte));
         assert!(!b"\x7f".iter().copied().all(is_valid_header_value_byte));
-        assert!(
-            !"text/html\r\nX-Evil: 1"
-                .bytes()
-                .all(is_valid_header_value_byte)
-        );
+        assert!(!"text/html\r\nX-Evil: 1"
+            .bytes()
+            .all(is_valid_header_value_byte));
     }
 
     #[test]
@@ -3953,7 +4390,8 @@ mod tests {
 
     #[test]
     fn accepts_only_the_requested_official_release_checksum() {
-        let checksums = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  yt-dlp\n\
+        let checksums =
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  yt-dlp\n\
 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *yt-dlp.exe\n";
         assert_eq!(
             checksum_for_release_asset(checksums, "yt-dlp.exe").as_deref(),
@@ -4015,16 +4453,213 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *yt-dlp.exe\n";
             .expect("implicit range should continue from the prior range"),
             Some((6, 8))
         );
-        assert!(
-            resolve_hls_byte_range(
-                "other.mp4",
-                Some(&ByteRange {
-                    length: 2,
-                    offset: None,
-                }),
-                &mut cursor,
+        assert!(resolve_hls_byte_range(
+            "other.mp4",
+            Some(&ByteRange {
+                length: 2,
+                offset: None,
+            }),
+            &mut cursor,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn parses_content_range_bounds_and_unsatisfied_ranges() {
+        let partial = vec![("Content-Range".to_string(), "bytes 8-15/32".to_string())];
+        assert_eq!(
+            parse_content_range(&partial).expect("partial response range should parse"),
+            ContentRange {
+                start: Some(8),
+                end: Some(15),
+                total: Some(32),
+            }
+        );
+
+        let unsatisfied = vec![("content-range".to_string(), "bytes */32".to_string())];
+        assert_eq!(
+            parse_content_range(&unsatisfied).expect("unsatisfied range should parse"),
+            ContentRange {
+                start: None,
+                end: None,
+                total: Some(32),
+            }
+        );
+        let invalid = vec![("Content-Range".to_string(), "bytes 20-10/32".to_string())];
+        assert!(parse_content_range(&invalid).is_err());
+    }
+
+    #[test]
+    fn resumes_only_matching_http_representations() {
+        let first_version = vec![
+            ("ETag".to_string(), "\"version-1\"".to_string()),
+            ("Content-Range".to_string(), "bytes 8-15/32".to_string()),
+        ];
+        let saved = resumable_metadata_from_response(&first_version, Some(32));
+        assert_eq!(saved.if_range_value(), Some("\"version-1\""));
+        assert!(resumable_metadata_matches_response(
+            &saved,
+            &[("etag".to_string(), "\"version-1\"".to_string())],
+            Some(32),
+        ));
+        assert!(!resumable_metadata_matches_response(&saved, &[], Some(32),));
+        assert!(!resumable_metadata_matches_response(
+            &saved,
+            &[("ETag".to_string(), "\"version-2\"".to_string())],
+            Some(32),
+        ));
+        assert!(!resumable_metadata_matches_response(
+            &saved,
+            &[("ETag".to_string(), "\"version-1\"".to_string())],
+            Some(33),
+        ));
+        let unvalidated = ResumableMetadata {
+            total_length: Some(32),
+            ..ResumableMetadata::default()
+        };
+        assert!(range_response_has_safe_resume_identity(
+            &unvalidated,
+            0,
+            Some(32),
+            32,
+        ));
+        assert!(!range_response_has_safe_resume_identity(
+            &unvalidated,
+            0,
+            Some(64),
+            32,
+        ));
+        assert!(!range_response_has_safe_resume_identity(
+            &unvalidated,
+            32,
+            Some(64),
+            32,
+        ));
+        assert!(range_response_has_safe_resume_identity(
+            &saved,
+            8,
+            Some(32),
+            8
+        ));
+
+        let date_validator = resumable_metadata_from_response(
+            &[
+                ("ETag".to_string(), "W/\"weak\"".to_string()),
+                (
+                    "Last-Modified".to_string(),
+                    "Sun, 06 Nov 1994 08:49:37 GMT".to_string(),
+                ),
+            ],
+            None,
+        );
+        assert_eq!(
+            date_validator.if_range_value(),
+            Some("Sun, 06 Nov 1994 08:49:37 GMT")
+        );
+        assert!(resumable_metadata_matches_response(
+            &date_validator,
+            &[(
+                "Last-Modified".to_string(),
+                "Sun, 06 Nov 1994 08:49:37 GMT".to_string(),
+            )],
+            None,
+        ));
+    }
+
+    #[test]
+    fn persists_and_clears_direct_resume_metadata() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should be after the Unix epoch")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "segmeris-resume-test-{}-{}",
+            std::process::id(),
+            nonce
+        ));
+        std::fs::create_dir_all(&directory).expect("test directory should be created");
+        let path = directory.join("video.mp4.part");
+        let metadata = ResumableMetadata {
+            etag: Some("\"stable\"".to_string()),
+            last_modified: Some("Sun, 06 Nov 1994 08:49:37 GMT".to_string()),
+            total_length: Some(4096),
+        };
+
+        std::fs::write(&path, b"partial").expect("partial file should be created");
+        write_resumable_metadata(&path, &metadata).expect("metadata should be persisted");
+        assert_eq!(read_resumable_metadata(&path), Some(metadata));
+        clear_resumable_partial(&path).expect("partial and metadata should be cleared");
+        assert!(!path.exists());
+        assert!(read_resumable_metadata(&path).is_none());
+        std::fs::remove_dir_all(directory).expect("test directory should be removed");
+    }
+
+    #[test]
+    fn accepts_http_416_as_complete_only_when_lengths_match() {
+        let complete =
+            parse_content_range(&[("Content-Range".to_string(), "bytes */32".to_string())])
+                .expect("unsatisfied range should parse");
+        assert!(is_complete_unsatisfied_range(complete, 32));
+        assert!(!is_complete_unsatisfied_range(complete, 31));
+
+        let satisfiable =
+            parse_content_range(&[("Content-Range".to_string(), "bytes 8-15/32".to_string())])
+                .expect("satisfiable range should parse");
+        assert!(!is_complete_unsatisfied_range(satisfiable, 32));
+    }
+
+    #[test]
+    fn reuses_only_intact_hls_segment_cache_entries() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should be after the Unix epoch")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "segmeris-cache-test-{}-{}",
+            std::process::id(),
+            nonce
+        ));
+        std::fs::create_dir_all(&directory).expect("test cache directory should be created");
+        let path = directory.join("v_00000.part");
+        let request = HlsResourceRequest {
+            url: "https://cdn.example/video/segment-0.ts?token=abc".to_string(),
+            byte_range: Some((0, 1023)),
+        };
+        let headers = vec![("Cookie".to_string(), "session=one".to_string())];
+        let key = hls_segment_cache_key(42, 0, &request, None, None, &headers);
+
+        write_hls_segment_cache(&path, b"verified segment bytes", &key)
+            .expect("segment cache should be written");
+        assert!(is_valid_hls_segment_cache(&path, &key));
+        assert_ne!(
+            key,
+            hls_segment_cache_key(
+                42,
+                0,
+                &request,
+                None,
+                None,
+                &[("Cookie".to_string(), "session=two".to_string())],
             )
-            .is_err()
+        );
+
+        std::fs::write(&path, b"truncated").expect("test should corrupt the cached segment");
+        assert!(!is_valid_hls_segment_cache(&path, &key));
+        std::fs::remove_dir_all(directory).expect("test cache directory should be removed");
+    }
+
+    #[test]
+    fn isolates_direct_partial_files_by_source_url() {
+        let path = std::path::Path::new("video.mp4");
+        let first_session = vec![("Cookie".to_string(), "session=one".to_string())];
+        let second_session = vec![("Cookie".to_string(), "session=two".to_string())];
+        assert_ne!(
+            resumable_partial_path(path, "https://cdn.example/a.mp4", &first_session),
+            resumable_partial_path(path, "https://cdn.example/b.mp4", &first_session)
+        );
+        assert_ne!(
+            resumable_partial_path(path, "https://cdn.example/a.mp4", &first_session),
+            resumable_partial_path(path, "https://cdn.example/a.mp4", &second_session)
         );
     }
 
@@ -4813,7 +5448,7 @@ fn select_transcoder_backend() -> Result<TranscoderKind> {
         {
             if ANDROID_HW_TRANSCODER.get().is_none() {
                 bail!(
-                    "Android MediaCodec transcoder not registered. Ensure System.loadLibrary(\"rust_lib_m3u8_downloader\") 
+                    "Android MediaCodec transcoder not registered. Ensure System.loadLibrary(\"rust_lib_segmeris\")
                     is called in your Android app before using this library."
                 );
             }
@@ -5142,6 +5777,170 @@ fn download_and_decrypt_segment(
     Err(last_error.unwrap_or_else(|| anyhow!("Segment download failed")))
 }
 
+fn hls_segment_cache_key(
+    media_sequence: u64,
+    index: usize,
+    request: &HlsResourceRequest,
+    init_request: Option<&HlsResourceRequest>,
+    crypto: Option<&(Vec<u8>, Vec<u8>)>,
+    headers: &[(String, String)],
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"segmeris-hls-segment-v1");
+    hasher.update(&media_sequence.to_be_bytes());
+    hasher.update(&(index as u64).to_be_bytes());
+    hash_hls_resource_request(&mut hasher, request);
+    if let Some(init_request) = init_request {
+        hasher.update(&[1]);
+        hash_hls_resource_request(&mut hasher, init_request);
+    } else {
+        hasher.update(&[0]);
+    }
+    if let Some((key, iv)) = crypto {
+        hasher.update(&[1]);
+        hasher.update(&(key.len() as u64).to_be_bytes());
+        hasher.update(key);
+        hasher.update(iv);
+    } else {
+        hasher.update(&[0]);
+    }
+    for (name, value) in headers {
+        hash_hls_field(&mut hasher, name.as_bytes());
+        hash_hls_field(&mut hasher, value.as_bytes());
+    }
+    hex::encode(hasher.finalize())
+}
+
+fn hash_hls_resource_request(hasher: &mut Sha256, request: &HlsResourceRequest) {
+    hash_hls_field(hasher, request.url.as_bytes());
+    if let Some((start, end)) = request.byte_range {
+        hasher.update(&[1]);
+        hasher.update(&start.to_be_bytes());
+        hasher.update(&end.to_be_bytes());
+    } else {
+        hasher.update(&[0]);
+    }
+}
+
+fn hash_hls_field(hasher: &mut Sha256, value: &[u8]) {
+    hasher.update(&(value.len() as u64).to_be_bytes());
+    hasher.update(value);
+}
+
+fn hls_segment_metadata_path(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".meta");
+    path.with_file_name(name)
+}
+
+fn hash_file(path: &Path) -> Result<String> {
+    let mut file = std::fs::File::open(path)
+        .with_context(|| format!("Failed to open cached segment: {}", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let length = file.read(&mut buffer)?;
+        if length == 0 {
+            break;
+        }
+        hasher.update(&buffer[..length]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn is_valid_hls_segment_cache(path: &Path, cache_key: &str) -> bool {
+    let metadata_path = hls_segment_metadata_path(path);
+    let Ok(metadata) = std::fs::read_to_string(metadata_path) else {
+        return false;
+    };
+    let mut lines = metadata.lines();
+    if lines.next() != Some(cache_key) {
+        return false;
+    }
+    let Some(expected_length) = lines.next().and_then(|value| value.parse::<u64>().ok()) else {
+        return false;
+    };
+    let Some(expected_hash) = lines.next() else {
+        return false;
+    };
+    std::fs::metadata(path)
+        .map(|metadata| metadata.is_file() && metadata.len() == expected_length)
+        .unwrap_or(false)
+        && hash_file(path)
+            .map(|actual_hash| actual_hash == expected_hash)
+            .unwrap_or(false)
+}
+
+fn write_hls_segment_cache(path: &Path, data: &[u8], cache_key: &str) -> Result<()> {
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("segment.part");
+    let token = Uuid::new_v4().simple().to_string();
+    let temporary_path = path.with_file_name(format!("{}.tmp-{}", filename, token));
+    let metadata_path = hls_segment_metadata_path(path);
+    let metadata_temporary_path =
+        metadata_path.with_file_name(format!("{}.tmp-{}", filename, token));
+
+    let result = (|| -> Result<()> {
+        let mut file = std::fs::File::create(&temporary_path)?;
+        file.write_all(data)?;
+        file.sync_all()?;
+        drop(file);
+
+        let _ = std::fs::remove_file(&metadata_path);
+        if path.exists() {
+            std::fs::remove_file(path)?;
+        }
+        std::fs::rename(&temporary_path, path)?;
+
+        let metadata = format!(
+            "{}\n{}\n{}\n",
+            cache_key,
+            data.len(),
+            hex::encode(sha256(data))
+        );
+        let mut file = std::fs::File::create(&metadata_temporary_path)?;
+        file.write_all(metadata.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&metadata_temporary_path, &metadata_path)?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(temporary_path);
+        let _ = std::fs::remove_file(metadata_temporary_path);
+    }
+    result.with_context(|| format!("Failed to persist HLS segment cache: {}", path.display()))
+}
+
+fn report_hls_segment_completed(
+    completed: &std::sync::atomic::AtomicU64,
+    total: usize,
+    progress_bar: &ProgressBar,
+    reporter: &ProgressReporter,
+    last_reported: &std::sync::atomic::AtomicU64,
+) {
+    let count = completed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    progress_bar.set_position(count);
+
+    let total_u64 = total as u64;
+    let coarse = ((count as f64) / (total as f64) * 900.0) as u64;
+    let is_final = count >= total_u64;
+    let should_emit = is_final
+        || coarse.saturating_sub(last_reported.load(std::sync::atomic::Ordering::Relaxed)) >= 9;
+    if should_emit {
+        last_reported.store(coarse, std::sync::atomic::Ordering::Relaxed);
+        progress_bar.set_message(format!("Downloading segments [{}/{}]", count, total));
+        emit_progress(
+            reporter,
+            format!("Downloading segments [{}/{}]", count, total),
+            (count as f64) / (total as f64) * 0.9,
+        );
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn download_and_merge_once(
     playlist: MediaPlaylist,
@@ -5377,6 +6176,27 @@ fn download_and_merge_once(
                         let segment_request = segment_requests[idx].clone();
                         let init_request = init_requests[idx].clone();
                         let key = segment_crypto.get(idx).cloned().flatten();
+                        let file_name = format!("{}_{:05}.part", segment_prefix, idx);
+                        let tmp_path = temp_dir.join(file_name);
+                        let cache_key = hls_segment_cache_key(
+                            media_sequence,
+                            idx,
+                            &segment_request,
+                            init_request.as_ref(),
+                            key.as_ref(),
+                            &headers,
+                        );
+
+                        if is_valid_hls_segment_cache(&tmp_path, &cache_key) {
+                            report_hls_segment_completed(
+                                &completed,
+                                total,
+                                &pb,
+                                &reporter,
+                                &last_reported,
+                            );
+                            return Ok(());
+                        }
 
                         let buffer = download_and_decrypt_segment(
                             &client,
@@ -5386,36 +6206,14 @@ fn download_and_merge_once(
                             key.as_ref(),
                             retries,
                         )?;
-
-                        let file_name = format!("{}_{:05}.part", segment_prefix, idx);
-                        let tmp_path = temp_dir.join(file_name);
-                        std::fs::write(&tmp_path, &buffer).with_context(|| {
-                            format!(
-                                "Failed to write segment: {} (url: {})",
-                                tmp_path.display(),
-                                segment_request.url
-                            )
-                        })?;
-
-                        let count = completed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                        pb.set_position(count);
-
-                        let total_u64 = total as u64;
-                        let coarse = ((count as f64) / (total as f64) * 900.0) as u64;
-                        let is_final = count >= total_u64;
-                        let should_emit = is_final
-                            || coarse.saturating_sub(
-                                last_reported.load(std::sync::atomic::Ordering::Relaxed),
-                            ) >= 9;
-                        if should_emit {
-                            last_reported.store(coarse, std::sync::atomic::Ordering::Relaxed);
-                            pb.set_message(format!("Downloading segments [{}/{}]", count, total));
-                            emit_progress(
-                                &reporter,
-                                format!("Downloading segments [{}/{}]", count, total),
-                                (count as f64) / (total as f64) * 0.9,
-                            );
-                        }
+                        write_hls_segment_cache(&tmp_path, &buffer, &cache_key)?;
+                        report_hls_segment_completed(
+                            &completed,
+                            total,
+                            &pb,
+                            &reporter,
+                            &last_reported,
+                        );
                         Ok(())
                     })();
 
@@ -5502,14 +6300,14 @@ fn download_and_merge_once(
 }
 
 fn cleanup_segment_temp_files(temp_dir: &Path, output_file: &str) {
-    // Remove every per-segment `.part` file regardless of its stream prefix.
+    // Remove interrupted cache writes but retain verified segments for retry.
     if let Ok(entries) = std::fs::read_dir(temp_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path
                 .file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(".part"))
+                .is_some_and(|name| name.contains(".tmp-"))
             {
                 let _ = std::fs::remove_file(path);
             }
@@ -5628,7 +6426,11 @@ fn push_accel_encode_args(args: &mut Vec<String>, accel: AccelType) {
 /// was the root cause of outputs containing only the first few seconds.
 fn concat_list_for_input(input_path: &Path) -> Option<PathBuf> {
     let list = PathBuf::from(format!("{}.concat.txt", input_path.to_string_lossy()));
-    if list.is_file() { Some(list) } else { None }
+    if list.is_file() {
+        Some(list)
+    } else {
+        None
+    }
 }
 
 fn parse_ffmpeg_duration(stderr: &str) -> Option<f64> {
@@ -5657,13 +6459,14 @@ fn probe_media_duration(path: &Path, ffmpeg_path: &Path) -> Option<f64> {
         path.to_string_lossy().to_string(),
     ];
     let probe = run_ffmpeg(&ffprobe_path, &probe_args, Duration::from_secs(20)).ok()?;
-    if probe.status.success()
-        && let Ok(text) = String::from_utf8(probe.stdout)
-        && let Ok(seconds) = text.trim().parse::<f64>()
-        && seconds.is_finite()
-        && seconds > 0.0
-    {
-        return Some(seconds);
+    if probe.status.success() {
+        if let Ok(text) = String::from_utf8(probe.stdout) {
+            if let Ok(seconds) = text.trim().parse::<f64>() {
+                if seconds.is_finite() && seconds > 0.0 {
+                    return Some(seconds);
+                }
+            }
+        }
     }
 
     let inspect_args = [
@@ -5970,13 +6773,15 @@ fn convert_to_mp4(
             // download can never regress.
             let requires_reencode = video_bitrate > 0 || audio_bitrate > 0;
             let mut per_segment_done = false;
-            if !requires_reencode && let Some(segments) = video_segments.as_ref() {
-                match ios_hardware_merge_segments(segments, output_path, expected_duration) {
-                    Ok(()) => per_segment_done = true,
-                    Err(error) => warn!(
-                        "iOS per-segment merge failed ({}); falling back to single-file VideoToolbox",
-                        error
-                    ),
+            if !requires_reencode {
+                if let Some(segments) = video_segments.as_ref() {
+                    match ios_hardware_merge_segments(segments, output_path, expected_duration) {
+                        Ok(()) => per_segment_done = true,
+                        Err(error) => warn!(
+                            "iOS per-segment merge failed ({}); falling back to single-file VideoToolbox",
+                            error
+                        ),
+                    }
                 }
             }
             if per_segment_done {
@@ -6251,7 +7056,7 @@ pub fn init_android_transcoder_check() -> Result<String> {
     }
 
     Err(anyhow!(
-        "Android MediaCodec transcoder not registered. Make sure System.loadLibrary(\"rust_lib_m3u8_downloader\") 
+        "Android MediaCodec transcoder not registered. Make sure System.loadLibrary(\"rust_lib_segmeris\")
         is called in your Android code so that JNI_OnLoad runs."
     ))
 }

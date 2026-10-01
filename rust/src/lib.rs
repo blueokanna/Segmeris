@@ -8,4 +8,4 @@ pub mod net;
 pub mod remux;
 pub mod xml;
 
-pub use ferrisload_core as core;
+pub use segmeris_core as core;

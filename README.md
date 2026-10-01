@@ -1,4 +1,4 @@
-# FerrisLoad
+# Segmeris
 
 一个用 Flutter 写的跨平台视频下载器，核心下载与转码逻辑在 Rust 里（通过 `flutter_rust_bridge` 桥接）。
 
@@ -83,7 +83,7 @@ iOS 没有 FFmpeg、也没有软件 H.264 编码器，转码走原生 `AVFoundat
 
 ## Web / WASM
 
-浏览器里跑不了 Rust 引擎，所以 Web 版把下载/分析交给 **FerrisLoad API 服务**（即 Docker 镜像里的同一个服务器）：
+浏览器里跑不了 Rust 引擎，所以 Web 版把下载/分析交给 **Segmeris API 服务**（即 Docker 镜像里的同一个服务器）：
 
 ```bash
 # 本地起 API 服务（多架构：amd64 / arm64 / armv7）
@@ -105,9 +105,9 @@ docker compose --profile api up -d
 - `GET /tasks`
 
 ```bash
-docker build -f Dockerfile.api -t ferrisload-api .
+docker build -f Dockerfile.api -t segmeris-api .
 docker run --rm -p 3000:3000 -e DOWNLOAD_DIR=/app/downloads \
-  -v $(pwd)/downloads:/app/downloads ferrisload-api
+  -v $(pwd)/downloads:/app/downloads segmeris-api
 ```
 
 **API 安全（默认开启）**：

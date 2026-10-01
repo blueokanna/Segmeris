@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:m3u8_downloader/src/app/app_localizations.dart';
-import 'package:m3u8_downloader/src/rust/api/downloader.dart';
+import 'package:segmeris/src/app/app_localizations.dart';
+import 'package:segmeris/src/rust/api/downloader.dart';
 
 class AuthSessionBundle {
   const AuthSessionBundle({

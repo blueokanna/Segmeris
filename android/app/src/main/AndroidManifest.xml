@@ -27,12 +27,12 @@
         android:required="false" />
 
     <application
-        android:label="FerrisLoad"
+        android:label="Segmeris"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true">
         <activity
-            android:name="com.bluevale.m3u8_downloader.MainActivity"
+            android:name="com.bluevale.segmeris.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
@@ -51,7 +51,7 @@
         </activity>
 
         <service
-            android:name="com.bluevale.m3u8_downloader.DownloadForegroundService"
+            android:name="com.bluevale.segmeris.DownloadForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 

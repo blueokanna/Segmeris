@@ -96,4 +96,4 @@ ENV DOWNLOAD_DIR=/app/downloads
 EXPOSE 3000
 
 # 默认启动命令（可以作为GUI应用或命令行工具）
-CMD ["./m3u8_downloader"]
+CMD ["./segmeris"]

@@ -540,7 +540,7 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "5.0.5"
-  rust_lib_m3u8_downloader:
+  rust_lib_segmeris:
     dependency: "direct main"
     description:
       path: rust_builder

@@ -4,10 +4,10 @@ project(runner LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "m3u8_downloader")
+set(BINARY_NAME "segmeris")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.blue.ferrisload")
+set(APPLICATION_ID "com.blue.segmeris")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -76,8 +76,8 @@ include(flutter/generated_plugins.cmake)
 
 # The FFI plugin exposes a path for install(FILES), which does not create a
 # target dependency by itself. Build the Rust shared library before bundling.
-if(TARGET rust_lib_m3u8_downloader_cargokit)
-  add_dependencies(${BINARY_NAME} rust_lib_m3u8_downloader_cargokit)
+if(TARGET rust_lib_segmeris_cargokit)
+  add_dependencies(${BINARY_NAME} rust_lib_segmeris_cargokit)
 endif()
 
 

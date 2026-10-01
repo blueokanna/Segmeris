@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:m3u8_downloader/src/home/source_input.dart';
+import 'package:segmeris/src/home/source_input.dart';
 
 void main() {
   test('extracts Bilibili short links from shared text', () {

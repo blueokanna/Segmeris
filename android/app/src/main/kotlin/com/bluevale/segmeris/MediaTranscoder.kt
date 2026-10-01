@@ -1,4 +1,4 @@
-package com.bluevale.m3u8_downloader
+package com.bluevale.segmeris
 
 import android.annotation.SuppressLint
 import android.media.*

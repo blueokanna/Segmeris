@@ -12,35 +12,34 @@ export 'capability_snapshot.dart' show PlatformCapabilitySnapshot;
 class RuntimeCapabilityProbe {
   RuntimeCapabilityProbe._();
 
-  static const _channel = MethodChannel('com.blue.ferrisload/media_store');
+  static const _channel = MethodChannel('com.blue.segmeris/media_store');
 
   static Future<PlatformCapabilitySnapshot> inspect() async {
-    if (FerrisPlatform.isWeb) {
+    if (SegmerisPlatform.isWeb) {
       return _inspectWeb();
     }
-    if (FerrisPlatform.isAndroid) {
+    if (SegmerisPlatform.isAndroid) {
       return _inspectAndroid();
     }
-    if (FerrisPlatform.isIOS) {
+    if (SegmerisPlatform.isIOS) {
       return _inspectIos();
     }
     return probe.probeDesktopCapabilities();
   }
 
-  /// The web build has no local media engine: it drives downloads through the
-  /// FerrisLoad HTTP API (the same server that ships in the Docker image), so
-  /// hardware transcode is performed by the API container, not the browser.
+  /// The browser uses the API for media work and cannot inspect its runtime.
   static PlatformCapabilitySnapshot _inspectWeb() {
     return const PlatformCapabilitySnapshot(
       platform: 'web',
-      transcoderBackend: 'API server (Docker)',
-      hardwareAccelerated: true,
-      videoEncoders: ['server-side FFmpeg / MediaCodec'],
-      videoDecoders: ['server-side'],
-      ffmpegAvailable: true,
-      ytdlpAvailable: true,
+      transcoderBackend: 'API server (not reported)',
+      hardwareAccelerated: null,
+      videoEncoders: [],
+      videoDecoders: [],
+      ffmpegAvailable: null,
+      ytdlpAvailable: null,
       notes: [
-        'The web build drives downloads through the FerrisLoad API server.',
+        'The web build drives downloads through the Segmeris API server.',
+        'The API does not report its encoder, decoder, FFmpeg, or yt-dlp capabilities.',
         'Run the API server locally (docker compose up) and set its URL in Settings.',
       ],
     );
@@ -57,13 +56,14 @@ class RuntimeCapabilityProbe {
       return PlatformCapabilitySnapshot(
         platform: raw['platform'] as String? ?? 'android',
         transcoderBackend: raw['transcoderBackend'] as String? ?? 'Unavailable',
-        hardwareAccelerated: raw['hardwareAccelerated'] as bool? ?? false,
+        hardwareAccelerated: raw['hardwareAccelerated'] as bool?,
         videoEncoders: _stringList(raw['videoEncoders']),
         videoDecoders: _stringList(raw['videoDecoders']),
-        ffmpegAvailable: raw['ffmpegAvailable'] as bool? ?? false,
-        ytdlpAvailable: raw['ytdlpAvailable'] as bool? ?? false,
+        ffmpegAvailable: raw['ffmpegAvailable'] as bool?,
+        ytdlpAvailable: raw['ytdlpAvailable'] as bool?,
         notes: const [
-          'Android uses native MediaCodec and MediaMuxer; unavailable codecs are never simulated.',
+          'Android reports platform-advertised MediaCodec support; it does not run a test encode.',
+          'Unavailable codecs are never simulated.',
           'YouTube uses the native resolver; signature-protected formats may require desktop yt-dlp.',
         ],
       );
@@ -71,11 +71,11 @@ class RuntimeCapabilityProbe {
       return PlatformCapabilitySnapshot(
         platform: 'android',
         transcoderBackend: 'Capability probe failed',
-        hardwareAccelerated: false,
+        hardwareAccelerated: null,
         videoEncoders: const [],
         videoDecoders: const [],
-        ffmpegAvailable: false,
-        ytdlpAvailable: false,
+        ffmpegAvailable: null,
+        ytdlpAvailable: null,
         notes: ['MediaCodec capability query failed: $error'],
       );
     }
@@ -92,13 +92,13 @@ class RuntimeCapabilityProbe {
       return PlatformCapabilitySnapshot(
         platform: 'ios',
         transcoderBackend: raw['transcoderBackend'] as String? ?? 'Unavailable',
-        hardwareAccelerated: raw['hardwareAccelerated'] as bool? ?? false,
+        hardwareAccelerated: raw['hardwareAccelerated'] as bool?,
         videoEncoders: _stringList(raw['videoEncoders']),
         videoDecoders: _stringList(raw['videoDecoders']),
-        ffmpegAvailable: raw['ffmpegAvailable'] as bool? ?? false,
-        ytdlpAvailable: raw['ytdlpAvailable'] as bool? ?? false,
+        ffmpegAvailable: raw['ffmpegAvailable'] as bool?,
+        ytdlpAvailable: raw['ytdlpAvailable'] as bool?,
         notes: const [
-          'iOS uses AVFoundation / VideoToolbox; the hardware H.264 encoder is used on A-series and M-series chips.',
+          'iOS AVFoundation and VideoToolbox capabilities are not currently reported by the native bridge.',
           'YouTube uses the native resolver; signature-protected formats may require desktop yt-dlp.',
         ],
       );
@@ -106,13 +106,13 @@ class RuntimeCapabilityProbe {
       return PlatformCapabilitySnapshot(
         platform: 'ios',
         transcoderBackend: 'Unavailable',
-        hardwareAccelerated: false,
+        hardwareAccelerated: null,
         videoEncoders: const [],
         videoDecoders: const [],
-        ffmpegAvailable: false,
-        ytdlpAvailable: false,
+        ffmpegAvailable: null,
+        ytdlpAvailable: null,
         notes: [
-          'Native iOS transcoder is registered, but the capability query failed: $error',
+          'iOS native capability query failed; codec availability is unknown: $error',
         ],
       );
     }

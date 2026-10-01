@@ -8,10 +8,10 @@ import 'dart:io' show Platform;
 // References come from the conditional import in `platform_utils.dart`, which
 // the standalone analysis of this file cannot see, hence the ignore.
 // ignore_for_file: unused_element
-bool ferrisHostIsAndroid() => Platform.isAndroid;
-bool ferrisHostIsIOS() => Platform.isIOS;
-bool ferrisHostIsWindows() => Platform.isWindows;
-bool ferrisHostIsMacOS() => Platform.isMacOS;
-bool ferrisHostIsLinux() => Platform.isLinux;
-String ferrisHostOperatingSystem() => Platform.operatingSystem;
-String ferrisHostPathSeparator() => Platform.pathSeparator;
+bool segmerisHostIsAndroid() => Platform.isAndroid;
+bool segmerisHostIsIOS() => Platform.isIOS;
+bool segmerisHostIsWindows() => Platform.isWindows;
+bool segmerisHostIsMacOS() => Platform.isMacOS;
+bool segmerisHostIsLinux() => Platform.isLinux;
+String segmerisHostOperatingSystem() => Platform.operatingSystem;
+String segmerisHostPathSeparator() => Platform.pathSeparator;

@@ -13,7 +13,7 @@ use std::fs::File;
 use std::io::{BufWriter, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 
 use super::ts::{AacConfig, AvcConfig};
 
@@ -728,7 +728,7 @@ mod tests {
 
     fn tempfile() -> TempFile {
         let path =
-            std::env::temp_dir().join(format!("ferrisload-mp4-test-{}.bin", std::process::id()));
+            std::env::temp_dir().join(format!("segmeris-mp4-test-{}.bin", std::process::id()));
         let file = File::create(&path).unwrap();
         TempFile {
             path,

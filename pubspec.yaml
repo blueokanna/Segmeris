@@ -1,18 +1,12 @@
-name: m3u8_downloader
+name: segmeris
 description: "A Flutter application to download m3u8 files using Rust for performance."
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: 'none'
 
-version: 1.0.2+1
+version: 1.0.4+1
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
 
-# Dependencies specify other packages that your package needs in order to work.
-# To automatically upgrade your package dependencies to the latest versions
-# consider running `flutter pub upgrade --major-versions`. Alternatively,
-# dependencies can be manually updated by changing the version numbers below to
-# the latest version available on pub.dev. To see which dependencies have newer
-# versions available, run `flutter pub outdated`.
 dependencies:
   flutter:
     sdk: flutter
@@ -20,7 +14,7 @@ dependencies:
     sdk: flutter
 
   cupertino_icons: ^1.0.8
-  rust_lib_m3u8_downloader:
+  rust_lib_segmeris:
     path: rust_builder
   flutter_rust_bridge: 2.13.0
   dynamic_color: 1.8.1

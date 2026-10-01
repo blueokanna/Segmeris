@@ -19,11 +19,11 @@ class AppSettings {
   final String localeTag;
   final bool autoOpenAuthBrowser;
 
-  /// Base URL of the FerrisLoad HTTP API. Only used by the web build (and
+  /// Base URL of the Segmeris HTTP API. Only used by the web build (and
   /// overridable there); native platforms always use the embedded Rust engine.
   final String apiBaseUrl;
 
-  /// Optional bearer token for the FerrisLoad HTTP API (matches the server's
+  /// Optional bearer token for the Segmeris HTTP API (matches the server's
   /// `FERRISLOAD_API_TOKEN`). Only used by the web build.
   final String apiToken;
 

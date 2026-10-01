@@ -1,10 +1,10 @@
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.14)
-project(m3u8_downloader LANGUAGES CXX)
+project(segmeris LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "m3u8_downloader")
+set(BINARY_NAME "segmeris")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -85,8 +85,8 @@ endif()
 # FFI plugins only contribute their native library path to the install bundle;
 # CMake does not infer a build dependency from install(FILES). Ensure the Rust
 # DLL exists before the runner's install step copies bundled libraries.
-if(TARGET rust_lib_m3u8_downloader_cargokit)
-  add_dependencies(${BINARY_NAME} rust_lib_m3u8_downloader_cargokit)
+if(TARGET rust_lib_segmeris_cargokit)
+  add_dependencies(${BINARY_NAME} rust_lib_segmeris_cargokit)
 endif()
 
 

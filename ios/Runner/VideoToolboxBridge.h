@@ -24,7 +24,7 @@ extern "C" {
 
 /// Returns 1 when the native H.264 hardware encoder pipeline is usable,
 /// 0 otherwise. Cheap; called once per download to select the backend.
-int ferrisload_videotoolbox_available(void);
+int segmeris_videotoolbox_available(void);
 
 /// Transcode a single input file (MPEG-TS, MP4, ...) into an MP4 container.
 /// The video track is re-encoded with the hardware H.264 encoder.
@@ -36,7 +36,7 @@ int ferrisload_videotoolbox_available(void);
 /// - `expected_ms`: expected output duration in milliseconds; when > 0 the
 ///   produced file is checked for truncation and fails if too short.
 /// - On failure returns 0 and writes a UTF-8 error string into `errbuf`.
-int ferrisload_videotoolbox_transcode(const char *input,
+int segmeris_videotoolbox_transcode(const char *input,
                                       const char *output,
                                       int video_bitrate,
                                       int audio_bitrate,
@@ -46,7 +46,7 @@ int ferrisload_videotoolbox_transcode(const char *input,
 
 /// Merge a separate video file and audio file into one MP4, re-encoding the
 /// video with the hardware H.264 encoder and muxing the audio track.
-int ferrisload_videotoolbox_mux(const char *video,
+int segmeris_videotoolbox_mux(const char *video,
                                 const char *audio,
                                 const char *output,
                                 long long expected_ms,
@@ -59,7 +59,7 @@ int ferrisload_videotoolbox_mux(const char *video,
 /// continuous timeline, so the per-segment PTS resets that break a
 /// byte-concatenated TS never reach one reader. Used by the Rust engine for
 /// HLS TS sources (the fMP4 fast path bypasses this entirely).
-int ferrisload_videotoolbox_merge_segments(const char *dir,
+int segmeris_videotoolbox_merge_segments(const char *dir,
                                            const char *prefix,
                                            int count,
                                            const char *output,

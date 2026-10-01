@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:m3u8_downloader/src/app/app_localizations.dart';
-import 'package:m3u8_downloader/src/app/app_theme.dart';
-import 'package:m3u8_downloader/src/home/home_page_controller.dart';
-import 'package:m3u8_downloader/src/home/home_widgets.dart';
+import 'package:segmeris/src/app/app_localizations.dart';
+import 'package:segmeris/src/app/app_theme.dart';
+import 'package:segmeris/src/home/home_page_controller.dart';
+import 'package:segmeris/src/home/home_widgets.dart';
 
 class HomeDownloadTasksCard extends StatelessWidget {
-  const HomeDownloadTasksCard({super.key, required this.tasks});
+  const HomeDownloadTasksCard({
+    super.key,
+    required this.tasks,
+    required this.onRetry,
+  });
 
   final List<HomeDownloadTask> tasks;
+  final ValueChanged<String> onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -19,10 +24,10 @@ class HomeDownloadTasksCard extends StatelessWidget {
       subtitle: '${l.text('running_downloads')}: $runningCount',
       icon: Icons.downloading_rounded,
       child: AnimatedSwitcher(
-        duration: FerrisMotion.slow,
-        switchInCurve: FerrisMotion.decelerate,
-        switchOutCurve: FerrisMotion.accelerate,
-        transitionBuilder: ferrisFadeScaleTransition,
+        duration: SegmerisMotion.slow,
+        switchInCurve: SegmerisMotion.decelerate,
+        switchOutCurve: SegmerisMotion.accelerate,
+        transitionBuilder: segmerisFadeScaleTransition,
         child: tasks.isEmpty
             ? _EmptyDownloadTasks(key: const ValueKey('empty-download-tasks'))
             : Column(
@@ -38,6 +43,7 @@ class HomeDownloadTasksCard extends StatelessWidget {
                       child: _DownloadTaskTile(
                         key: ValueKey(entry.$2.id),
                         task: entry.$2,
+                        onRetry: onRetry,
                       ),
                     ),
                 ],
@@ -60,7 +66,7 @@ class _EmptyDownloadTasks extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: FerrisShapes.of(context).md,
+        borderRadius: SegmerisShapes.of(context).md,
         color: cs.surfaceContainerHigh.withValues(alpha: 0.48),
       ),
       child: Row(
@@ -85,15 +91,21 @@ class _EmptyDownloadTasks extends StatelessWidget {
 }
 
 class _DownloadTaskTile extends StatelessWidget {
-  const _DownloadTaskTile({super.key, required this.task});
+  const _DownloadTaskTile({
+    super.key,
+    required this.task,
+    required this.onRetry,
+  });
 
   final HomeDownloadTask task;
+  final ValueChanged<String> onRetry;
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final t = Theme.of(context);
     final cs = t.colorScheme;
-    final shapes = FerrisShapes.of(context);
+    final shapes = SegmerisShapes.of(context);
     final failed = task.error != null;
     final completed = task.resultPath != null && !failed;
     final (tone, foreground, icon) = failed
@@ -111,8 +123,8 @@ class _DownloadTaskTile extends StatelessWidget {
               );
 
     return AnimatedContainer(
-      duration: FerrisMotion.medium,
-      curve: FerrisMotion.emphasized,
+      duration: SegmerisMotion.medium,
+      curve: SegmerisMotion.emphasized,
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -157,6 +169,14 @@ class _DownloadTaskTile extends StatelessWidget {
                   ),
                 ),
               ),
+              if (failed && !task.running)
+                IconButton(
+                  onPressed: () => onRetry(task.id),
+                  icon: const Icon(Icons.refresh_rounded),
+                  tooltip: l.text('retry'),
+                  visualDensity: VisualDensity.compact,
+                  color: foreground,
+                ),
             ],
           ),
           const SizedBox(height: 10),

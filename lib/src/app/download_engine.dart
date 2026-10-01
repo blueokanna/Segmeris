@@ -1,21 +1,21 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:m3u8_downloader/src/rust/api/downloader.dart';
+import 'package:segmeris/src/rust/api/downloader.dart';
 
 import 'api_download_engine.dart';
 
 /// Default API server base URL used by the web build.
 ///
 /// The web version has no local media engine: downloads are executed by the
-/// FerrisLoad HTTP API (the same server the Docker image ships). Users can
+/// Segmeris HTTP API (the same server the Docker image ships). Users can
 /// override this value in Settings.
 const String defaultApiBaseUrl = 'http://localhost:3000';
 
 /// Contract implemented by both download backends so the UI is identical on
 /// every platform:
 ///  - native: Rust engine bridged through flutter_rust_bridge;
-///  - web:    the FerrisLoad HTTP API (Docker) driven over HTTP.
+///  - web:    the Segmeris HTTP API (Docker) driven over HTTP.
 abstract class DownloadEngine {
   Future<void> init();
 

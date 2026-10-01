@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:m3u8_downloader/src/app/app_localizations.dart';
-import 'package:m3u8_downloader/src/app/app_theme.dart';
-import 'package:m3u8_downloader/src/app/runtime_capabilities.dart';
-import 'package:m3u8_downloader/src/home/home_widgets.dart';
+import 'package:segmeris/src/app/app_localizations.dart';
+import 'package:segmeris/src/app/app_theme.dart';
+import 'package:segmeris/src/app/runtime_capabilities.dart';
+import 'package:segmeris/src/home/home_widgets.dart';
 
 void main() {
   testWidgets('renders a completed runtime capability report on narrow screens',
@@ -61,6 +61,45 @@ void main() {
     expect(find.text('NVIDIA NVENC'), findsOneWidget);
     expect(find.text('This fifth encoder is intentionally not rendered'),
         findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('renders unreported runtime capabilities as unknown',
+      (tester) async {
+    const report = PlatformCapabilitySnapshot(
+      platform: 'web',
+      transcoderBackend: 'API server (not reported)',
+      hardwareAccelerated: null,
+      videoEncoders: [],
+      videoDecoders: [],
+      ffmpegAvailable: null,
+      ytdlpAvailable: null,
+      notes: ['The API does not report runtime capabilities.'],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        theme: buildAppTheme(appThemeProfiles.first, Brightness.light),
+        home: Scaffold(
+          body: RuntimeCapabilitiesPanel(
+            capabilities: Future.value(report),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('FFmpeg · Unknown'), findsOneWidget);
+    expect(find.text('yt-dlp · Unknown'), findsOneWidget);
+    expect(find.text('Hardware encoder · Unknown'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

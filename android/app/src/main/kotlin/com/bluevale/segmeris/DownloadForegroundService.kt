@@ -1,4 +1,4 @@
-package com.bluevale.m3u8_downloader
+package com.bluevale.segmeris
 
 import android.app.*
 import android.content.Context
@@ -18,7 +18,7 @@ class DownloadForegroundService : Service() {
 
     companion object {
         private const val TAG = "DownloadFgService"
-        private const val CHANNEL_ID = "ferrisload_download"
+        private const val CHANNEL_ID = "segmeris_download"
         private const val NOTIFICATION_ID = 1001
 
         fun start(context: Context) {
@@ -54,7 +54,7 @@ class DownloadForegroundService : Service() {
 
             return NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_sys_download)
-                .setContentTitle("FerrisLoad")
+                .setContentTitle("Segmeris")
                 .setContentText(status)
                 .setProgress(100, progress, progress <= 0)
                 .setOngoing(true)
@@ -112,7 +112,7 @@ class DownloadForegroundService : Service() {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = pm.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK,
-                "FerrisLoad::DownloadWakeLock"
+                "Segmeris::DownloadWakeLock"
             ).apply { acquire(4 * 60 * 60 * 1000L) } // up to 4 h
             Log.i(TAG, "WakeLock acquired")
         }

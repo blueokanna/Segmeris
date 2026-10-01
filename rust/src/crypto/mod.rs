@@ -8,5 +8,5 @@ pub mod aes128;
 pub mod aes_cbc;
 pub mod sha256;
 
-pub use aes_cbc::{AesCbcError, aes_128_cbc_decrypt};
-pub use sha256::{Sha256, sha256, sha256_hex};
+pub use aes_cbc::{aes_128_cbc_decrypt, AesCbcError};
+pub use sha256::{sha256, sha256_hex, Sha256};

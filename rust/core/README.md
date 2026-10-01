@@ -1,6 +1,6 @@
-# ferrisload-core
+# segmeris-core
 
-`ferrisload-core` contains FerrisLoad's platform-independent download-plan
+`segmeris-core` contains Segmeris's platform-independent download-plan
 types, validation rules, and bounded RustBinary wire format.
 
 The crate is `no_std` by default and does not allocate while encoding or
@@ -10,11 +10,11 @@ only when standard error integration is required.
 
 ```toml
 [dependencies]
-ferrisload-core = { version = "0.1.2", default-features = false }
+segmeris-core = { version = "0.1.2", default-features = false }
 ```
 
 ```rust
-use ferrisload_core::{
+use segmeris_core::{
     decode_download_plan, encode_download_plan, encoded_download_plan_size,
     DownloadPlan, DOWNLOAD_PLAN_VERSION,
 };
@@ -38,7 +38,7 @@ assert!(required <= frame.len());
 let written = encode_download_plan(&mut frame, &plan)?;
 let decoded = decode_download_plan(&frame[..written])?;
 assert_eq!(decoded, plan);
-# Ok::<(), ferrisload_core::WireError>(())
+# Ok::<(), segmeris_core::WireError>(())
 ```
 
 Network access, filesystems, Flutter FFI, and hardware codecs remain in the

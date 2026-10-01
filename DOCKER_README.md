@@ -1,4 +1,4 @@
-# M3U8下载器 Docker部署指南
+# Segmeris Docker部署指南
 
 本项目提供了 Docker 化支持，主要面向可实际使用的 REST API 服务，同时保留 Linux GUI 镜像构建入口。推荐在容器中使用 API 版本，因为它不依赖宿主机图形栈，并且现在已经接入真实的 Rust 下载核心。
 
@@ -56,7 +56,7 @@ docker-build.bat all
 docker-compose up -d
 
 # 查看日志
-docker-compose logs -f m3u8-downloader
+docker-compose logs -f segmeris
 
 # 停止服务
 docker-compose down
@@ -68,7 +68,7 @@ docker-compose down
 docker-compose --profile api up -d
 
 # 查看API日志
-docker-compose logs -f m3u8-api
+docker-compose logs -f segmeris-api
 
 # 停止API服务
 docker-compose --profile api down
@@ -86,7 +86,7 @@ docker run -it --rm \
   -e DISPLAY=$DISPLAY \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
   -v $(pwd)/downloads:/app/downloads \
-  m3u8-downloader:desktop
+  segmeris:desktop
 ```
 
 **Windows用户注意:**
@@ -101,7 +101,7 @@ docker run -it --rm \
 # 直接运行
 docker run -p 3000:3000 \
   -v $(pwd)/downloads:/app/downloads \
-  m3u8-downloader:api
+  segmeris:api
 ```
 
 **API端点:**
@@ -121,7 +121,7 @@ docker run -p 3000:3000 \
 docker run -p 3000:3000 \
   -e FERRISLOAD_API_TOKEN=change-me \
   -v $(pwd)/downloads:/app/downloads \
-  m3u8-downloader:api
+  segmeris:api
 ```
 
 **下载请求体示例:**
@@ -192,8 +192,8 @@ Release 工作流会构建并推送多架构 API 镜像到 GHCR：
 
 推送 tag（例如 `v1.2.0`）时，镜像标签会包含：
 
-- `ghcr.io/<owner>/m3u8-downloader-api:v1.2.0`
-- `ghcr.io/<owner>/m3u8-downloader-api:latest`
+- `ghcr.io/<owner>/segmeris-api:v1.2.0`
+- `ghcr.io/<owner>/segmeris-api:latest`
 
 ## 硬件加速支持
 
@@ -206,7 +206,7 @@ Docker容器支持以下硬件加速：
 
 **启用GPU加速:**
 ```bash
-docker run --gpus all -it m3u8-downloader:desktop
+docker run --gpus all -it segmeris:desktop
 ```
 
 ## 注意事项
@@ -227,7 +227,7 @@ docker run --gpus all -it m3u8-downloader:desktop
 xhost +local:docker
 
 # 或使用xauth
-docker run -e XAUTHORITY=/tmp/.docker.xauth -v /tmp/.docker.xauth:/tmp/.docker.xauth m3u8-downloader:desktop
+docker run -e XAUTHORITY=/tmp/.docker.xauth -v /tmp/.docker.xauth:/tmp/.docker.xauth segmeris:desktop
 ```
 
 **权限问题:**
@@ -239,7 +239,7 @@ sudo chown -R $USER:$USER downloads/
 **构建失败:**
 ```bash
 # 查看详细构建日志
-docker build --progress=plain -t m3u8-downloader:desktop .
+docker build --progress=plain -t segmeris:desktop .
 ```
 
 **API服务无法访问:**
@@ -248,7 +248,7 @@ docker build --progress=plain -t m3u8-downloader:desktop .
 docker-compose --profile api ps
 
 # 查看API日志
-docker-compose --profile api logs m3u8-api
+docker-compose --profile api logs segmeris-api
 ```
 
 ## 生产部署建议
