@@ -2,7 +2,7 @@
 
 A cross-platform media downloader with a Flutter UI and a Rust core (bridged via `flutter_rust_bridge`).
 
-It focuses on HLS / M3U8: fetch the playlist, download segments concurrently, decrypt AES-128 streams when needed, merge, and remux/transcode into an MP4 saved wherever you choose. Direct MP4 / WebM / MKV / DASH links work too, and it can pull usable streams out of ordinary web pages, YouTube, and Bilibili.
+It focuses on HLS / M3U8: fetch the playlist, download segments concurrently, decrypt AES-128 streams when needed, merge, and remux/transcode into an MP4 saved wherever you choose. Direct MP4 / WebM / MKV / DASH links work too, and it can pull usable streams out of ordinary web pages, YouTube, and Bilibili. Bilibili goes through the official API (view / playurl with live WBI signing): single videos, multi-part uploads, collections, uploader series and whole bangumi seasons all resolve, and an entire series can be queued for download in order.
 
 > 中文版： [README.md](README.md)
 
@@ -11,6 +11,8 @@ It focuses on HLS / M3U8: fetch the playlist, download segments concurrently, de
 - **HLS / M3U8** — master and media playlists, automatic best-variant selection, AES-128-CBC decryption, bounded-concurrency segment downloads with backoff retries, and an automatic single-threaded fallback instead of failing on the first hiccup.
 - **Direct download** — paste an `.m3u8` or a media link and hit download; no separate analyze step needed. YouTube / Bilibili page URLs are auto-resolved to a downloadable stream.
 - **Optional page analysis** — list candidate streams ranked by resolution/bitrate, then pick one.
+- **Native Bilibili support** — no page scraping: the official view / playurl API is used directly (WBI signature computed per request), covering BV/av ids, multi-part uploads, uploader collections, series, bangumi (ep/ss), b23.tv short links and share text. Analysis lists the whole series: pick one episode to download alone, or queue every episode in order. Quality tiers and badges (`1080P 高码率` / `4K 超高清` / `大会员` / `60帧`) come from playurl's `support_formats`, tagged with the codec (AVC / HEVC / AV1); signing in (by pasting your browser Cookie) unlocks 1080P 高码率, 1080P 60帧, 4K 超高清, HDR 真彩, Dolby Vision, 8K 超高清 plus Hi-Res lossless / Dolby Atmos audio. Anonymous sessions get the tiers this video offers but the session cannot reach listed by name, instead of a vague "480P only".
+- **Bilibili subtitles** — at download time `x/player/v2` provides the episode's tracks (`lan` / `lan_doc` / `subtitle_url`); the default is the account's own language, then the first track whose label is not auto-generated, and the `.bcc` JSON is converted into a standard SRT saved as `<video name>.srt`. The analysis card lists every track and marks the one that will be saved. Like the streams, the track list is entitlement-scoped (anonymous sessions receive an empty list and are told to sign in), and nothing about the language is inferred or invented.
 - **Remux / transcode** — FFmpeg on desktop (auto-detects NVENC / AMF / Intel QSV / VAAPI / VideoToolbox); Android uses the system `MediaCodec` hardware codecs, no FFmpeg required.
 - **Multiple concurrent tasks** — while a download runs you can edit the URL or file name and start another independent task.
 - **Authorized sessions** — for login-gated sites, provide Cookie / User-Agent / Referer / Origin / custom headers manually or via the built-in authorization browser. It does not bypass Cloudflare, CAPTCHAs, DRM, anti-leech signatures, or rate limits — those shouldn't be bypassed.
@@ -24,7 +26,7 @@ rust/           Rust core
   src/api_server/  optional HTTP API (Docker)
   src/crypto/   self-contained AES-128-CBC and SHA-256
   src/hls.rs    self-contained HLS playlist parser (resource-bounded)
-  src/net.rs    synchronous HTTP client (courierust primary; rustls/ureq fallback for hosts the bespoke TLS stack cannot handshake with)
+  src/net.rs    synchronous HTTP client (courierust engine: TLS 1.2/1.3, Mozilla root set + compatibility anchors + optional extra trust anchors)
 android/        Android host: MediaCodec transcoder, MediaStore export, foreground service
 ```
 
@@ -59,6 +61,30 @@ The codegen version must match `flutter_rust_bridge` in `rust/Cargo.toml` (curre
 
 For login-gated sites: open the authorization browser in settings, sign in yourself, and import the session; analysis and downloads reuse that context.
 
+### Managed networks (private CAs / TLS inspection)
+
+Only the built-in Mozilla root set is trusted by default. When the network performs TLS interception (corporate proxies, some anti-virus products), export the intercepting root as a PEM / DER file and point the program at it:
+
+```bash
+SEGMERIS_EXTRA_CA_FILE=/path/to/ca.pem
+# separate multiple files with the platform path separator (semicolon on Windows, colon on Unix); unset keeps the default trust set
+```
+
+This only adds a trust entry; chain, hostname and validity verification run exactly as before.
+
+### Bilibili series downloads
+
+Paste a video / bangumi / collection link (a link to any single episode inside a collection works too) and press **Analyze**:
+
+- The episode list of the containing series appears above the candidates, labeled with its kind (multi-part video / collection / bangumi / series).
+- Tap an episode to switch to it; **Download** then fetches just that one.
+- **Download all** queues the whole series in order: each episode is resolved and downloaded one after another, and a failure only affects that episode — retry it individually from its task card.
+- Streams are resolved at download time, not at analysis time, so a long queue never fails on expired CDN signatures.
+- Candidate names, badges and codecs come from the playurl response itself: `support_formats` provides the official tier names (`1080P 高清` / `1080P 高码率` / `1080P 60帧` / `4K 超高清` / `HDR 真彩` / `杜比视界` / `8K 超高清`) and corner badges (`大会员` / `高码率` / `60帧`), while the DASH manifest provides `codecid` and the RFC 6381 codec string (AVC / HEVC / AV1). When a tier ships several encodings the most compatible one is kept (AVC > HEVC > AV1) and the codec is shown on the card.
+- High qualities (1080P 高码率 / 1080P 60帧 / 4K 超高清 / HDR 真彩 / Dolby Vision / 8K 超高清) plus Hi-Res lossless and Dolby Atmos audio follow the account's entitlements: paste your signed-in browser Cookie (SESSDATA at minimum) into the authorization context. The API only returns what the account may actually access; nothing is bypassed, and an anonymous session is told by name which tiers this video offers but the session cannot reach.
+- "Anonymous gets no 4K" is not this app's limit: for the same video the API honestly lists `4K 超高清` / `8K 超高清` in `accept_quality` / `support_formats`, while `dash.video` only contains the streams **that session may access** — measured on an anonymous session it is `480P 标清 / 360P 流畅`. Quality is a server-side policy; no client-side parameter changes it, and this project will not impersonate an app with a shared client secret or borrow someone else's credentials. The only legitimate route to high quality is importing your own signed-in Cookie (a membership account adds the `大会员` tiers).
+- Subtitles: after a download the engine writes the chosen track next to the video as `<video name>.srt`. The candidates card lets you pick `Auto` (the episode's own default), one concrete track, or `No subtitles`; the track that `Auto` resolves to is marked `Default`, and its priority order is "the account's own language → the first non-auto-generated track → the first track". A **single download** uses the exact URL of the track you picked; **Download all** carries that track's **language** to every episode instead, because an exact URL only belongs to the episode it came from — an episode without that language falls back to its own default track. The track list is entitlement-scoped like the streams (anonymous sessions get an empty list and a sign-in hint), so subtitles need a signed-in session too — there is no switch to bypass that. On Android the `.srt` is exported alongside the video.
+
 ## How Android transcoding works
 
 There is no FFmpeg on Android; everything goes through `MediaCodec`:
@@ -90,7 +116,7 @@ docker run --rm -p 3000:3000 -e DOWNLOAD_DIR=/app/downloads \
 - Only `http/https` targets; scheme allow-lists at both the network and parsing layers (SSRF / local-file protection).
 - Custom request headers are validated against CR/LF injection; cookies and other credentials live in memory only, never on disk.
 - HLS keys and DASH segment URLs are forced to `http/https` as well.
-- TLS verification is always on. The primary engine is `courierust`; hosts whose certificate chains or TLS 1.3 signature schemes its bespoke stack rejects (a stricter verifier than rustls on some real-world deployments) automatically fall back to a rustls-backed engine, so a verifier quirk can never block a download.
+- TLS verification is always on: the courierust stack validates the chain, host name and validity window, trusting the built-in Mozilla root set plus a GlobalSign Root CA R1 compatibility anchor (real chains served by sites like Bilibili reference it). Managed networks add their own root through `SEGMERIS_EXTRA_CA_FILE`; nothing else is relaxed.
 - Output file names are sanitized against path traversal.
 - Download only content you own or are authorized to access.
 

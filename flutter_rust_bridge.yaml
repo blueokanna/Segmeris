@@ -1,3 +1,8 @@
-rust_input: crate::api
+# The bridge scans only `crate::api::downloader`: it is the single module
+# that exposes #[frb] entry points. Narrowing the input keeps internal
+# types (Bilibili API structs, resumption bookkeeping) out of the generated
+# surface entirely — with `crate::api` every `Default`-deriving internal
+# struct would get a bridge constructor it must not have.
+rust_input: crate::api::downloader
 rust_root: rust/
 dart_output: lib/src/rust

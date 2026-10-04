@@ -6,9 +6,10 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `android_hardware_transcode`, `augment_bilibili_candidates_with_playurl`, `augment_youtube_candidates_with_ytdlp`, `base_urls_of`, `bilibili_playurl_api_url`, `canonical_site_context`, `check_ffmpeg`, `checksum_for_release_asset`, `cleanup_segment_temp_files`, `cleanup_temp_files`, `command_with_timeout`, `command`, `concat_list_for_input`, `container_from_url`, `convert_to_mp4`, `create_http_client_for_context`, `create_unique_temp_dir`, `decrypt_hls_resource`, `deliver_pipeline_outcome`, `detect_acceleration`, `detect_access_challenge`, `direct_media_candidate`, `download_and_merge_once`, `download_and_merge`, `download_hls_resource`, `download_media_with_context_core`, `download_playlist_with_url`, `download_playlist`, `download_with_retries`, `emit_progress`, `emit_terminal_error`, `encoder`, `ensure_output_file_ready`, `external_command_works`, `failed_exit_status`, `ffmpeg_command_works`, `ffmpeg_transcode_timeout`, `find_ytdlp_output`, `finish`, `has_mp4_signature`, `hls2mp4_core`, `hls_response_bytes`, `human_bytes`, `infer_title_from_url`, `init_runtime_logging`, `inspect_hls_metadata`, `inspect_media_with_context_sync`, `is_hls_like`, `is_safe_ytdlp_header_name`, `is_safe_ytdlp_header_value`, `is_supported_media_like`, `is_valid_header_value_byte`, `join_manifest_url`, `label`, `merge_media_streams`, `mime_from_extension`, `mime_from_urls`, `new`, `noop_progress_reporter`, `normalize_source_url`, `official_ytdlp_asset_name`, `parse_ffmpeg_duration`, `parse_ytdlp_progress`, `playlist_base_url`, `prepare_output_path`, `probe_ffmpeg_encoder`, `probe_media_duration`, `protocol_from_url`, `provision_ytdlp_command`, `push_accel_encode_args`, `push`, `request_headers`, `resolve_dash_download_plan_from_manifest`, `resolve_dash_download_plan`, `resolve_dash_representation_url`, `resolve_ffmpeg_path`, `resolve_hls_byte_range`, `resolve_ytdlp_command`, `retry_backoff_delay`, `run_dash_pipeline`, `run_ffmpeg_conversion`, `run_ffmpeg_merge`, `run_ffmpeg`, `run_hls_pipeline`, `run_ytdlp_site_pipeline`, `score_candidate`, `score_candidates`, `select_best_hls_variant`, `select_hls_audio_rendition`, `select_transcoder_backend`, `should_auto_inspect_download_target`, `sink_progress_reporter`, `staged_progress_reporter`, `stream_media_response_to_file`, `transcode_input_to_output`, `validate_header_value`, `validate_output_duration`, `youtube_itag_from_media_url`, `ytdlp_cache_path`, `ytdlp_error_tail`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AccelType`, `CandidateCollector`, `DashDownloadPlan`, `DashRepresentationCandidate`, `ExternalCommandSpec`, `HlsResourceRequest`, `SegmentInput`, `TranscoderKind`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `android_hardware_transcode`, `augment_youtube_candidates_with_ytdlp`, `base_urls_of`, `canonical_site_context`, `check_ffmpeg`, `checksum_for_release_asset`, `cleanup_segment_temp_files`, `cleanup_temp_files`, `clear_resumable_partial`, `command_with_timeout`, `command`, `concat_list_for_input`, `container_from_url`, `convert_to_mp4`, `create_http_client_for_context`, `create_resume_temp_dir`, `decrypt_hls_resource`, `deliver_pipeline_outcome`, `detect_acceleration`, `detect_access_challenge`, `direct_media_candidate`, `download_and_decrypt_segment`, `download_and_merge_once`, `download_and_merge`, `download_hls_resource`, `download_media_with_context_core`, `download_playlist_with_url`, `download_playlist`, `download_with_retries`, `emit_progress`, `emit_terminal_error`, `encoder`, `ensure_output_file_ready`, `external_command_works`, `failed_exit_status`, `ffmpeg_command_works`, `ffmpeg_transcode_timeout`, `find_ytdlp_output`, `finish`, `has_mp4_signature`, `has_resume_validator`, `hash_file`, `hash_hls_field`, `hash_hls_resource_request`, `hls2mp4_core`, `hls_response_bytes`, `hls_segment_cache_key`, `hls_segment_metadata_path`, `human_bytes`, `if_range_value`, `infer_title_from_url`, `init_runtime_logging`, `inspect_hls_metadata`, `inspect_media_with_context_sync`, `ios_hardware_merge_segments`, `ios_hardware_transcode`, `is_bilibili_domain`, `is_complete_unsatisfied_range`, `is_hls_like`, `is_mp4_file`, `is_mpeg_ts_file`, `is_safe_ytdlp_header_name`, `is_safe_ytdlp_header_value`, `is_supported_media_like`, `is_valid_header_value_byte`, `is_valid_hls_segment_cache`, `is_youtube_domain`, `join_manifest_url`, `label`, `looks_like_mpeg_ts`, `media`, `merge_media_streams`, `mime_from_extension`, `mime_from_urls`, `new`, `noop_progress_reporter`, `normalize_source_url`, `official_ytdlp_asset_name`, `parse_content_range`, `parse_ffmpeg_duration`, `parse_ytdlp_progress`, `playlist_base_url`, `prepare_output_path`, `probe_ffmpeg_encoder`, `probe_media_duration`, `protocol_from_url`, `provision_ytdlp_command`, `push_accel_encode_args`, `push`, `range_response_has_safe_resume_identity`, `read_resumable_metadata`, `replace_download_output`, `report_hls_segment_completed`, `request_headers`, `resolve_dash_download_plan_from_manifest`, `resolve_dash_download_plan`, `resolve_dash_representation_url`, `resolve_ffmpeg_path`, `resolve_hls_byte_range`, `resolve_ytdlp_command`, `response_header`, `resumable_metadata_from_response`, `resumable_metadata_matches_response`, `resumable_metadata_path`, `resumable_partial_path`, `retry_backoff_delay`, `run_dash_pipeline`, `run_ffmpeg_conversion`, `run_ffmpeg_merge`, `run_ffmpeg`, `run_hls_pipeline`, `run_ytdlp_site_pipeline`, `score_candidate`, `score_candidates`, `select_best_hls_variant`, `select_hls_audio_rendition`, `select_transcoder_backend`, `should_auto_inspect_download_target`, `sink_progress_reporter`, `staged_progress_reporter`, `stream_media_response_to_file`, `to_choice`, `transcode_input_to_output`, `validate_header_value`, `validate_output_duration`, `write_hls_segment_cache`, `write_resumable_metadata`, `write_subtitle_sidecar`, `youtube_itag_from_media_url`, `ytdlp_cache_path`, `ytdlp_error_tail`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AccelType`, `CandidateCollector`, `CandidateSpec`, `ContentRange`, `DashDownloadPlan`, `DashRepresentationCandidate`, `ExternalCommandSpec`, `HlsResourceRequest`, `ResumableMetadata`, `SegmentInput`, `SubtitleChoice`, `TranscoderKind`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from_str`
+// These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`, `default`
 
 Stream<ProgressUpdate> hls2Mp4Run(
         {required String url,
@@ -35,49 +36,71 @@ Future<MediaInspectionResult> inspectMediaWithContext(
     RustLib.instance.api.crateApiDownloaderInspectMediaWithContext(
         url: url, requestContext: requestContext);
 
-Stream<ProgressUpdate> downloadMediaRun(
-        {required String pageUrl,
-        required String mediaUrl,
-        String? audioUrl,
-        required String output,
-        required int concurrency,
-        required int retries,
-        required int videoBitrate,
-        required int audioBitrate,
-        required bool keepTemp}) =>
-    RustLib.instance.api.crateApiDownloaderDownloadMediaRun(
-        pageUrl: pageUrl,
-        mediaUrl: mediaUrl,
-        audioUrl: audioUrl,
-        output: output,
-        concurrency: concurrency,
-        retries: retries,
-        videoBitrate: videoBitrate,
-        audioBitrate: audioBitrate,
-        keepTemp: keepTemp);
-
 Stream<ProgressUpdate> downloadMediaWithContext(
         {required String pageUrl,
         required String mediaUrl,
         String? audioUrl,
         required String output,
-        required int concurrency,
-        required int retries,
-        required int videoBitrate,
-        required int audioBitrate,
-        required bool keepTemp,
+        required DownloadOptions options,
         required RequestContext requestContext}) =>
     RustLib.instance.api.crateApiDownloaderDownloadMediaWithContext(
         pageUrl: pageUrl,
         mediaUrl: mediaUrl,
         audioUrl: audioUrl,
         output: output,
-        concurrency: concurrency,
-        retries: retries,
-        videoBitrate: videoBitrate,
-        audioBitrate: audioBitrate,
-        keepTemp: keepTemp,
+        options: options,
         requestContext: requestContext);
+
+/// Transport options of one download: everything that is not part of the
+/// media identity, and therefore not part of the resume plan.
+class DownloadOptions {
+  final int concurrency;
+  final int retries;
+  final int videoBitrate;
+  final int audioBitrate;
+  final bool keepTemp;
+  final SubtitleMode subtitleMode;
+
+  /// Track URL (`SubtitleMode::Track`) or `lan` tag
+  /// (`SubtitleMode::Language`); empty otherwise.
+  final String subtitleValue;
+
+  const DownloadOptions({
+    required this.concurrency,
+    required this.retries,
+    required this.videoBitrate,
+    required this.audioBitrate,
+    required this.keepTemp,
+    required this.subtitleMode,
+    required this.subtitleValue,
+  });
+
+  static Future<DownloadOptions> default_() =>
+      RustLib.instance.api.crateApiDownloaderDownloadOptionsDefault();
+
+  @override
+  int get hashCode =>
+      concurrency.hashCode ^
+      retries.hashCode ^
+      videoBitrate.hashCode ^
+      audioBitrate.hashCode ^
+      keepTemp.hashCode ^
+      subtitleMode.hashCode ^
+      subtitleValue.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DownloadOptions &&
+          runtimeType == other.runtimeType &&
+          concurrency == other.concurrency &&
+          retries == other.retries &&
+          videoBitrate == other.videoBitrate &&
+          audioBitrate == other.audioBitrate &&
+          keepTemp == other.keepTemp &&
+          subtitleMode == other.subtitleMode &&
+          subtitleValue == other.subtitleValue;
+}
 
 class HeaderEntry {
   final String name;
@@ -111,6 +134,15 @@ class MediaCandidate {
   final String protocol;
   final String mimeType;
   final String qualityLabel;
+
+  /// Short marker the source publishes next to the quality name
+  /// (Bilibili's `大会员` / `高码率` / `60帧` corner badge); empty when
+  /// the source has none.
+  final String qualityBadge;
+
+  /// Video codec name (`AVC` / `HEVC` / `AV1`) when the source reports
+  /// one; empty otherwise.
+  final String codec;
   final int width;
   final int height;
   final bool requiresFfmpeg;
@@ -131,6 +163,8 @@ class MediaCandidate {
     required this.protocol,
     required this.mimeType,
     required this.qualityLabel,
+    required this.qualityBadge,
+    required this.codec,
     required this.width,
     required this.height,
     required this.requiresFfmpeg,
@@ -153,6 +187,8 @@ class MediaCandidate {
       protocol.hashCode ^
       mimeType.hashCode ^
       qualityLabel.hashCode ^
+      qualityBadge.hashCode ^
+      codec.hashCode ^
       width.hashCode ^
       height.hashCode ^
       requiresFfmpeg.hashCode ^
@@ -177,6 +213,8 @@ class MediaCandidate {
           protocol == other.protocol &&
           mimeType == other.mimeType &&
           qualityLabel == other.qualityLabel &&
+          qualityBadge == other.qualityBadge &&
+          codec == other.codec &&
           width == other.width &&
           height == other.height &&
           requiresFfmpeg == other.requiresFfmpeg &&
@@ -187,23 +225,120 @@ class MediaCandidate {
           reason == other.reason;
 }
 
+/// A multi-episode container the UI can present as a pickable list.
+class MediaCollection {
+  /// `parts` (multi-part upload), `ugc_season` (uploader collection),
+  /// `pgc_season` (bangumi / documentary), `collection` (channel
+  /// collection) or `series` (uploader series).
+  final String kind;
+  final String title;
+  final List<MediaCollectionEntry> entries;
+
+  const MediaCollection({
+    required this.kind,
+    required this.title,
+    required this.entries,
+  });
+
+  @override
+  int get hashCode => kind.hashCode ^ title.hashCode ^ entries.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MediaCollection &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          title == other.title &&
+          entries == other.entries;
+}
+
+/// One downloadable episode inside a [`MediaCollection`].
+class MediaCollectionEntry {
+  /// Stable identity: `{bvid}:{cid}` for video-based entries,
+  /// `ep:{ep_id}` for PGC episodes.
+  final String id;
+
+  /// 1-based position for display.
+  final int index;
+  final String title;
+  final double durationSeconds;
+
+  /// Canonical page URL; inspecting or downloading this URL resolves
+  /// exactly this episode.
+  final String pageUrl;
+  final bool available;
+
+  /// Informational note (e.g. a membership badge).
+  final String unavailableReason;
+
+  /// Marks the episode the current page points at.
+  final bool current;
+
+  const MediaCollectionEntry({
+    required this.id,
+    required this.index,
+    required this.title,
+    required this.durationSeconds,
+    required this.pageUrl,
+    required this.available,
+    required this.unavailableReason,
+    required this.current,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      index.hashCode ^
+      title.hashCode ^
+      durationSeconds.hashCode ^
+      pageUrl.hashCode ^
+      available.hashCode ^
+      unavailableReason.hashCode ^
+      current.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MediaCollectionEntry &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          index == other.index &&
+          title == other.title &&
+          durationSeconds == other.durationSeconds &&
+          pageUrl == other.pageUrl &&
+          available == other.available &&
+          unavailableReason == other.unavailableReason &&
+          current == other.current;
+}
+
 class MediaInspectionResult {
   final String pageUrl;
   final String pageTitle;
   final String extractor;
   final List<MediaCandidate> candidates;
+
+  /// Subtitle tracks the source exposes for this episode. Empty when the
+  /// source has none, or when the current session may not read them.
+  final List<MediaSubtitleTrack> subtitles;
   final List<String> warnings;
   final bool authRequired;
   final String challengeReason;
+
+  /// The multi-episode container this page belongs to (multi-part
+  /// upload, collection, or season), when one exists.
+  final MediaCollection? collection;
 
   const MediaInspectionResult({
     required this.pageUrl,
     required this.pageTitle,
     required this.extractor,
     required this.candidates,
+    required this.subtitles,
     required this.warnings,
     required this.authRequired,
     required this.challengeReason,
+    this.collection,
   });
 
   @override
@@ -212,9 +347,11 @@ class MediaInspectionResult {
       pageTitle.hashCode ^
       extractor.hashCode ^
       candidates.hashCode ^
+      subtitles.hashCode ^
       warnings.hashCode ^
       authRequired.hashCode ^
-      challengeReason.hashCode;
+      challengeReason.hashCode ^
+      collection.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -225,9 +362,48 @@ class MediaInspectionResult {
           pageTitle == other.pageTitle &&
           extractor == other.extractor &&
           candidates == other.candidates &&
+          subtitles == other.subtitles &&
           warnings == other.warnings &&
           authRequired == other.authRequired &&
-          challengeReason == other.challengeReason;
+          challengeReason == other.challengeReason &&
+          collection == other.collection;
+}
+
+/// One subtitle track an episode offers, exactly as the source describes
+/// it (label text included) — no language detection or guessing.
+class MediaSubtitleTrack {
+  /// Source language tag (`zh-CN`, `en-US`, `ai-zh`, …).
+  final String language;
+
+  /// Source label (`中文（自动生成）`, `English`, …).
+  final String label;
+
+  /// Signed URL of the subtitle document; short-lived like every CDN URL.
+  final String url;
+
+  /// The track a download of this episode will save by default.
+  final bool selected;
+
+  const MediaSubtitleTrack({
+    required this.language,
+    required this.label,
+    required this.url,
+    required this.selected,
+  });
+
+  @override
+  int get hashCode =>
+      language.hashCode ^ label.hashCode ^ url.hashCode ^ selected.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MediaSubtitleTrack &&
+          runtimeType == other.runtimeType &&
+          language == other.language &&
+          label == other.label &&
+          url == other.url &&
+          selected == other.selected;
 }
 
 class ProgressUpdate {
@@ -290,4 +466,27 @@ class RequestContext {
           origin == other.origin &&
           cookie == other.cookie &&
           headers == other.headers;
+}
+
+/// Which subtitle track a download saves next to the video.
+///
+/// Unit-only so the FFI maps it onto a plain Dart enum (a fielded enum
+/// would drag `freezed` + `build_runner` into the app for one parameter);
+/// the payload travels in [`DownloadOptions::subtitle_value`] and is
+/// validated once, at the engine boundary, into [`SubtitleChoice`].
+enum SubtitleMode {
+  /// Resolve the episode's default track at download time.
+  auto,
+
+  /// Save no subtitle at all.
+  off,
+
+  /// Save exactly the track named by `subtitle_value` (an https URL).
+  track,
+
+  /// Prefer the `lan` tag in `subtitle_value` on every episode, falling
+  /// back to the episode's default track — the shape a series queue
+  /// needs, because an exact URL only addresses one episode.
+  language,
+  ;
 }

@@ -31,6 +31,7 @@ class MediaStoreBridge {
     String srcPath,
     String fileName, {
     String subDir = 'Segmeris',
+    String mimeType = 'video/mp4',
   }) async {
     if (!SegmerisPlatform.isAndroid) {
       return srcPath;
@@ -39,7 +40,7 @@ class MediaStoreBridge {
       return await _channel.invokeMethod<String>('saveToDownloads', {
         'srcPath': srcPath,
         'fileName': fileName,
-        'mimeType': 'video/mp4',
+        'mimeType': mimeType,
         'subDir': subDir,
       });
     } catch (_) {

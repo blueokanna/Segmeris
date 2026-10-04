@@ -2,7 +2,7 @@ use anyhow::Result;
 use regex::Regex;
 use url::Url;
 
-use crate::api::downloader::CandidateCollector;
+use crate::api::downloader::{CandidateCollector, CandidateSpec};
 
 use super::common::normalize_exposed_media_url;
 
@@ -13,16 +13,12 @@ fn push_generic_candidate(
     collector: &mut CandidateCollector,
 ) {
     if let Some(resolved) = normalize_exposed_media_url(page_url, raw) {
-        collector.push(
-            resolved,
-            None,
-            None,
-            Some(quality_label.to_string()),
-            None,
-            None,
-            None,
-            Some("generic"),
-        );
+        collector.push(CandidateSpec {
+            media_url: resolved,
+            quality_label: Some(quality_label.to_string()),
+            extractor: Some("generic"),
+            ..CandidateSpec::default()
+        });
     }
 }
 

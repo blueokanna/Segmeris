@@ -1,5 +1,3 @@
-//! Diagnostic: exercise SyncHttpClient against hls.piotrt.cn to surface the
-//! exact transport failure (DNS / TLS / connect / HTTP).
 use rust_lib_segmeris::net::SyncHttpClient;
 
 fn main() {
@@ -16,8 +14,6 @@ fn main() {
 
     let targets = [
         "https://hls.piotrt.cn/",
-        // Real-world HLS master playlist (Apple CDN) proving end-to-end
-        // playlist fetch through the (possibly falling-back) client.
         "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8",
     ];
 

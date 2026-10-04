@@ -199,7 +199,6 @@ mod tests {
     fn rejects_bad_padding() {
         let key = [7u8; 16];
         let iv = [9u8; 16];
-        // Two blocks with garbage (padding byte 5 but bytes aren't 5).
         let ciphertext = [0u8; 32];
         assert!(matches!(
             aes_128_cbc_decrypt(&key, &iv, &ciphertext),

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::api::downloader::{self, ProgressUpdate, RequestContext};
+use crate::api::downloader::{self, DownloadOptions, ProgressUpdate, RequestContext};
 
 pub type DownloadProgressHandler = Arc<dyn Fn(ProgressUpdate) + Send + Sync>;
 
@@ -41,11 +41,7 @@ pub fn download_media(
     media_url: String,
     audio_url: Option<String>,
     output: String,
-    concurrency: i32,
-    retries: i32,
-    video_bitrate: i32,
-    audio_bitrate: i32,
-    keep_temp: bool,
+    options: DownloadOptions,
     request_context: RequestContext,
     progress: Option<DownloadProgressHandler>,
 ) -> Result<()> {
@@ -55,11 +51,7 @@ pub fn download_media(
         media_url,
         audio_url,
         output,
-        concurrency,
-        retries,
-        video_bitrate,
-        audio_bitrate,
-        keep_temp,
+        options,
         request_context,
     )
 }

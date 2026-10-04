@@ -122,18 +122,14 @@ unsafe extern "C" {
 /// bounded waits) and surface the native error string.
 #[cfg(target_os = "ios")]
 mod ios_videotoolbox {
-    use std::ffi::{CStr, CString};
-    use std::os::raw::c_char;
-    use std::time::Duration;
-
-    use anyhow::{anyhow, Context, Result};
-
-    // The `extern "C"` items live in the parent module; bring them into scope
-    // explicitly (they do not resolve through parent-module lookup).
     use super::{
         segmeris_videotoolbox_available, segmeris_videotoolbox_merge_segments,
         segmeris_videotoolbox_mux, segmeris_videotoolbox_transcode,
     };
+    use anyhow::{anyhow, Context, Result};
+    use std::ffi::{CStr, CString};
+    use std::os::raw::c_char;
+    use std::time::Duration;
 
     const ERROR_BUF_LEN: usize = 512;
 
@@ -742,6 +738,13 @@ pub struct MediaCandidate {
     pub protocol: String,
     pub mime_type: String,
     pub quality_label: String,
+    /// Short marker the source publishes next to the quality name
+    /// (Bilibili's `大会员` / `高码率` / `60帧` corner badge); empty when
+    /// the source has none.
+    pub quality_badge: String,
+    /// Video codec name (`AVC` / `HEVC` / `AV1`) when the source reports
+    /// one; empty otherwise.
+    pub codec: String,
     pub width: i32,
     pub height: i32,
     pub requires_ffmpeg: bool,
@@ -758,9 +761,60 @@ pub struct MediaInspectionResult {
     pub page_title: String,
     pub extractor: String,
     pub candidates: Vec<MediaCandidate>,
+    /// Subtitle tracks the source exposes for this episode. Empty when the
+    /// source has none, or when the current session may not read them.
+    pub subtitles: Vec<MediaSubtitleTrack>,
     pub warnings: Vec<String>,
     pub auth_required: bool,
     pub challenge_reason: String,
+    /// The multi-episode container this page belongs to (multi-part
+    /// upload, collection, or season), when one exists.
+    pub collection: Option<MediaCollection>,
+}
+
+/// One subtitle track an episode offers, exactly as the source describes
+/// it (label text included) — no language detection or guessing.
+#[derive(Clone)]
+pub struct MediaSubtitleTrack {
+    /// Source language tag (`zh-CN`, `en-US`, `ai-zh`, …).
+    pub language: String,
+    /// Source label (`中文（自动生成）`, `English`, …).
+    pub label: String,
+    /// Signed URL of the subtitle document; short-lived like every CDN URL.
+    pub url: String,
+    /// The track a download of this episode will save by default.
+    pub selected: bool,
+}
+
+/// A multi-episode container the UI can present as a pickable list.
+#[derive(Clone)]
+pub struct MediaCollection {
+    /// `parts` (multi-part upload), `ugc_season` (uploader collection),
+    /// `pgc_season` (bangumi / documentary), `collection` (channel
+    /// collection) or `series` (uploader series).
+    pub kind: String,
+    pub title: String,
+    pub entries: Vec<MediaCollectionEntry>,
+}
+
+/// One downloadable episode inside a [`MediaCollection`].
+#[derive(Clone)]
+pub struct MediaCollectionEntry {
+    /// Stable identity: `{bvid}:{cid}` for video-based entries,
+    /// `ep:{ep_id}` for PGC episodes.
+    pub id: String,
+    /// 1-based position for display.
+    pub index: i32,
+    pub title: String,
+    pub duration_seconds: f64,
+    /// Canonical page URL; inspecting or downloading this URL resolves
+    /// exactly this episode.
+    pub page_url: String,
+    pub available: bool,
+    /// Informational note (e.g. a membership badge).
+    pub unavailable_reason: String,
+    /// Marks the episode the current page points at.
+    pub current: bool,
 }
 
 pub(crate) fn sink_progress_reporter(sink: StreamSink<ProgressUpdate>) -> ProgressReporter {
@@ -1499,13 +1553,20 @@ pub(crate) fn inspect_media_with_context_sync(
             page_title: infer_title_from_url(&url),
             extractor: "direct".to_string(),
             candidates: vec![candidate],
+            subtitles: Vec::new(),
             warnings: Vec::new(),
             auth_required: false,
             challenge_reason: String::new(),
+            collection: None,
         });
     }
 
     let requested_page_url = Url::parse(&url).context("Invalid inspection URL")?;
+
+    if extractor_name_for_host(requested_page_url.domain()) == "bilibili" {
+        return crate::api::bilibili::inspect_bilibili(&url, &request_context);
+    }
+
     let client = create_http_client_for_context(Some(&url), &request_context)?;
     let headers = request_headers(&requested_page_url, &request_context)?;
     let (status, _response_headers, body) = client.get(&url, &headers)?;
@@ -1520,12 +1581,14 @@ pub(crate) fn inspect_media_with_context_sync(
                 .unwrap_or_else(|| "Authorization required".to_string()),
             extractor: extractor_name_for_host(page_url.domain()),
             candidates: Vec::new(),
+            subtitles: Vec::new(),
             warnings: warnings
                 .into_iter()
                 .map(SiteWarning::into_display)
                 .collect(),
             auth_required: true,
             challenge_reason: reason,
+            collection: None,
         });
     }
     if !(200..300).contains(&status) {
@@ -1537,27 +1600,6 @@ pub(crate) fn inspect_media_with_context_sync(
     let mut collector = CandidateCollector::new(page_url.as_str(), &page_title, &extractor);
 
     inspect_page_candidates(&page_url, &html, &mut collector, &mut warnings)?;
-
-    if extractor == "bilibili" {
-        let had_candidates = !collector.candidates.is_empty();
-        if let Err(error) = augment_bilibili_candidates_with_playurl(
-            &page_url,
-            &html,
-            &request_context,
-            &mut collector,
-            &mut warnings,
-        ) {
-            if !had_candidates {
-                warnings.push(SiteWarning::site(
-                    "bilibili-playurl-fallback-failed",
-                    format!(
-                        "Bilibili playurl API could not resolve this video: {}",
-                        error
-                    ),
-                ));
-            }
-        }
-    }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if extractor == "youtube" {
@@ -1588,12 +1630,14 @@ pub(crate) fn inspect_media_with_context_sync(
                 page_title,
                 extractor,
                 candidates,
+                subtitles: Vec::new(),
                 warnings: warnings
                     .into_iter()
                     .map(SiteWarning::into_display)
                     .collect(),
                 auth_required: true,
                 challenge_reason,
+                collection: None,
             });
         }
     }
@@ -1610,102 +1654,15 @@ pub(crate) fn inspect_media_with_context_sync(
         page_title,
         extractor,
         candidates,
+        subtitles: Vec::new(),
         warnings: warnings
             .into_iter()
             .map(SiteWarning::into_display)
             .collect(),
         auth_required: false,
         challenge_reason: String::new(),
+        collection: None,
     })
-}
-
-fn augment_bilibili_candidates_with_playurl(
-    page_url: &Url,
-    html: &str,
-    request_context: &RequestContext,
-    collector: &mut CandidateCollector,
-    warnings: &mut Vec<SiteWarning>,
-) -> Result<bool> {
-    let Some(api_url) = bilibili_playurl_api_url(page_url, html)? else {
-        return Ok(false);
-    };
-
-    let client = create_http_client_for_context(Some(page_url.as_str()), request_context)?;
-    let headers = request_headers(page_url, request_context)?;
-    let (status, _, body) = client.get(api_url.as_str(), &headers)?;
-    if !(200..300).contains(&status) {
-        bail!("Bilibili playurl API returned HTTP {}", status);
-    }
-    let payload: Value =
-        nextjson::from_slice(&body).context("Failed to parse Bilibili playurl API response")?;
-    let code = payload.get("code").and_then(Value::as_i64).unwrap_or(-1);
-    if code != 0 {
-        let message = payload
-            .get("message")
-            .or_else(|| payload.get("msg"))
-            .and_then(Value::as_str)
-            .unwrap_or("unknown Bilibili API error");
-        bail!("Bilibili playurl API error {}: {}", code, message);
-    }
-
-    let before = collector.candidates.len();
-    let body_text = String::from_utf8_lossy(&body).into_owned();
-    let synthetic_page = format!("window.__playinfo__={}", body_text);
-    inspect_page_candidates(page_url, &synthetic_page, collector, warnings)?;
-    Ok(collector.candidates.len() > before)
-}
-
-fn bilibili_playurl_api_url(page_url: &Url, html: &str) -> Result<Option<Url>> {
-    let episode_pattern = Regex::new(r"/bangumi/play/ep(\d+)")?;
-    let episode_id = episode_pattern
-        .captures(page_url.path())
-        .and_then(|captures| captures.get(1))
-        .map(|value| value.as_str().to_string())
-        .or_else(|| {
-            Regex::new(r#""ep_id"\s*:\s*(\d+)"#)
-                .ok()?
-                .captures(html)?
-                .get(1)
-                .map(|value| value.as_str().to_string())
-        });
-    if let Some(episode_id) = episode_id {
-        let mut url = Url::parse("https://api.bilibili.com/pgc/player/web/playurl")?;
-        url.query_pairs_mut()
-            .append_pair("ep_id", &episode_id)
-            .append_pair("qn", "127")
-            .append_pair("fnval", "4048")
-            .append_pair("fourk", "1");
-        return Ok(Some(url));
-    }
-
-    let bvid_pattern = Regex::new(r"(?i)(BV[0-9A-Za-z]{10})")?;
-    let bvid = bvid_pattern
-        .captures(page_url.path())
-        .and_then(|captures| captures.get(1))
-        .map(|value| value.as_str().to_string())
-        .or_else(|| {
-            Regex::new(r#""bvid"\s*:\s*"(BV[0-9A-Za-z]{10})""#)
-                .ok()?
-                .captures(html)?
-                .get(1)
-                .map(|value| value.as_str().to_string())
-        });
-    let cid = Regex::new(r#""cid"\s*:\s*(\d+)"#)?
-        .captures(html)
-        .and_then(|captures| captures.get(1))
-        .map(|value| value.as_str().to_string());
-
-    let (Some(bvid), Some(cid)) = (bvid, cid) else {
-        return Ok(None);
-    };
-    let mut url = Url::parse("https://api.bilibili.com/x/player/playurl")?;
-    url.query_pairs_mut()
-        .append_pair("bvid", &bvid)
-        .append_pair("cid", &cid)
-        .append_pair("qn", "127")
-        .append_pair("fnval", "4048")
-        .append_pair("fourk", "1");
-    Ok(Some(url))
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -1856,22 +1813,23 @@ fn augment_youtube_candidates_with_ytdlp(
                     .map(|height| format!("{}p", height))
             });
         let extension = format.get("ext").and_then(Value::as_str).unwrap_or("mp4");
-        collector.push(
-            media_url.to_string(),
-            if has_audio { None } else { best_audio.clone() },
-            title.clone(),
-            quality,
-            Some(mime_from_extension(extension).to_string()),
-            format
+        collector.push(CandidateSpec {
+            media_url: media_url.to_string(),
+            audio_url: if has_audio { None } else { best_audio.clone() },
+            title: title.clone(),
+            quality_label: quality,
+            mime_type: Some(mime_from_extension(extension).to_string()),
+            width: format
                 .get("width")
                 .and_then(Value::as_i64)
                 .map(|value| value as i32),
-            format
+            height: format
                 .get("height")
                 .and_then(Value::as_i64)
                 .map(|value| value as i32),
-            Some("youtube/yt-dlp"),
-        );
+            extractor: Some("youtube/yt-dlp"),
+            ..CandidateSpec::default()
+        });
     }
 
     Ok(collector.candidates.len() > before)
@@ -2180,43 +2138,119 @@ fn run_ytdlp_site_pipeline(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-#[flutter_rust_bridge::frb()]
-pub async fn download_media_run(
-    sink: StreamSink<ProgressUpdate>,
-    page_url: String,
-    media_url: String,
-    audio_url: Option<String>,
-    output: String,
-    concurrency: i32,
-    retries: i32,
-    video_bitrate: i32,
-    audio_bitrate: i32,
-    keep_temp: bool,
-) -> Result<()> {
-    let reporter = sink_progress_reporter(sink);
-    let worker = reporter.clone();
-    let outcome = flutter_rust_bridge::spawn_blocking_with(
-        move || {
-            download_media_with_context_core(
-                worker,
-                page_url,
-                media_url,
-                audio_url,
-                output,
-                concurrency,
-                retries,
-                video_bitrate,
-                audio_bitrate,
-                keep_temp,
-                RequestContext::default(),
-            )
-        },
-        (),
-    )
-    .await
-    .map_err(|e| anyhow!("download background task failed: {e}"));
-    deliver_pipeline_outcome(&reporter, outcome)
+/// Which subtitle track a download saves next to the video.
+///
+/// Unit-only so the FFI maps it onto a plain Dart enum (a fielded enum
+/// would drag `freezed` + `build_runner` into the app for one parameter);
+/// the payload travels in [`DownloadOptions::subtitle_value`] and is
+/// validated once, at the engine boundary, into [`SubtitleChoice`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SubtitleMode {
+    /// Resolve the episode's default track at download time.
+    Auto,
+    /// Save no subtitle at all.
+    Off,
+    /// Save exactly the track named by `subtitle_value` (an https URL).
+    Track,
+    /// Prefer the `lan` tag in `subtitle_value` on every episode, falling
+    /// back to the episode's default track — the shape a series queue
+    /// needs, because an exact URL only addresses one episode.
+    Language,
+}
+
+impl std::str::FromStr for SubtitleMode {
+    type Err = String;
+
+    fn from_str(mode: &str) -> Result<Self, Self::Err> {
+        match mode.trim().to_ascii_lowercase().as_str() {
+            "auto" => Ok(Self::Auto),
+            "off" => Ok(Self::Off),
+            "track" => Ok(Self::Track),
+            "language" => Ok(Self::Language),
+            other => Err(format!(
+                "unknown subtitle mode \"{other}\" (expected auto, off, track or language)"
+            )),
+        }
+    }
+}
+
+impl SubtitleMode {
+    /// Validate this mode's payload into the engine's typed choice.
+    pub(crate) fn to_choice(self, value: &str) -> Result<SubtitleChoice, String> {
+        let value = value.trim();
+        let required = || {
+            if value.is_empty() {
+                Err(format!(
+                    "subtitle mode \"{}\" requires a value",
+                    match self {
+                        Self::Track => "track",
+                        Self::Language => "language",
+                        _ => "auto",
+                    }
+                ))
+            } else {
+                Ok(value.to_string())
+            }
+        };
+        match self {
+            Self::Auto => Ok(SubtitleChoice::Auto),
+            Self::Off => Ok(SubtitleChoice::Off),
+            Self::Track => {
+                let url = required()?;
+                if !url.starts_with("https://") {
+                    return Err("subtitle track URL must be an https URL".to_string());
+                }
+                Ok(SubtitleChoice::Track { url })
+            }
+            Self::Language => {
+                let tag = required()?;
+                if tag.len() > 32 {
+                    return Err("subtitle language tag is too long".to_string());
+                }
+                Ok(SubtitleChoice::Language { tag })
+            }
+        }
+    }
+}
+
+/// The validated subtitle decision of one download. Never leaves the
+/// crate: the FFI/HTTP contracts carry [`SubtitleMode`] + value and are
+/// parsed into this type at the boundary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SubtitleChoice {
+    Auto,
+    Off,
+    Track { url: String },
+    Language { tag: String },
+}
+
+/// Transport options of one download: everything that is not part of the
+/// media identity, and therefore not part of the resume plan.
+#[derive(Clone, Debug)]
+pub struct DownloadOptions {
+    pub concurrency: i32,
+    pub retries: i32,
+    pub video_bitrate: i32,
+    pub audio_bitrate: i32,
+    pub keep_temp: bool,
+    pub subtitle_mode: SubtitleMode,
+    /// Track URL (`SubtitleMode::Track`) or `lan` tag
+    /// (`SubtitleMode::Language`); empty otherwise.
+    pub subtitle_value: String,
+}
+
+impl Default for DownloadOptions {
+    fn default() -> Self {
+        Self {
+            concurrency: 4,
+            retries: 3,
+            video_bitrate: 0,
+            audio_bitrate: 0,
+            keep_temp: false,
+            subtitle_mode: SubtitleMode::Auto,
+            subtitle_value: String::new(),
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2227,11 +2261,7 @@ pub async fn download_media_with_context(
     media_url: String,
     audio_url: Option<String>,
     output: String,
-    concurrency: i32,
-    retries: i32,
-    video_bitrate: i32,
-    audio_bitrate: i32,
-    keep_temp: bool,
+    options: DownloadOptions,
     request_context: RequestContext,
 ) -> Result<()> {
     let reporter = sink_progress_reporter(sink);
@@ -2244,11 +2274,7 @@ pub async fn download_media_with_context(
                 media_url,
                 audio_url,
                 output,
-                concurrency,
-                retries,
-                video_bitrate,
-                audio_bitrate,
-                keep_temp,
+                options,
                 request_context,
             )
         },
@@ -2266,11 +2292,7 @@ pub(crate) fn download_media_with_context_core(
     media_url: String,
     audio_url: Option<String>,
     output: String,
-    concurrency: i32,
-    retries: i32,
-    video_bitrate: i32,
-    audio_bitrate: i32,
-    keep_temp: bool,
+    options: DownloadOptions,
     request_context: RequestContext,
 ) -> Result<()> {
     init_runtime_logging();
@@ -2281,18 +2303,30 @@ pub(crate) fn download_media_with_context_core(
         media_url: &media_url,
         audio_url: audio_url.as_deref(),
         output_path: &output,
-        concurrency: u16::try_from(concurrency)
+        concurrency: u16::try_from(options.concurrency)
             .map_err(|_| anyhow!("concurrency must be a positive 16-bit value"))?,
-        retries: u8::try_from(retries)
+        retries: u8::try_from(options.retries)
             .map_err(|_| anyhow!("retries must be a non-negative 8-bit value"))?,
-        video_bitrate_kbps: u32::try_from(video_bitrate)
+        video_bitrate_kbps: u32::try_from(options.video_bitrate)
             .map_err(|_| anyhow!("video bitrate must not be negative"))?,
-        audio_bitrate_kbps: u32::try_from(audio_bitrate)
+        audio_bitrate_kbps: u32::try_from(options.audio_bitrate)
             .map_err(|_| anyhow!("audio bitrate must not be negative"))?,
-        keep_temporary_files: keep_temp,
+        keep_temporary_files: options.keep_temp,
     };
     plan.validate()
         .map_err(|error| anyhow!("invalid download plan: {error}"))?;
+    let DownloadOptions {
+        concurrency,
+        retries,
+        video_bitrate,
+        audio_bitrate,
+        keep_temp,
+        subtitle_mode,
+        subtitle_value,
+    } = options;
+    let subtitle = subtitle_mode
+        .to_choice(&subtitle_value)
+        .map_err(|error| anyhow!("invalid subtitle selection: {error}"))?;
 
     let page_url = normalize_source_url(&page_url)?;
     let media_url = normalize_source_url(&media_url)?;
@@ -2309,8 +2343,7 @@ pub(crate) fn download_media_with_context_core(
             .ok()
             .map(|url| extractor_name_for_host(url.domain()))
             .unwrap_or_default();
-        let should_use_ytdlp =
-            extractor == "youtube" || (extractor == "bilibili" && auto_inspect && check_ffmpeg());
+        let should_use_ytdlp = extractor == "youtube";
         if should_use_ytdlp {
             let command = if let Some(command) = resolve_ytdlp_command() {
                 Some(command)
@@ -2377,11 +2410,15 @@ pub(crate) fn download_media_with_context_core(
             selected_candidate.media_url,
             selected_candidate.audio_url,
             output,
-            concurrency,
-            retries,
-            video_bitrate,
-            audio_bitrate,
-            keep_temp,
+            DownloadOptions {
+                concurrency,
+                retries,
+                video_bitrate,
+                audio_bitrate,
+                keep_temp,
+                subtitle_mode,
+                subtitle_value,
+            },
             request_context,
         );
     }
@@ -2522,9 +2559,83 @@ pub(crate) fn download_media_with_context_core(
 
     let _ = std::fs::remove_dir(&temp_dir);
     ensure_output_file_ready(&output_path)?;
+    if let Some(target) = page_url.as_ref() {
+        write_subtitle_sidecar(
+            &reporter,
+            target.as_str(),
+            &output_path,
+            &subtitle,
+            &request_context,
+        );
+    }
     emit_progress(&reporter, "All tasks completed", 1.0);
 
     Ok(())
+}
+
+/// Save the chosen subtitle next to the finished video as `<name>.srt`.
+///
+/// Best-effort by contract: subtitles are metadata, and a missing track, a
+/// signed-out session or a network hiccup must never turn a finished
+/// download into a failure — every outcome is reported through the
+/// progress stream instead. [`SubtitleChoice::Off`] is the one case that
+/// stays silent, because the caller asked for exactly that.
+fn write_subtitle_sidecar(
+    reporter: &ProgressReporter,
+    page_url: &str,
+    output_path: &Path,
+    choice: &SubtitleChoice,
+    request_context: &RequestContext,
+) {
+    if matches!(choice, SubtitleChoice::Off) {
+        return;
+    }
+    emit_progress(reporter, "Resolving subtitles...", 0.985);
+    let resolved = match choice {
+        SubtitleChoice::Track { url } => {
+            crate::api::bilibili::fetch_subtitle_by_url(url, request_context).map(Some)
+        }
+        SubtitleChoice::Auto => {
+            crate::api::bilibili::resolve_subtitle(page_url, None, request_context)
+        }
+        SubtitleChoice::Language { tag } => {
+            crate::api::bilibili::resolve_subtitle(page_url, Some(tag), request_context)
+        }
+        SubtitleChoice::Off => unreachable!("handled above"),
+    };
+    match resolved {
+        Ok(Some(subtitle)) => {
+            let path = output_path.with_extension("srt");
+            match std::fs::write(&path, subtitle.srt.as_bytes()) {
+                Ok(()) => emit_progress(
+                    reporter,
+                    format!(
+                        "Subtitle saved: {} ({})",
+                        path.file_name()
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| path.to_string_lossy().into_owned()),
+                        subtitle.label
+                    ),
+                    0.99,
+                ),
+                Err(error) => emit_progress(
+                    reporter,
+                    format!("Subtitle could not be written: {error}"),
+                    0.99,
+                ),
+            }
+        }
+        Ok(None) => emit_progress(
+            reporter,
+            "No subtitle track available for this episode",
+            0.99,
+        ),
+        Err(error) => emit_progress(
+            reporter,
+            format!("Subtitle download failed: {error:#}"),
+            0.99,
+        ),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3052,6 +3163,32 @@ fn init_runtime_logging() {
         .ok();
 }
 
+/// Everything needed to build one candidate. A struct instead of a long
+/// positional argument list: adapters set only the fields they actually
+/// know, and adding an attribute no longer touches every call site.
+#[derive(Default)]
+pub(crate) struct CandidateSpec<'a> {
+    pub media_url: String,
+    pub audio_url: Option<String>,
+    pub title: Option<String>,
+    pub quality_label: Option<String>,
+    pub quality_badge: Option<String>,
+    pub codec: Option<String>,
+    pub mime_type: Option<String>,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+    pub extractor: Option<&'a str>,
+}
+
+impl<'a> CandidateSpec<'a> {
+    pub(crate) fn media(media_url: impl Into<String>) -> Self {
+        Self {
+            media_url: media_url.into(),
+            ..Self::default()
+        }
+    }
+}
+
 pub(crate) struct CandidateCollector {
     page_url: String,
     default_title: String,
@@ -3071,42 +3208,53 @@ impl CandidateCollector {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn push(
-        &mut self,
-        media_url: String,
-        audio_url: Option<String>,
-        title: Option<String>,
-        quality_label: Option<String>,
-        mime_type: Option<String>,
-        width: Option<i32>,
-        height: Option<i32>,
-        extractor: Option<&str>,
-    ) {
-        if media_url.is_empty() {
+    pub(crate) fn push(&mut self, spec: CandidateSpec<'_>) {
+        if spec.media_url.is_empty() {
             return;
         }
-        let key = format!("{}|{}", media_url, audio_url.clone().unwrap_or_default());
+        let audio_url = spec.audio_url.filter(|url| !url.is_empty());
+        let key = format!(
+            "{}|{}",
+            spec.media_url,
+            audio_url.clone().unwrap_or_default()
+        );
         if !self.seen.insert(key) {
             return;
         }
-        let protocol = protocol_from_url(&media_url);
-        let container = container_from_url(&media_url);
-        let resolved_title = title.unwrap_or_else(|| self.default_title.clone());
+        let protocol = protocol_from_url(&spec.media_url);
+        let container = container_from_url(&spec.media_url);
+        let resolved_title = spec.title.unwrap_or_else(|| self.default_title.clone());
         self.candidates.push(MediaCandidate {
             id: Uuid::new_v4().to_string(),
             title: resolved_title,
-            extractor: extractor.unwrap_or(&self.extractor).to_string(),
+            extractor: spec.extractor.unwrap_or(&self.extractor).to_string(),
             page_url: self.page_url.clone(),
-            media_url,
+            media_url: spec.media_url,
             audio_url: audio_url.clone(),
             container,
             protocol,
-            mime_type: mime_type.unwrap_or_else(|| mime_from_urls(audio_url.is_some()).to_string()),
-            quality_label: quality_label.unwrap_or_else(|| "Auto".to_string()),
-            width: width.unwrap_or(0),
-            height: height.unwrap_or(0),
-            requires_ffmpeg: audio_url.is_some() && !cfg!(target_os = "android"),
+            mime_type: spec
+                .mime_type
+                .unwrap_or_else(|| mime_from_urls(audio_url.is_some()).to_string()),
+            quality_label: spec
+                .quality_label
+                .filter(|label| !label.trim().is_empty())
+                .unwrap_or_else(|| "Auto".to_string()),
+            quality_badge: spec
+                .quality_badge
+                .filter(|badge| !badge.trim().is_empty())
+                .unwrap_or_default(),
+            codec: spec
+                .codec
+                .filter(|codec| !codec.trim().is_empty())
+                .unwrap_or_default(),
+            width: spec.width.unwrap_or(0),
+            height: spec.height.unwrap_or(0),
+            // Android (MediaMuxer/MediaCodec) and iOS (AVFoundation /
+            // VideoToolbox) merge separated audio+video with platform
+            // muxers; every other target needs an external FFmpeg.
+            requires_ffmpeg: audio_url.is_some()
+                && !cfg!(any(target_os = "android", target_os = "ios")),
             score: 0,
             segment_count: 0,
             duration_seconds: 0.0,
@@ -3210,6 +3358,8 @@ fn direct_media_candidate(page_url: &str, media_url: &str) -> Option<MediaCandid
         protocol: protocol_from_url(media_url),
         mime_type: mime_from_extension(&container_from_url(media_url)).to_string(),
         quality_label: "Direct".to_string(),
+        quality_badge: String::new(),
+        codec: String::new(),
         width: 0,
         height: 0,
         requires_ffmpeg: false,
@@ -3514,6 +3664,9 @@ fn human_bytes(bytes: u64) -> String {
     }
 }
 
+// FRB auto-bridges every `Default` type it scans; this resumption
+// bookkeeping is crate-internal and must stay out of the generated API.
+#[flutter_rust_bridge::frb(ignore)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct ResumableMetadata {
     etag: Option<String>,
@@ -4276,8 +4429,8 @@ fn join_manifest_url(
 #[cfg(test)]
 mod tests {
     use super::{
-        bilibili_playurl_api_url, canonical_site_context, checksum_for_release_asset,
-        clear_resumable_partial, has_mp4_signature, hls_response_bytes, hls_segment_cache_key,
+        canonical_site_context, checksum_for_release_asset, clear_resumable_partial,
+        has_mp4_signature, hls_response_bytes, hls_segment_cache_key,
         is_complete_unsatisfied_range, is_valid_header_value_byte, is_valid_hls_segment_cache,
         normalize_source_url, parse_content_range, parse_ytdlp_progress, playlist_base_url,
         range_response_has_safe_resume_identity, read_resumable_metadata,
@@ -4286,7 +4439,7 @@ mod tests {
         resumable_partial_path, select_best_hls_variant, select_hls_audio_rendition,
         should_auto_inspect_download_target, write_hls_segment_cache, write_resumable_metadata,
         youtube_itag_from_media_url, ByteRange, ContentRange, HlsResourceRequest, Playlist,
-        ResumableMetadata, Uuid,
+        ResumableMetadata, SubtitleChoice, SubtitleMode, Uuid,
     };
     use crate::hls::parse_playlist;
     use url::Url;
@@ -4308,41 +4461,6 @@ mod tests {
             playlist_base_url(&url).as_str(),
             "https://cdn.example/live/quality/"
         );
-    }
-
-    #[test]
-    fn builds_bilibili_playurl_api_requests_from_page_state() {
-        let page_url = Url::parse("https://www.bilibili.com/video/BV1ab411c7mD?p=2")
-            .expect("page URL should parse");
-        let api_url = bilibili_playurl_api_url(
-            &page_url,
-            r#"window.__INITIAL_STATE__={"videoData":{"bvid":"BV1ab411c7mD","cid":7654321}}"#,
-        )
-        .expect("API URL should resolve")
-        .expect("video metadata should be sufficient");
-        let query = api_url
-            .query_pairs()
-            .collect::<std::collections::HashMap<_, _>>();
-        assert_eq!(api_url.path(), "/x/player/playurl");
-        assert_eq!(
-            query.get("bvid").map(|value| value.as_ref()),
-            Some("BV1ab411c7mD")
-        );
-        assert_eq!(
-            query.get("cid").map(|value| value.as_ref()),
-            Some("7654321")
-        );
-        assert_eq!(query.get("fnval").map(|value| value.as_ref()), Some("4048"));
-
-        let episode_url = Url::parse("https://www.bilibili.com/bangumi/play/ep987654")
-            .expect("episode URL should parse");
-        let episode_api = bilibili_playurl_api_url(&episode_url, "")
-            .expect("episode API URL should resolve")
-            .expect("episode id should be sufficient");
-        assert_eq!(episode_api.path(), "/pgc/player/web/playurl");
-        assert!(episode_api
-            .query_pairs()
-            .any(|(name, value)| { name == "ep_id" && value == "987654" }));
     }
 
     #[test]
@@ -4791,6 +4909,58 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *yt-dlp.exe\n";
             Some("https://cdn.example/audio.m4a"),
         ));
     }
+
+    #[test]
+    fn subtitle_mode_parses_case_insensitively_and_rejects_unknown_names() {
+        use std::str::FromStr;
+
+        assert_eq!(SubtitleMode::from_str("auto").unwrap(), SubtitleMode::Auto);
+        assert_eq!(SubtitleMode::from_str(" OFF ").unwrap(), SubtitleMode::Off);
+        assert_eq!(
+            SubtitleMode::from_str("Track").unwrap(),
+            SubtitleMode::Track
+        );
+        assert_eq!(
+            SubtitleMode::from_str("language").unwrap(),
+            SubtitleMode::Language
+        );
+        let error = SubtitleMode::from_str("chinese").expect_err("must reject");
+        assert!(error.contains("auto, off, track or language"));
+    }
+
+    #[test]
+    fn subtitle_mode_validates_its_payload() {
+        assert_eq!(
+            SubtitleMode::Auto.to_choice("ignored").unwrap(),
+            SubtitleChoice::Auto
+        );
+        assert_eq!(
+            SubtitleMode::Off.to_choice("").unwrap(),
+            SubtitleChoice::Off
+        );
+        assert_eq!(
+            SubtitleMode::Track
+                .to_choice(" https://i0.hdslb.com/bfs/subtitle/1.json ")
+                .unwrap(),
+            SubtitleChoice::Track {
+                url: "https://i0.hdslb.com/bfs/subtitle/1.json".to_string()
+            }
+        );
+        assert_eq!(
+            SubtitleMode::Language.to_choice("zh-CN").unwrap(),
+            SubtitleChoice::Language {
+                tag: "zh-CN".to_string()
+            }
+        );
+        // A track URL is only accepted over TLS, and both payload modes
+        // demand a value.
+        assert!(SubtitleMode::Track
+            .to_choice("http://i0.hdslb.com/bfs/subtitle/1.json")
+            .is_err());
+        assert!(SubtitleMode::Track.to_choice("   ").is_err());
+        assert!(SubtitleMode::Language.to_choice("").is_err());
+        assert!(SubtitleMode::Language.to_choice(&"x".repeat(33)).is_err());
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4810,9 +4980,6 @@ fn merge_media_streams(
     #[cfg(target_os = "android")]
     {
         if let Some(transcoder) = ANDROID_HW_TRANSCODER.get() {
-            // Prefer the segment-based muxer (per-segment extractors with a
-            // continuous PTS timeline — concat-demuxer equivalent) and only
-            // fall back to the naively-concatenated TS files on failure.
             let mux_with_fallback = |target: &str| -> Result<()> {
                 match (&video_segments, &audio_segments) {
                     (Some(video), Some(audio)) => {
@@ -5135,7 +5302,7 @@ fn detect_access_challenge(status: u16, body: &str) -> Option<String> {
     None
 }
 
-fn score_candidates(
+pub(crate) fn score_candidates(
     candidates: Vec<MediaCandidate>,
     request_context: &RequestContext,
 ) -> Vec<MediaCandidate> {
@@ -5208,9 +5375,14 @@ fn score_candidate(
     if candidate.width > 0 {
         score += candidate.width.min(3840) / 24;
     }
-    if lower_quality.contains("1080")
-        || lower_quality.contains("720")
-        || lower_quality.contains("高")
+    // A quality label only stands in for the resolution when the stream
+    // itself did not report one (label-only HLS variants); with a real
+    // height the number above is the honest signal.
+    if candidate.height == 0
+        && (lower_quality.contains("1080")
+            || lower_quality.contains("720")
+            || lower_quality.contains("2160")
+            || lower_quality.contains("4320"))
     {
         score += 120;
     }
@@ -5273,13 +5445,18 @@ fn create_http_client_for_context(
 }
 
 /// Build the per-request header list for a given source URL and context.
-fn request_headers(
+pub(crate) fn request_headers(
     source_url: &Url,
     request_context: &RequestContext,
 ) -> Result<Vec<(String, String)>> {
     let mut headers: Vec<(String, String)> = Vec::new();
+    // A *complete* browser UA string matters: both reference
+    // downloaders (lanyeeee/bilibili-video-downloader,
+    // Bili23-Downloader) ship a full Chrome/Edge user agent — a
+    // truncated "Mozilla/… AppleWebKit/…" string is a classic bot
+    // marker that risk control flags.
     let user_agent = if request_context.user_agent.trim().is_empty() {
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
     } else {
         request_context.user_agent.trim()
     };
@@ -5313,6 +5490,12 @@ fn request_headers(
         let cookie = request_context.cookie.trim().to_string();
         validate_header_value(&cookie, "cookie")?;
         headers.push(("cookie".to_string(), cookie));
+    } else if is_bilibili_domain(source_url.domain().unwrap_or_default()) {
+        // Follow lanyeeee/bilibili-video-downloader: even without a
+        // login, send a "SESSDATA=" placeholder cookie. Bilibili's
+        // risk control is markedly stricter towards requests that
+        // carry no cookie at all — a browser always has one.
+        headers.push(("cookie".to_string(), "SESSDATA=".to_string()));
     }
 
     for entry in &request_context.headers {
@@ -5356,19 +5539,30 @@ fn validate_header_value(value: &str, header_name: &str) -> Result<()> {
     Ok(())
 }
 
-fn canonical_site_context(domain: &str) -> (String, String) {
+/// Whether `domain` belongs to Bilibili's own sites (www, api, b23.tv,
+/// CDN hosts) — the trigger for the site-specific request shape.
+fn is_bilibili_domain(domain: &str) -> bool {
     let lower = domain.to_ascii_lowercase();
-    if lower.contains("bilibili")
+    lower.contains("bilibili")
         || lower.contains("b23.tv")
         || lower.contains("bilivideo")
         || lower.contains("biliapi")
-    {
+}
+
+/// Whether `domain` belongs to YouTube / its CDN hosts.
+fn is_youtube_domain(domain: &str) -> bool {
+    let lower = domain.to_ascii_lowercase();
+    lower.contains("youtube") || lower.contains("youtu.be") || lower.contains("googlevideo")
+}
+
+fn canonical_site_context(domain: &str) -> (String, String) {
+    if is_bilibili_domain(domain) {
         return (
             "https://www.bilibili.com/".to_string(),
             "https://www.bilibili.com".to_string(),
         );
     }
-    if lower.contains("youtube") || lower.contains("youtu.be") || lower.contains("googlevideo") {
+    if is_youtube_domain(domain) {
         return (
             "https://www.youtube.com/".to_string(),
             "https://www.youtube.com".to_string(),
@@ -6534,11 +6728,6 @@ fn convert_to_mp4(
 
     emit_progress(&reporter, "Converting to MP4...", 0.95);
 
-    // ── Fast path: input is ALREADY an MP4 (fragmented MP4 HLS assembled
-    // byte-for-byte during download, or a progressive MP4). "Conversion"
-    // then is a plain copy: no decode, no hardware encoder, no heat, and it
-    // is finished in the time it takes to write the file. Only when the user
-    // explicitly requested re-encoding (bitrate > 0) do we skip this path.
     let requires_reencode = video_bitrate > 0 || audio_bitrate > 0;
     if !requires_reencode && is_mp4_file(Path::new(input_ts)) {
         info!(

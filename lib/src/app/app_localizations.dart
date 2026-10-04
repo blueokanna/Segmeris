@@ -112,6 +112,16 @@ class AppLocalizations {
 
   static const _strings = <String, Map<String, String>>{
     'en': {
+      'series_kind_parts': 'Multi-part video',
+      'series_kind_collection': 'Collection',
+      'series_kind_bangumi': 'Bangumi',
+      'series_kind_series': 'Series',
+      'episodes_unit': 'episodes',
+      'download_all': 'Download all',
+      'download_series_title': 'Download the entire series?',
+      'download_series_body':
+          'Episodes are queued in order, one after another; each finished file is exported immediately.',
+      'cancel': 'Cancel',
       'app_title': 'Segmeris',
       'app_subtitle':
           'Inspect pages, locate playable media, and download the best exposed stream.',
@@ -185,6 +195,10 @@ class AppLocalizations {
       'core': 'CORE',
       'score': 'Score',
       'segments': 'segments',
+      'subtitles': 'Subtitles',
+      'subtitle_auto': 'Auto',
+      'subtitle_off': 'No subtitles',
+      'subtitle_default': 'Default',
       'auth_browser_open': 'Open auth browser',
       'auth_browser_title': 'Authorized session browser',
       'auth_browser_hint':
@@ -241,6 +255,15 @@ class AppLocalizations {
       'separate_audio': 'Separate audio',
     },
     'zh': {
+      'series_kind_parts': '多 P 视频',
+      'series_kind_collection': '合集',
+      'series_kind_bangumi': '番剧',
+      'series_kind_series': '系列',
+      'episodes_unit': '集',
+      'download_all': '下载全部',
+      'download_series_title': '下载整个系列？',
+      'download_series_body': '各集将按顺序逐个下载，完成的文件会立即导出。',
+      'cancel': '取消',
       'app_title': 'Segmeris',
       'app_subtitle': '分析网页、定位可播放媒体，并下载当前页面暴露出的最佳核心流。',
       'input_source': '资源地址',
@@ -305,6 +328,10 @@ class AppLocalizations {
       'core': '核心',
       'score': '评分',
       'segments': '分片',
+      'subtitles': '字幕',
+      'subtitle_auto': '自动',
+      'subtitle_off': '不下载字幕',
+      'subtitle_default': '默认',
       'auth_browser_open': '打开授权浏览器',
       'auth_browser_title': '授权会话浏览器',
       'auth_browser_hint': '在这里打开目标站点，由你自己完成登录或真人验证，然后把当前会话导回 Segmeris。',
@@ -354,6 +381,15 @@ class AppLocalizations {
       'separate_audio': '独立音轨',
     },
     'zh_Hant': {
+      'series_kind_parts': '多 P 影片',
+      'series_kind_collection': '合集',
+      'series_kind_bangumi': '番劇',
+      'series_kind_series': '系列',
+      'episodes_unit': '集',
+      'download_all': '下載全部',
+      'download_series_title': '下載整個系列？',
+      'download_series_body': '各集會依序逐個下載，完成的檔案會立即匯出。',
+      'cancel': '取消',
       'app_title': 'Segmeris',
       'app_subtitle': '分析網頁、定位可播放媒體，並下載目前頁面暴露出的最佳核心流。',
       'input_source': '資源位址',
@@ -412,6 +448,10 @@ class AppLocalizations {
       'core': '核心',
       'score': '評分',
       'segments': '分片',
+      'subtitles': '字幕',
+      'subtitle_auto': '自動',
+      'subtitle_off': '不下載字幕',
+      'subtitle_default': '預設',
       'auth_browser_open': '開啟授權瀏覽器',
       'auth_browser_title': '授權會話瀏覽器',
       'auth_browser_hint': '在這裡打開目標站點，由你自行完成登入或真人驗證，然後把目前會話導回 Segmeris。',
@@ -432,6 +472,15 @@ class AppLocalizations {
       'clear_auth_context': '清空已匯入會話',
     },
     'ja': {
+      'series_kind_parts': 'マルチパート動画',
+      'series_kind_collection': 'コレクション',
+      'series_kind_bangumi': 'アニメ',
+      'series_kind_series': 'シリーズ',
+      'episodes_unit': '話',
+      'download_all': 'すべてダウンロード',
+      'download_series_title': 'シリーズ全体をダウンロードしますか？',
+      'download_series_body': '各話を順番にダウンロードし、完了したファイルから順に書き出します。',
+      'cancel': 'キャンセル',
       'app_title': 'Segmeris',
       'app_subtitle': 'ページを解析し、再生可能なメディアを見つけて、公開されている最適なストリームをダウンロードします。',
       'input_source': 'ソース URL',
@@ -511,6 +560,16 @@ class AppLocalizations {
       'download_hint': '解析しなくても直接ダウンロードできます。m3u8 や直接のメディア URL を貼り付けて開始してください。',
     },
     'ar': {
+      'series_kind_parts': 'فيديو متعدد الأجزاء',
+      'series_kind_collection': 'مجموعة',
+      'series_kind_bangumi': 'أنمي',
+      'series_kind_series': 'سلسلة',
+      'episodes_unit': 'حلقة',
+      'download_all': 'تنزيل الكل',
+      'download_series_title': 'تنزيل السلسلة كاملة؟',
+      'download_series_body':
+          'يتم تنزيل الحلقات واحدة تلو الأخرى، ويُصدَّر كل ملف فور اكتماله.',
+      'cancel': 'إلغاء',
       'app_title': 'Segmeris',
       'app_subtitle':
           'حلّل الصفحة، واعثر على الوسائط القابلة للتشغيل، ثم نزّل أفضل تدفّق مكشوف فيها.',
@@ -594,6 +653,16 @@ class AppLocalizations {
           'يمكنك التنزيل مباشرة من دون تحليل: ألصق رابط m3u8 أو رابط الوسائط المباشر ثم ابدأ.',
     },
     'fa': {
+      'series_kind_parts': 'ویدیوی چند بخشی',
+      'series_kind_collection': 'مجموعه',
+      'series_kind_bangumi': 'انیمه',
+      'series_kind_series': 'سری',
+      'episodes_unit': 'قسمت',
+      'download_all': 'دانلود همه',
+      'download_series_title': 'کل سری دانلود شود؟',
+      'download_series_body':
+          'قسمت‌ها به ترتیب دانلود می‌شوند و هر فایل کامل‌شده فوراً ذخیره می‌شود.',
+      'cancel': 'لغو',
       'app_title': 'Segmeris',
       'app_subtitle':
           'صفحه را بررسی کنید، رسانه قابل پخش را پیدا کنید و بهترین جریان در دسترس را دانلود کنید.',
@@ -679,6 +748,16 @@ class AppLocalizations {
           'می‌توانید بدون تحلیل هم مستقیم دانلود کنید: یک پیوند m3u8 یا پیوند مستقیم رسانه را وارد کنید و شروع کنید.',
     },
     'ur': {
+      'series_kind_parts': 'کثیر الاجزا ویڈیو',
+      'series_kind_collection': 'مجموعہ',
+      'series_kind_bangumi': 'انیمی',
+      'series_kind_series': 'سیریز',
+      'episodes_unit': 'اقساط',
+      'download_all': 'سب ڈاؤن لوڈ کریں',
+      'download_series_title': 'پوری سیریز ڈاؤن لوڈ کریں؟',
+      'download_series_body':
+          'اقساط ترتیب سے ڈاؤن لوڈ ہوں گی اور مکمل ہوتے ہی ہر فائل برآمد ہوگی۔',
+      'cancel': 'منسوخ کریں',
       'app_title': 'Segmeris',
       'app_subtitle':
           'صفحہ دیکھیں، چلنے کے قابل میڈیا تلاش کریں، اور دستیاب بہترین اسٹریم ڈاؤن لوڈ کریں۔',
@@ -762,6 +841,16 @@ class AppLocalizations {
           'آپ تجزیہ کے بغیر بھی براہ راست ڈاؤن لوڈ کر سکتے ہیں: m3u8 یا براہ راست میڈیا لنک چسپاں کریں اور شروع کریں۔',
     },
     'es': {
+      'series_kind_parts': 'Video de varias partes',
+      'series_kind_collection': 'Colección',
+      'series_kind_bangumi': 'Anime',
+      'series_kind_series': 'Serie',
+      'episodes_unit': 'episodios',
+      'download_all': 'Descargar todo',
+      'download_series_title': '¿Descargar la serie completa?',
+      'download_series_body':
+          'Los episodios se descargan en orden, uno tras otro; cada archivo terminado se exporta inmediatamente.',
+      'cancel': 'Cancelar',
       'app_title': 'Segmeris',
       'app_subtitle':
           'Analiza páginas, encuentra medios reproducibles y descarga el mejor flujo expuesto.',
@@ -808,6 +897,16 @@ class AppLocalizations {
       'stream': 'Flujo',
     },
     'ru': {
+      'series_kind_parts': 'Многочастное видео',
+      'series_kind_collection': 'Коллекция',
+      'series_kind_bangumi': 'Аниме',
+      'series_kind_series': 'Серия',
+      'episodes_unit': 'эп.',
+      'download_all': 'Скачать всё',
+      'download_series_title': 'Скачать всю серию?',
+      'download_series_body':
+          'Эпизоды скачиваются по порядку; каждый готовый файл сразу экспортируется.',
+      'cancel': 'Отмена',
       'app_title': 'Segmeris',
       'app_subtitle':
           'Анализируйте страницу, находите воспроизводимое медиа и сохраняйте лучший открытый поток.',
@@ -855,6 +954,16 @@ class AppLocalizations {
       'stream': 'Поток',
     },
     'hi': {
+      'series_kind_parts': 'मल्टी-पार्ट वीडियो',
+      'series_kind_collection': 'संग्रह',
+      'series_kind_bangumi': 'एनीमे',
+      'series_kind_series': 'सीरीज़',
+      'episodes_unit': 'एपिसोड',
+      'download_all': 'सभी डाउनलोड करें',
+      'download_series_title': 'पूरी सीरीज़ डाउनलोड करें?',
+      'download_series_body':
+          'एपिसोड क्रम से डाउनलोड होंगे और पूरा होते ही हर फ़ाइल निर्यात होगी।',
+      'cancel': 'रद्द करें',
       'app_title': 'Segmeris',
       'app_subtitle':
           'पेज का विश्लेषण करें, चलने योग्य मीडिया खोजें और सर्वश्रेष्ठ उपलब्ध स्ट्रीम डाउनलोड करें।',
@@ -901,6 +1010,16 @@ class AppLocalizations {
       'stream': 'स्ट्रीम',
     },
     'fr': {
+      'series_kind_parts': 'Vidéo en plusieurs parties',
+      'series_kind_collection': 'Collection',
+      'series_kind_bangumi': 'Anime',
+      'series_kind_series': 'Série',
+      'episodes_unit': 'épisodes',
+      'download_all': 'Tout télécharger',
+      'download_series_title': 'Télécharger toute la série ?',
+      'download_series_body':
+          'Les épisodes sont téléchargés l’un après l’autre ; chaque fichier terminé est exporté immédiatement.',
+      'cancel': 'Annuler',
       'app_title': 'Segmeris',
       'app_subtitle':
           'Analysez une page, repérez les médias lisibles et téléchargez le meilleur flux exposé.',
@@ -987,6 +1106,16 @@ class AppLocalizations {
           'Vous pouvez télécharger directement sans analyse : collez un lien m3u8 ou un lien média direct, puis lancez le téléchargement.',
     },
     'de': {
+      'series_kind_parts': 'Mehrteiliges Video',
+      'series_kind_collection': 'Sammlung',
+      'series_kind_bangumi': 'Anime',
+      'series_kind_series': 'Serie',
+      'episodes_unit': 'Folgen',
+      'download_all': 'Alle herunterladen',
+      'download_series_title': 'Gesamte Serie herunterladen?',
+      'download_series_body':
+          'Episoden werden nacheinander heruntergeladen; jede fertige Datei wird sofort exportiert.',
+      'cancel': 'Abbrechen',
       'app_title': 'Segmeris',
       'app_subtitle':
           'Analysiere Seiten, finde abspielbare Medien und lade den besten freigelegten Stream herunter.',
@@ -1073,6 +1202,16 @@ class AppLocalizations {
           'Du kannst auch ohne Analyse direkt herunterladen: m3u8- oder Direktlink einfügen und starten.',
     },
     'pt': {
+      'series_kind_parts': 'Vídeo em várias partes',
+      'series_kind_collection': 'Coleção',
+      'series_kind_bangumi': 'Anime',
+      'series_kind_series': 'Série',
+      'episodes_unit': 'episódios',
+      'download_all': 'Baixar tudo',
+      'download_series_title': 'Baixar a série completa?',
+      'download_series_body':
+          'Os episódios são baixados em sequência; cada arquivo concluído é exportado imediatamente.',
+      'cancel': 'Cancelar',
       'app_title': 'Segmeris',
       'app_subtitle':
           'Analise páginas, localize mídia reproduzível e baixe o melhor fluxo exposto.',
@@ -1119,6 +1258,16 @@ class AppLocalizations {
       'stream': 'Fluxo',
     },
     'tr': {
+      'series_kind_parts': 'Çok bölümlü video',
+      'series_kind_collection': 'Koleksiyon',
+      'series_kind_bangumi': 'Anime',
+      'series_kind_series': 'Seri',
+      'episodes_unit': 'bölüm',
+      'download_all': 'Tümünü indir',
+      'download_series_title': 'Tüm seri indirilsin mi?',
+      'download_series_body':
+          'Bölümler sırayla indirilir; tamamlanan her dosya hemen dışa aktarılır.',
+      'cancel': 'İptal',
       'app_title': 'Segmeris',
       'app_subtitle':
           'Sayfayı analiz edin, oynatılabilir medyayı bulun ve açıkta olan en iyi akışı indirin.',
@@ -1166,6 +1315,16 @@ class AppLocalizations {
       'stream': 'Akış',
     },
     'vi': {
+      'series_kind_parts': 'Video nhiều phần',
+      'series_kind_collection': 'Bộ sưu tập',
+      'series_kind_bangumi': 'Anime',
+      'series_kind_series': 'Chuỗi',
+      'episodes_unit': 'tập',
+      'download_all': 'Tải tất cả',
+      'download_series_title': 'Tải toàn bộ chuỗi?',
+      'download_series_body':
+          'Các tập được tải lần lượt; mỗi tệp hoàn tất được xuất ngay.',
+      'cancel': 'Hủy',
       'app_title': 'Segmeris',
       'app_subtitle':
           'Phân tích trang, tìm media có thể phát và tải luồng tốt nhất đang được lộ ra.',
@@ -1211,6 +1370,16 @@ class AppLocalizations {
       'stream': 'Luồng',
     },
     'id': {
+      'series_kind_parts': 'Video multi-bagian',
+      'series_kind_collection': 'Koleksi',
+      'series_kind_bangumi': 'Anime',
+      'series_kind_series': 'Seri',
+      'episodes_unit': 'episode',
+      'download_all': 'Unduh semua',
+      'download_series_title': 'Unduh seluruh seri?',
+      'download_series_body':
+          'Episode diunduh berurutan; setiap berkas yang selesai langsung diekspor.',
+      'cancel': 'Batal',
       'app_title': 'Segmeris',
       'app_subtitle':
           'Analisis halaman, temukan media yang bisa diputar, lalu unduh aliran terbaik yang terlihat.',

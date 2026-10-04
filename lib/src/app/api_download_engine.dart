@@ -143,10 +143,57 @@ class ApiDownloadEngine implements DownloadEngine {
         for (final raw in _asList(payload['candidates']))
           if (raw is Map<String, dynamic>) _candidateFromJson(raw),
       ],
+      subtitles: [
+        for (final raw in _asList(payload['subtitles']))
+          if (raw is Map<String, dynamic>)
+            MediaSubtitleTrack(
+              language: raw['language'] as String? ?? '',
+              label: raw['label'] as String? ?? '',
+              url: raw['url'] as String? ?? '',
+              selected: raw['selected'] as bool? ?? false,
+            ),
+      ],
       warnings: _asList(payload['warnings']).whereType<String>().toList(),
       authRequired: payload['auth_required'] as bool? ?? false,
       challengeReason: payload['challenge_reason'] as String? ?? '',
+      collection: _collectionFromJson(payload['collection']),
     );
+  }
+
+  MediaCollection? _collectionFromJson(Object? raw) {
+    if (raw is! Map<String, dynamic>) {
+      return null;
+    }
+    return MediaCollection(
+      kind: raw['kind'] as String? ?? '',
+      title: raw['title'] as String? ?? '',
+      entries: [
+        for (final entry in _asList(raw['entries']))
+          if (entry is Map<String, dynamic>)
+            MediaCollectionEntry(
+              id: entry['id'] as String? ?? '',
+              index: (entry['index'] as num?)?.toInt() ?? 0,
+              title: entry['title'] as String? ?? '',
+              durationSeconds:
+                  (entry['duration_seconds'] as num?)?.toDouble() ?? 0,
+              pageUrl: entry['page_url'] as String? ?? '',
+              available: entry['available'] as bool? ?? false,
+              unavailableReason: entry['unavailable_reason'] as String? ?? '',
+              current: entry['current'] as bool? ?? false,
+            ),
+      ],
+    );
+  }
+
+  /// The `mode` strings the HTTP contract accepts; kept beside the
+  /// serializer so a new engine mode cannot be forgotten here.
+  String _subtitleModeName(SubtitleMode mode) {
+    return switch (mode) {
+      SubtitleMode.auto => 'auto',
+      SubtitleMode.off => 'off',
+      SubtitleMode.track => 'track',
+      SubtitleMode.language => 'language',
+    };
   }
 
   MediaCandidate _candidateFromJson(Map<String, dynamic> raw) {
@@ -161,6 +208,8 @@ class ApiDownloadEngine implements DownloadEngine {
       protocol: raw['protocol'] as String? ?? '',
       mimeType: raw['mime_type'] as String? ?? '',
       qualityLabel: raw['quality_label'] as String? ?? '',
+      qualityBadge: raw['quality_badge'] as String? ?? '',
+      codec: raw['codec'] as String? ?? '',
       width: (raw['width'] as num?)?.toInt() ?? 0,
       height: (raw['height'] as num?)?.toInt() ?? 0,
       requiresFfmpeg: raw['requires_ffmpeg'] as bool? ?? false,
@@ -178,11 +227,7 @@ class ApiDownloadEngine implements DownloadEngine {
     required String mediaUrl,
     String? audioUrl,
     required String output,
-    required int concurrency,
-    required int retries,
-    required int videoBitrate,
-    required int audioBitrate,
-    required bool keepTemp,
+    required DownloadOptions options,
     required RequestContext requestContext,
   }) async* {
     final accepted = await _postJson('/download', {
@@ -190,11 +235,15 @@ class ApiDownloadEngine implements DownloadEngine {
       'media_url': mediaUrl,
       'audio_url': audioUrl,
       'output_filename': _basename(output),
-      'concurrency': concurrency,
-      'retries': retries,
-      'video_bitrate': videoBitrate,
-      'audio_bitrate': audioBitrate,
-      'keep_temp': keepTemp,
+      'concurrency': options.concurrency,
+      'retries': options.retries,
+      'video_bitrate': options.videoBitrate,
+      'audio_bitrate': options.audioBitrate,
+      'keep_temp': options.keepTemp,
+      'subtitle': {
+        'mode': _subtitleModeName(options.subtitleMode),
+        'value': options.subtitleValue,
+      },
       'request_context': _contextToJson(requestContext),
     });
     final taskId = accepted['task_id'] as String?;

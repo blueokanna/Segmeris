@@ -12,9 +12,11 @@ import 'package:segmeris/src/home/home_download_tasks_card.dart';
 import 'package:segmeris/src/home/home_page_controller.dart';
 import 'package:segmeris/src/home/home_history_card.dart';
 import 'package:segmeris/src/home/home_input_card.dart';
+import 'package:segmeris/src/home/home_series_card.dart';
 import 'package:segmeris/src/home/home_settings_sheet.dart';
 import 'package:segmeris/src/home/home_widgets.dart';
 import 'package:segmeris/src/home/source_input.dart';
+import 'package:segmeris/src/home/subtitle_preference.dart';
 import 'package:segmeris/src/rust/api/downloader.dart';
 
 class _DownloadTaskRequest {
@@ -24,11 +26,7 @@ class _DownloadTaskRequest {
     required this.audioUrl,
     required this.output,
     required this.chosenDir,
-    required this.concurrency,
-    required this.retries,
-    required this.videoBitrate,
-    required this.audioBitrate,
-    required this.keepTemp,
+    required this.options,
     required this.requestContext,
     required this.fileName,
     required this.sourcePage,
@@ -39,11 +37,10 @@ class _DownloadTaskRequest {
   final String? audioUrl;
   final String output;
   final String? chosenDir;
-  final int concurrency;
-  final int retries;
-  final int videoBitrate;
-  final int audioBitrate;
-  final bool keepTemp;
+
+  /// Transport options, including the subtitle decision this task was
+  /// queued with — a retry must reproduce the same download.
+  final DownloadOptions options;
   final RequestContext requestContext;
   final String fileName;
   final String sourcePage;
@@ -55,11 +52,7 @@ class _DownloadTaskRequest {
       audioUrl: audioUrl,
       output: output,
       chosenDir: chosenDir,
-      concurrency: concurrency,
-      retries: retries,
-      videoBitrate: videoBitrate,
-      audioBitrate: audioBitrate,
-      keepTemp: keepTemp,
+      options: options,
       requestContext: value,
       fileName: fileName,
       sourcePage: sourcePage,
@@ -99,6 +92,16 @@ class _HomePageState extends State<HomePage> {
   final _headersCtrl = TextEditingController();
   final _pageController = HomePageController();
   final Map<String, _DownloadTaskRequest> _retryRequests = {};
+
+  /// Subtitle pick of the current inspection; reset to the episode default
+  /// whenever a new analysis replaces it.
+  SubtitlePreference _subtitlePreference = const SubtitleAutoPreference();
+
+  /// True while the series queue is walking through its episode loop;
+  /// keeps the single-download button and a second series run disabled
+  /// even during the gaps between two queued episodes.
+  bool _seriesQueueActive = false;
+
   late final Listenable _authContextListenable = Listenable.merge([
     _userAgentCtrl,
     _refererCtrl,
@@ -198,7 +201,12 @@ class _HomePageState extends State<HomePage> {
     final raw =
         candidate.title.trim().isEmpty ? 'video' : candidate.title.trim();
     final sanitized = raw.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-    return _normalizeOutputName(sanitized);
+    final quality =
+        candidate.qualityLabel.trim().replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final withQuality = quality.isEmpty || sanitized.contains(quality)
+        ? sanitized
+        : '$sanitized [$quality]';
+    return _normalizeOutputName(withQuality);
   }
 
   String _sanitizeHeaderValue(String value) {
@@ -386,6 +394,9 @@ class _HomePageState extends State<HomePage> {
         readyStatus: l.text('ready'),
         emptyStatus: l.text('no_candidates'),
       );
+      // A new inspection describes a different episode, whose tracks are
+      // its own: a pick made on the previous one must not leak into it.
+      setState(() => _subtitlePreference = const SubtitleAutoPreference());
       if (selectedCandidate != null) {
         _fileNameCtrl.text = _suggestFileName(selectedCandidate);
       }
@@ -423,6 +434,11 @@ class _HomePageState extends State<HomePage> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
+    // A series queue owns the download pipeline while it runs; a manual
+    // click would interleave a second task with the queue.
+    if (_seriesQueueActive) {
+      return;
+    }
     final l = AppLocalizations.of(context);
     final requestContext = _requestContext();
 
@@ -455,17 +471,23 @@ class _HomePageState extends State<HomePage> {
         int.parse(_vBitrateCtrl.text.trim()).clamp(0, 20000).toInt();
     final aBitrate = int.parse(_aBitrateCtrl.text.trim()).clamp(0, 512).toInt();
 
+    final (subtitleMode, subtitleValue) =
+        subtitleChoiceForSingle(_subtitlePreference);
     final request = _DownloadTaskRequest(
       pageUrl: pageUrl,
       mediaUrl: mediaUrl,
       audioUrl: audioUrl,
       output: output,
       chosenDir: chosenDir,
-      concurrency: concurrency,
-      retries: retries,
-      videoBitrate: vBitrate,
-      audioBitrate: aBitrate,
-      keepTemp: keepTemp,
+      options: DownloadOptions(
+        concurrency: concurrency,
+        retries: retries,
+        videoBitrate: vBitrate,
+        audioBitrate: aBitrate,
+        keepTemp: keepTemp,
+        subtitleMode: subtitleMode,
+        subtitleValue: subtitleValue,
+      ),
       requestContext: requestContext,
       fileName: fileName,
       sourcePage: sourcePage,
@@ -500,10 +522,190 @@ class _HomePageState extends State<HomePage> {
     await _runDownloadTask(taskId, refreshedRequest);
   }
 
+  /// Re-analyze the page for one episode of the active series.
+  Future<void> _switchToEntry(MediaCollectionEntry entry) async {
+    if (entry.current || entry.pageUrl.isEmpty) {
+      return;
+    }
+    final vm = _pageController.value;
+    if (vm.busy || _seriesQueueActive) {
+      return;
+    }
+    _replaceSourceText(entry.pageUrl);
+    await _analyze();
+  }
+
+  /// Queue every available episode of the active series as its own task,
+  /// running one at a time. Each task re-resolves its stream at download
+  /// time, which keeps the signed CDN URLs fresh no matter how long the
+  /// queue takes.
+  Future<void> _downloadSeries() async {
+    final vm = _pageController.value;
+    final collection = vm.inspection?.collection;
+    if (collection == null ||
+        vm.running ||
+        vm.analyzing ||
+        _seriesQueueActive) {
+      return;
+    }
+    final entries = [
+      for (final entry in collection.entries)
+        if (entry.available && entry.pageUrl.isNotEmpty) entry,
+    ];
+    if (entries.isEmpty) {
+      return;
+    }
+
+    final l = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l.text('download_series_title')),
+        content: Text(
+          '${collection.title}\n'
+          '${entries.length} ${l.text('episodes_unit')}\n\n'
+          '${l.text('download_series_body')}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(l.text('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(l.text('download_all')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    final concurrency =
+        int.parse(_concurrencyCtrl.text.trim()).clamp(1, 16).toInt();
+    final retries = int.parse(_retriesCtrl.text.trim()).clamp(1, 10).toInt();
+    final vBitrate =
+        int.parse(_vBitrateCtrl.text.trim()).clamp(0, 20000).toInt();
+    final aBitrate = int.parse(_aBitrateCtrl.text.trim()).clamp(0, 512).toInt();
+    // One queue, many episodes: an exact track URL would only be valid for
+    // the episode the pick was made on, so the language tag travels.
+    final (seriesSubtitleMode, seriesSubtitleValue) =
+        subtitleChoiceForSeries(_subtitlePreference);
+    final requestContext = _requestContext();
+    final chosenDir = vm.chosenDir;
+    final keepTemp = vm.keepTemp;
+
+    setState(() => _seriesQueueActive = true);
+    try {
+      for (final entry in entries) {
+        if (!mounted) {
+          return;
+        }
+        final fileName = _seriesFileName(collection, entry);
+        final output = await _tempOutputPathFor(fileName, chosenDir);
+        final taskId = _pageController.beginDownloadTask(
+          fileName: fileName,
+          sourcePage: entry.pageUrl,
+          status: l.text('preparing'),
+        );
+        final request = _DownloadTaskRequest(
+          pageUrl: entry.pageUrl,
+          mediaUrl: entry.pageUrl,
+          audioUrl: null,
+          output: output,
+          chosenDir: chosenDir,
+          options: DownloadOptions(
+            concurrency: concurrency,
+            retries: retries,
+            videoBitrate: vBitrate,
+            audioBitrate: aBitrate,
+            keepTemp: keepTemp,
+            subtitleMode: seriesSubtitleMode,
+            subtitleValue: seriesSubtitleValue,
+          ),
+          requestContext: requestContext,
+          fileName: fileName,
+          sourcePage: entry.pageUrl,
+        );
+        _retryRequests[taskId] = request;
+        // Auto-opening the auth browser mid-queue would interrupt every
+        // following episode; failures stay per-task and retryable instead.
+        await _runDownloadTask(taskId, request, allowAutoAuth: false);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _seriesQueueActive = false);
+      }
+    }
+  }
+
+  /// Export the SRT the engine wrote next to its output, so the subtitle is
+  /// visible in the same Downloads folder as the video. Best effort: a
+  /// finished download must not fail because a sidecar copy did.
+  Future<void> _exportSubtitleSidecar(_DownloadTaskRequest request) async {
+    try {
+      final subtitlePath = _siblingSrtPath(request.output);
+      if (!await localFileExists(subtitlePath)) {
+        return;
+      }
+      final subtitleName = _srtFileName(request.fileName);
+      final chosenDir = request.chosenDir;
+      if (chosenDir != null && chosenDir.isNotEmpty) {
+        await MediaStoreBridge.saveToPath(
+          subtitlePath,
+          chosenDir,
+          subtitleName,
+        );
+      } else {
+        await MediaStoreBridge.saveViaMediaStore(
+          subtitlePath,
+          subtitleName,
+          mimeType: 'application/x-subrip',
+        );
+      }
+      await localFileDelete(subtitlePath);
+    } catch (error) {
+      debugPrint('Subtitle export failed: $error');
+    }
+  }
+
+  String _siblingSrtPath(String output) {
+    final dot = output.lastIndexOf('.');
+    final base = dot <= 0 ? output : output.substring(0, dot);
+    return '$base.srt';
+  }
+
+  String _srtFileName(String fileName) {
+    final dot = fileName.lastIndexOf('.');
+    final base = dot <= 0 ? fileName : fileName.substring(0, dot);
+    return '$base.srt';
+  }
+
+  /// Compose the output name for one episode: `{series} - {episode}`,
+  /// dropping the series prefix when the episode title already carries it.
+  String _seriesFileName(
+    MediaCollection collection,
+    MediaCollectionEntry entry,
+  ) {
+    final series = collection.title.trim();
+    final episode = entry.title.trim();
+    final combined = episode.isEmpty
+        ? series
+        : (series.isEmpty || episode.startsWith(series))
+            ? episode
+            : '$series - $episode';
+    final runes = combined.runes.toList();
+    final capped =
+        runes.length > 100 ? String.fromCharCodes(runes.take(100)) : combined;
+    return _normalizeOutputName(capped.isEmpty ? 'video' : capped);
+  }
+
   Future<void> _runDownloadTask(
     String taskId,
-    _DownloadTaskRequest request,
-  ) async {
+    _DownloadTaskRequest request, {
+    bool allowAutoAuth = true,
+  }) async {
     final l = AppLocalizations.of(context);
     var shouldAutoOpenAuthBrowser = false;
     var downloadStreamFailed = false;
@@ -517,11 +719,7 @@ class _HomePageState extends State<HomePage> {
         mediaUrl: request.mediaUrl,
         audioUrl: request.audioUrl,
         output: request.output,
-        concurrency: request.concurrency,
-        retries: request.retries,
-        videoBitrate: request.videoBitrate,
-        audioBitrate: request.audioBitrate,
-        keepTemp: request.keepTemp,
+        options: request.options,
         requestContext: request.requestContext,
       )) {
         if (!mounted) {
@@ -536,10 +734,11 @@ class _HomePageState extends State<HomePage> {
             progress: 0,
           );
           downloadStreamFailed = true;
-          shouldAutoOpenAuthBrowser = _shouldAutoOpenAuthBrowser(
-            skipAutoAuth: false,
-            errorText: terminalError,
-          );
+          shouldAutoOpenAuthBrowser = allowAutoAuth &&
+              _shouldAutoOpenAuthBrowser(
+                skipAutoAuth: false,
+                errorText: terminalError,
+              );
           break;
         }
         _pageController.updateDownloadTask(
@@ -601,6 +800,11 @@ class _HomePageState extends State<HomePage> {
               return;
             }
             finalPath = savedPath;
+            // The engine writes subtitles as a sidecar next to its output;
+            // app-private storage is invisible to the user, so the SRT has
+            // to make the same trip the video does. Best effort: a failed
+            // subtitle copy must not fail a finished download.
+            await _exportSubtitleSidecar(request);
             await localFileDelete(request.output);
           }
         } else {
@@ -622,10 +826,11 @@ class _HomePageState extends State<HomePage> {
         return;
       }
       final errorText = '$error';
-      shouldAutoOpenAuthBrowser = _shouldAutoOpenAuthBrowser(
-        skipAutoAuth: false,
-        errorText: errorText,
-      );
+      shouldAutoOpenAuthBrowser = allowAutoAuth &&
+          _shouldAutoOpenAuthBrowser(
+            skipAutoAuth: false,
+            errorText: errorText,
+          );
       _pageController.failDownloadTask(
         taskId,
         errorText,
@@ -822,7 +1027,7 @@ class _HomePageState extends State<HomePage> {
         retriesController: _retriesCtrl,
         videoBitrateController: _vBitrateCtrl,
         audioBitrateController: _aBitrateCtrl,
-        running: vm.running,
+        running: vm.running || _seriesQueueActive,
         analyzing: vm.analyzing,
         keepTemp: vm.keepTemp,
         chosenDir: vm.chosenDir,
@@ -833,9 +1038,21 @@ class _HomePageState extends State<HomePage> {
         onKeepTempChanged: _pageController.setKeepTemp,
       ),
       const SizedBox(height: 12),
+      if (vm.inspection?.collection != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: HomeSeriesCard(
+            collection: vm.inspection!.collection!,
+            running: vm.running || _seriesQueueActive,
+            analyzing: vm.analyzing,
+            onEntrySelected: _switchToEntry,
+            onDownloadAll: _downloadSeries,
+          ),
+        ),
       HomeCandidatesCard(
         inspection: vm.inspection,
         selectedCandidate: vm.selectedCandidate,
+        subtitlePreference: _subtitlePreference,
         running: vm.running,
         analyzing: vm.analyzing,
         selectionRevision: vm.selectionRevision,
@@ -845,6 +1062,9 @@ class _HomePageState extends State<HomePage> {
             status: l.text('candidate_switched'),
           );
           _fileNameCtrl.text = _suggestFileName(candidate);
+        },
+        onSubtitlePreferenceChanged: (preference) {
+          setState(() => _subtitlePreference = preference);
         },
         onOpenAuthBrowser: () => _openAuthBrowser(reanalyzeAfterImport: true),
       ),

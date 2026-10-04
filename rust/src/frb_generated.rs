@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1942244692;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -460048549;
 
 // Section: executor
 
@@ -47,66 +47,6 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
-fn wire__crate__api__downloader__download_media_run_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "download_media_run",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_sink = <StreamSink<
-                crate::api::downloader::ProgressUpdate,
-                flutter_rust_bridge::for_generated::SseCodec,
-            >>::sse_decode(&mut deserializer);
-            let api_page_url = <String>::sse_decode(&mut deserializer);
-            let api_media_url = <String>::sse_decode(&mut deserializer);
-            let api_audio_url = <Option<String>>::sse_decode(&mut deserializer);
-            let api_output = <String>::sse_decode(&mut deserializer);
-            let api_concurrency = <i32>::sse_decode(&mut deserializer);
-            let api_retries = <i32>::sse_decode(&mut deserializer);
-            let api_video_bitrate = <i32>::sse_decode(&mut deserializer);
-            let api_audio_bitrate = <i32>::sse_decode(&mut deserializer);
-            let api_keep_temp = <bool>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                    (move || async move {
-                        let output_ok = crate::api::downloader::download_media_run(
-                            api_sink,
-                            api_page_url,
-                            api_media_url,
-                            api_audio_url,
-                            api_output,
-                            api_concurrency,
-                            api_retries,
-                            api_video_bitrate,
-                            api_audio_bitrate,
-                            api_keep_temp,
-                        )
-                        .await?;
-                        std::result::Result::Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
 fn wire__crate__api__downloader__download_media_with_context_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -137,11 +77,8 @@ fn wire__crate__api__downloader__download_media_with_context_impl(
             let api_media_url = <String>::sse_decode(&mut deserializer);
             let api_audio_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_output = <String>::sse_decode(&mut deserializer);
-            let api_concurrency = <i32>::sse_decode(&mut deserializer);
-            let api_retries = <i32>::sse_decode(&mut deserializer);
-            let api_video_bitrate = <i32>::sse_decode(&mut deserializer);
-            let api_audio_bitrate = <i32>::sse_decode(&mut deserializer);
-            let api_keep_temp = <bool>::sse_decode(&mut deserializer);
+            let api_options =
+                <crate::api::downloader::DownloadOptions>::sse_decode(&mut deserializer);
             let api_request_context =
                 <crate::api::downloader::RequestContext>::sse_decode(&mut deserializer);
             deserializer.end();
@@ -154,11 +91,7 @@ fn wire__crate__api__downloader__download_media_with_context_impl(
                             api_media_url,
                             api_audio_url,
                             api_output,
-                            api_concurrency,
-                            api_retries,
-                            api_video_bitrate,
-                            api_audio_bitrate,
-                            api_keep_temp,
+                            api_options,
                             api_request_context,
                         )
                         .await?;
@@ -166,6 +99,39 @@ fn wire__crate__api__downloader__download_media_with_context_impl(
                     })()
                     .await,
                 )
+            }
+        },
+    )
+}
+fn wire__crate__api__downloader__download_options_default_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "download_options_default",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok =
+                        Ok::<_, ()>(crate::api::downloader::DownloadOptions::default())?;
+                    std::result::Result::Ok(output_ok)
+                })())
             }
         },
     )
@@ -410,6 +376,28 @@ impl SseDecode for bool {
     }
 }
 
+impl SseDecode for crate::api::downloader::DownloadOptions {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_concurrency = <i32>::sse_decode(deserializer);
+        let mut var_retries = <i32>::sse_decode(deserializer);
+        let mut var_videoBitrate = <i32>::sse_decode(deserializer);
+        let mut var_audioBitrate = <i32>::sse_decode(deserializer);
+        let mut var_keepTemp = <bool>::sse_decode(deserializer);
+        let mut var_subtitleMode = <crate::api::downloader::SubtitleMode>::sse_decode(deserializer);
+        let mut var_subtitleValue = <String>::sse_decode(deserializer);
+        return crate::api::downloader::DownloadOptions {
+            concurrency: var_concurrency,
+            retries: var_retries,
+            video_bitrate: var_videoBitrate,
+            audio_bitrate: var_audioBitrate,
+            keep_temp: var_keepTemp,
+            subtitle_mode: var_subtitleMode,
+            subtitle_value: var_subtitleValue,
+        };
+    }
+}
+
 impl SseDecode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -476,6 +464,34 @@ impl SseDecode for Vec<crate::api::downloader::MediaCandidate> {
     }
 }
 
+impl SseDecode for Vec<crate::api::downloader::MediaCollectionEntry> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::downloader::MediaCollectionEntry>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::downloader::MediaSubtitleTrack> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::downloader::MediaSubtitleTrack>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -501,6 +517,8 @@ impl SseDecode for crate::api::downloader::MediaCandidate {
         let mut var_protocol = <String>::sse_decode(deserializer);
         let mut var_mimeType = <String>::sse_decode(deserializer);
         let mut var_qualityLabel = <String>::sse_decode(deserializer);
+        let mut var_qualityBadge = <String>::sse_decode(deserializer);
+        let mut var_codec = <String>::sse_decode(deserializer);
         let mut var_width = <i32>::sse_decode(deserializer);
         let mut var_height = <i32>::sse_decode(deserializer);
         let mut var_requiresFfmpeg = <bool>::sse_decode(deserializer);
@@ -520,6 +538,8 @@ impl SseDecode for crate::api::downloader::MediaCandidate {
             protocol: var_protocol,
             mime_type: var_mimeType,
             quality_label: var_qualityLabel,
+            quality_badge: var_qualityBadge,
+            codec: var_codec,
             width: var_width,
             height: var_height,
             requires_ffmpeg: var_requiresFfmpeg,
@@ -532,6 +552,45 @@ impl SseDecode for crate::api::downloader::MediaCandidate {
     }
 }
 
+impl SseDecode for crate::api::downloader::MediaCollection {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_kind = <String>::sse_decode(deserializer);
+        let mut var_title = <String>::sse_decode(deserializer);
+        let mut var_entries =
+            <Vec<crate::api::downloader::MediaCollectionEntry>>::sse_decode(deserializer);
+        return crate::api::downloader::MediaCollection {
+            kind: var_kind,
+            title: var_title,
+            entries: var_entries,
+        };
+    }
+}
+
+impl SseDecode for crate::api::downloader::MediaCollectionEntry {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_index = <i32>::sse_decode(deserializer);
+        let mut var_title = <String>::sse_decode(deserializer);
+        let mut var_durationSeconds = <f64>::sse_decode(deserializer);
+        let mut var_pageUrl = <String>::sse_decode(deserializer);
+        let mut var_available = <bool>::sse_decode(deserializer);
+        let mut var_unavailableReason = <String>::sse_decode(deserializer);
+        let mut var_current = <bool>::sse_decode(deserializer);
+        return crate::api::downloader::MediaCollectionEntry {
+            id: var_id,
+            index: var_index,
+            title: var_title,
+            duration_seconds: var_durationSeconds,
+            page_url: var_pageUrl,
+            available: var_available,
+            unavailable_reason: var_unavailableReason,
+            current: var_current,
+        };
+    }
+}
+
 impl SseDecode for crate::api::downloader::MediaInspectionResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -540,17 +599,39 @@ impl SseDecode for crate::api::downloader::MediaInspectionResult {
         let mut var_extractor = <String>::sse_decode(deserializer);
         let mut var_candidates =
             <Vec<crate::api::downloader::MediaCandidate>>::sse_decode(deserializer);
+        let mut var_subtitles =
+            <Vec<crate::api::downloader::MediaSubtitleTrack>>::sse_decode(deserializer);
         let mut var_warnings = <Vec<String>>::sse_decode(deserializer);
         let mut var_authRequired = <bool>::sse_decode(deserializer);
         let mut var_challengeReason = <String>::sse_decode(deserializer);
+        let mut var_collection =
+            <Option<crate::api::downloader::MediaCollection>>::sse_decode(deserializer);
         return crate::api::downloader::MediaInspectionResult {
             page_url: var_pageUrl,
             page_title: var_pageTitle,
             extractor: var_extractor,
             candidates: var_candidates,
+            subtitles: var_subtitles,
             warnings: var_warnings,
             auth_required: var_authRequired,
             challenge_reason: var_challengeReason,
+            collection: var_collection,
+        };
+    }
+}
+
+impl SseDecode for crate::api::downloader::MediaSubtitleTrack {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_language = <String>::sse_decode(deserializer);
+        let mut var_label = <String>::sse_decode(deserializer);
+        let mut var_url = <String>::sse_decode(deserializer);
+        let mut var_selected = <bool>::sse_decode(deserializer);
+        return crate::api::downloader::MediaSubtitleTrack {
+            language: var_language,
+            label: var_label,
+            url: var_url,
+            selected: var_selected,
         };
     }
 }
@@ -560,6 +641,19 @@ impl SseDecode for Option<String> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<String>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::downloader::MediaCollection> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::downloader::MediaCollection>::sse_decode(
+                deserializer,
+            ));
         } else {
             return None;
         }
@@ -598,6 +692,20 @@ impl SseDecode for crate::api::downloader::RequestContext {
     }
 }
 
+impl SseDecode for crate::api::downloader::SubtitleMode {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::downloader::SubtitleMode::Auto,
+            1 => crate::api::downloader::SubtitleMode::Off,
+            2 => crate::api::downloader::SubtitleMode::Track,
+            3 => crate::api::downloader::SubtitleMode::Language,
+            _ => unreachable!("Invalid variant for SubtitleMode: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for u8 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -619,10 +727,13 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => {
-            wire__crate__api__downloader__download_media_run_impl(port, ptr, rust_vec_len, data_len)
-        }
-        2 => wire__crate__api__downloader__download_media_with_context_impl(
+        1 => wire__crate__api__downloader__download_media_with_context_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        2 => wire__crate__api__downloader__download_options_default_impl(
             port,
             ptr,
             rust_vec_len,
@@ -667,6 +778,32 @@ fn pde_ffi_dispatcher_sync_impl(
 // Section: rust2dart
 
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::downloader::DownloadOptions {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.concurrency.into_into_dart().into_dart(),
+            self.retries.into_into_dart().into_dart(),
+            self.video_bitrate.into_into_dart().into_dart(),
+            self.audio_bitrate.into_into_dart().into_dart(),
+            self.keep_temp.into_into_dart().into_dart(),
+            self.subtitle_mode.into_into_dart().into_dart(),
+            self.subtitle_value.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::downloader::DownloadOptions
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::downloader::DownloadOptions>
+    for crate::api::downloader::DownloadOptions
+{
+    fn into_into_dart(self) -> crate::api::downloader::DownloadOptions {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::downloader::HeaderEntry {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -701,6 +838,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::downloader::MediaCandidate {
             self.protocol.into_into_dart().into_dart(),
             self.mime_type.into_into_dart().into_dart(),
             self.quality_label.into_into_dart().into_dart(),
+            self.quality_badge.into_into_dart().into_dart(),
+            self.codec.into_into_dart().into_dart(),
             self.width.into_into_dart().into_dart(),
             self.height.into_into_dart().into_dart(),
             self.requires_ffmpeg.into_into_dart().into_dart(),
@@ -725,6 +864,55 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::downloader::MediaCandidate>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::downloader::MediaCollection {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.kind.into_into_dart().into_dart(),
+            self.title.into_into_dart().into_dart(),
+            self.entries.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::downloader::MediaCollection
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::downloader::MediaCollection>
+    for crate::api::downloader::MediaCollection
+{
+    fn into_into_dart(self) -> crate::api::downloader::MediaCollection {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::downloader::MediaCollectionEntry {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.index.into_into_dart().into_dart(),
+            self.title.into_into_dart().into_dart(),
+            self.duration_seconds.into_into_dart().into_dart(),
+            self.page_url.into_into_dart().into_dart(),
+            self.available.into_into_dart().into_dart(),
+            self.unavailable_reason.into_into_dart().into_dart(),
+            self.current.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::downloader::MediaCollectionEntry
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::downloader::MediaCollectionEntry>
+    for crate::api::downloader::MediaCollectionEntry
+{
+    fn into_into_dart(self) -> crate::api::downloader::MediaCollectionEntry {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::downloader::MediaInspectionResult {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -732,9 +920,11 @@ impl flutter_rust_bridge::IntoDart for crate::api::downloader::MediaInspectionRe
             self.page_title.into_into_dart().into_dart(),
             self.extractor.into_into_dart().into_dart(),
             self.candidates.into_into_dart().into_dart(),
+            self.subtitles.into_into_dart().into_dart(),
             self.warnings.into_into_dart().into_dart(),
             self.auth_required.into_into_dart().into_dart(),
             self.challenge_reason.into_into_dart().into_dart(),
+            self.collection.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -747,6 +937,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::downloader::MediaInspectionRe
     for crate::api::downloader::MediaInspectionResult
 {
     fn into_into_dart(self) -> crate::api::downloader::MediaInspectionResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::downloader::MediaSubtitleTrack {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.language.into_into_dart().into_dart(),
+            self.label.into_into_dart().into_dart(),
+            self.url.into_into_dart().into_dart(),
+            self.selected.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::downloader::MediaSubtitleTrack
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::downloader::MediaSubtitleTrack>
+    for crate::api::downloader::MediaSubtitleTrack
+{
+    fn into_into_dart(self) -> crate::api::downloader::MediaSubtitleTrack {
         self
     }
 }
@@ -796,6 +1009,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::downloader::RequestContext>
         self
     }
 }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::downloader::SubtitleMode {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Auto => 0.into_dart(),
+            Self::Off => 1.into_dart(),
+            Self::Track => 2.into_dart(),
+            Self::Language => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::downloader::SubtitleMode
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::downloader::SubtitleMode>
+    for crate::api::downloader::SubtitleMode
+{
+    fn into_into_dart(self) -> crate::api::downloader::SubtitleMode {
+        self
+    }
+}
 
 impl SseEncode for flutter_rust_bridge::for_generated::anyhow::Error {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -827,6 +1063,19 @@ impl SseEncode for bool {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_u8(self as _).unwrap();
+    }
+}
+
+impl SseEncode for crate::api::downloader::DownloadOptions {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.concurrency, serializer);
+        <i32>::sse_encode(self.retries, serializer);
+        <i32>::sse_encode(self.video_bitrate, serializer);
+        <i32>::sse_encode(self.audio_bitrate, serializer);
+        <bool>::sse_encode(self.keep_temp, serializer);
+        <crate::api::downloader::SubtitleMode>::sse_encode(self.subtitle_mode, serializer);
+        <String>::sse_encode(self.subtitle_value, serializer);
     }
 }
 
@@ -882,6 +1131,26 @@ impl SseEncode for Vec<crate::api::downloader::MediaCandidate> {
     }
 }
 
+impl SseEncode for Vec<crate::api::downloader::MediaCollectionEntry> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::downloader::MediaCollectionEntry>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::downloader::MediaSubtitleTrack> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::downloader::MediaSubtitleTrack>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -905,6 +1174,8 @@ impl SseEncode for crate::api::downloader::MediaCandidate {
         <String>::sse_encode(self.protocol, serializer);
         <String>::sse_encode(self.mime_type, serializer);
         <String>::sse_encode(self.quality_label, serializer);
+        <String>::sse_encode(self.quality_badge, serializer);
+        <String>::sse_encode(self.codec, serializer);
         <i32>::sse_encode(self.width, serializer);
         <i32>::sse_encode(self.height, serializer);
         <bool>::sse_encode(self.requires_ffmpeg, serializer);
@@ -916,6 +1187,29 @@ impl SseEncode for crate::api::downloader::MediaCandidate {
     }
 }
 
+impl SseEncode for crate::api::downloader::MediaCollection {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.kind, serializer);
+        <String>::sse_encode(self.title, serializer);
+        <Vec<crate::api::downloader::MediaCollectionEntry>>::sse_encode(self.entries, serializer);
+    }
+}
+
+impl SseEncode for crate::api::downloader::MediaCollectionEntry {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <i32>::sse_encode(self.index, serializer);
+        <String>::sse_encode(self.title, serializer);
+        <f64>::sse_encode(self.duration_seconds, serializer);
+        <String>::sse_encode(self.page_url, serializer);
+        <bool>::sse_encode(self.available, serializer);
+        <String>::sse_encode(self.unavailable_reason, serializer);
+        <bool>::sse_encode(self.current, serializer);
+    }
+}
+
 impl SseEncode for crate::api::downloader::MediaInspectionResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -923,9 +1217,21 @@ impl SseEncode for crate::api::downloader::MediaInspectionResult {
         <String>::sse_encode(self.page_title, serializer);
         <String>::sse_encode(self.extractor, serializer);
         <Vec<crate::api::downloader::MediaCandidate>>::sse_encode(self.candidates, serializer);
+        <Vec<crate::api::downloader::MediaSubtitleTrack>>::sse_encode(self.subtitles, serializer);
         <Vec<String>>::sse_encode(self.warnings, serializer);
         <bool>::sse_encode(self.auth_required, serializer);
         <String>::sse_encode(self.challenge_reason, serializer);
+        <Option<crate::api::downloader::MediaCollection>>::sse_encode(self.collection, serializer);
+    }
+}
+
+impl SseEncode for crate::api::downloader::MediaSubtitleTrack {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.language, serializer);
+        <String>::sse_encode(self.label, serializer);
+        <String>::sse_encode(self.url, serializer);
+        <bool>::sse_encode(self.selected, serializer);
     }
 }
 
@@ -935,6 +1241,16 @@ impl SseEncode for Option<String> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <String>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::downloader::MediaCollection> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::downloader::MediaCollection>::sse_encode(value, serializer);
         }
     }
 }
@@ -956,6 +1272,24 @@ impl SseEncode for crate::api::downloader::RequestContext {
         <String>::sse_encode(self.origin, serializer);
         <String>::sse_encode(self.cookie, serializer);
         <Vec<crate::api::downloader::HeaderEntry>>::sse_encode(self.headers, serializer);
+    }
+}
+
+impl SseEncode for crate::api::downloader::SubtitleMode {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::downloader::SubtitleMode::Auto => 0,
+                crate::api::downloader::SubtitleMode::Off => 1,
+                crate::api::downloader::SubtitleMode::Track => 2,
+                crate::api::downloader::SubtitleMode::Language => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 

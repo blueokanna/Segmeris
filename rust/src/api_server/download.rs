@@ -4,7 +4,9 @@ use std::sync::Arc;
 use anyhow::{anyhow, Context, Result};
 use uuid::Uuid;
 
-use crate::api::downloader::{inspect_media_with_context_sync, RequestContext};
+use crate::api::downloader::{
+    inspect_media_with_context_sync, DownloadOptions, RequestContext, SubtitleMode,
+};
 use crate::download_service::{self, DownloadProgressHandler};
 
 use super::models::DownloadRequest;
@@ -57,16 +59,26 @@ fn execute_download_task(task_id: &str, req: &DownloadRequest, tasks: &TaskStore
         );
     });
 
+    let (subtitle_mode, subtitle_value) = match req.subtitle.as_ref() {
+        Some(selection) => selection
+            .resolve()
+            .map_err(|error| anyhow!("invalid subtitle selection: {error}"))?,
+        None => (SubtitleMode::Auto, String::new()),
+    };
     download_service::download_media(
         page_url,
         media_url,
         audio_url,
         output_path_string.clone(),
-        req.concurrency.unwrap_or(8) as i32,
-        req.retries.unwrap_or(3) as i32,
-        req.video_bitrate.unwrap_or(0) as i32,
-        req.audio_bitrate.unwrap_or(0) as i32,
-        req.keep_temp.unwrap_or(false),
+        DownloadOptions {
+            concurrency: req.concurrency.unwrap_or(8) as i32,
+            retries: req.retries.unwrap_or(3) as i32,
+            video_bitrate: req.video_bitrate.unwrap_or(0) as i32,
+            audio_bitrate: req.audio_bitrate.unwrap_or(0) as i32,
+            keep_temp: req.keep_temp.unwrap_or(false),
+            subtitle_mode,
+            subtitle_value,
+        },
         request_context,
         Some(progress),
     )?;

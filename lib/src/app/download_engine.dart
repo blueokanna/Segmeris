@@ -29,11 +29,7 @@ abstract class DownloadEngine {
     required String mediaUrl,
     String? audioUrl,
     required String output,
-    required int concurrency,
-    required int retries,
-    required int videoBitrate,
-    required int audioBitrate,
-    required bool keepTemp,
+    required DownloadOptions options,
     required RequestContext requestContext,
   });
 
@@ -69,11 +65,7 @@ class FrbDownloadEngine implements DownloadEngine {
     required String mediaUrl,
     String? audioUrl,
     required String output,
-    required int concurrency,
-    required int retries,
-    required int videoBitrate,
-    required int audioBitrate,
-    required bool keepTemp,
+    required DownloadOptions options,
     required RequestContext requestContext,
   }) {
     return downloadMediaWithContext(
@@ -81,11 +73,7 @@ class FrbDownloadEngine implements DownloadEngine {
       mediaUrl: mediaUrl,
       audioUrl: audioUrl,
       output: output,
-      concurrency: concurrency,
-      retries: retries,
-      videoBitrate: videoBitrate,
-      audioBitrate: audioBitrate,
-      keepTemp: keepTemp,
+      options: options,
       requestContext: requestContext,
     );
   }

@@ -9,10 +9,15 @@ class SegmerisMotion {
   static const Duration medium = Duration(milliseconds: 300);
   static const Duration slow = Duration(milliseconds: 500);
   static const Curve linear = Curves.linear;
+
+  /// Material 3 easing tokens (motion spec §Easing and duration):
+  /// standard `cubic-bezier(0.2, 0, 0, 1)`, emphasized
+  /// `cubic-bezier(0.4, 0, 0.2, 1)` and the asymmetric
+  /// decelerate/accelerate pair used when a surface enters or leaves.
   static const Curve standard = Cubic(0.2, 0, 0, 1);
   static const Curve standardDecelerate = Cubic(0, 0, 0, 1);
   static const Curve standardAccelerate = Cubic(0.3, 0, 1, 1);
-  static const Curve emphasized = Curves.easeInOutCubicEmphasized;
+  static const Curve emphasized = Cubic(0.4, 0, 0.2, 1);
   static const Curve emphasizedDecelerate = Cubic(0.05, 0.7, 0.1, 1);
   static const Curve emphasizedAccelerate = Cubic(0.3, 0, 0.8, 0.15);
   static const Curve decelerate = emphasizedDecelerate;
@@ -163,6 +168,11 @@ class CandidateTile extends StatelessWidget {
     final l = AppLocalizations.of(context);
     final t = Theme.of(context);
     final cs = t.colorScheme;
+    final shapes = SegmerisShapes.of(context);
+    final quality = candidate.qualityLabel.trim();
+    final badge = candidate.qualityBadge.trim();
+    final codec = candidate.codec.trim();
+    final title = candidate.title.trim();
     return AnimatedSlide(
       duration: SegmerisMotion.medium,
       curve: SegmerisMotion.emphasized,
@@ -171,103 +181,173 @@ class CandidateTile extends StatelessWidget {
         duration: SegmerisMotion.medium,
         curve: SegmerisMotion.emphasized,
         scale: selected ? 1 : 0.986,
-        child: InkWell(
-          borderRadius: SegmerisShapes.of(context).md,
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: SegmerisMotion.medium,
-            curve: SegmerisMotion.emphasized,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              borderRadius: SegmerisShapes.of(context).md,
-              border: Border.all(
-                color: selected
-                    ? cs.primary
-                    : cs.outlineVariant.withValues(alpha: 0.62),
-                width: selected ? 2 : 1,
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: shapes.md,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: SegmerisMotion.medium,
+              curve: SegmerisMotion.emphasized,
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              decoration: BoxDecoration(
+                borderRadius: shapes.md,
+                border: Border.all(
+                  color: selected
+                      ? cs.primary
+                      : cs.outlineVariant.withValues(alpha: 0.62),
+                  width: selected ? 2 : 1,
+                ),
+                color:
+                    selected ? cs.secondaryContainer : cs.surfaceContainerHigh,
               ),
-              color: selected ? cs.secondaryContainer : cs.surfaceContainerHigh,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        candidate.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: t.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              quality.isEmpty ? 'Auto' : quality,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: t.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.1,
+                              ),
+                            ),
+                            if (badge.isNotEmpty)
+                              QualityBadgePill(label: badge),
+                          ],
                         ),
                       ),
-                    ),
-                    AnimatedSwitcher(
-                      duration: SegmerisMotion.fast,
-                      transitionBuilder: segmerisFadeScaleTransition,
-                      child: selected
-                          ? Icon(
-                              Icons.check_circle_rounded,
-                              key: const ValueKey('selected-check'),
-                              color: cs.primary,
-                            )
-                          : const SizedBox(
-                              key: ValueKey('selected-empty'),
-                              width: 24,
-                            ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    MiniChip(label: candidate.protocol.toUpperCase()),
-                    if (candidate.primary) MiniChip(label: l.text('core')),
-                    MiniChip(label: '${l.text('score')} ${candidate.score}'),
-                    MiniChip(label: candidate.qualityLabel),
-                    MiniChip(label: candidate.container.toUpperCase()),
-                    if (candidate.width > 0 && candidate.height > 0)
-                      MiniChip(label: '${candidate.width}x${candidate.height}'),
-                    if (candidate.durationSeconds > 0)
-                      MiniChip(label: '${candidate.durationSeconds.round()}s'),
-                    if (candidate.segmentCount > 0)
-                      MiniChip(
-                        label:
-                            '${candidate.segmentCount} ${l.text('segments')}',
+                      AnimatedSwitcher(
+                        duration: SegmerisMotion.fast,
+                        transitionBuilder: segmerisFadeScaleTransition,
+                        child: selected
+                            ? Icon(
+                                Icons.check_circle_rounded,
+                                key: const ValueKey('selected-check'),
+                                color: cs.primary,
+                              )
+                            : const SizedBox(
+                                key: ValueKey('selected-empty'),
+                                width: 24,
+                              ),
                       ),
-                    if (candidate.audioUrl != null) const MiniChip(label: 'AV'),
-                    if (candidate.requiresFfmpeg)
-                      const MiniChip(label: 'FFmpeg'),
+                    ],
+                  ),
+                  if (title.isNotEmpty && title != quality) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: t.textTheme.bodyMedium?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
                   ],
-                ),
-                const SizedBox(height: 10),
-                if (candidate.reason.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      MiniChip(label: candidate.protocol.toUpperCase()),
+                      if (candidate.primary) MiniChip(label: l.text('core')),
+                      if (codec.isNotEmpty) MiniChip(label: codec),
+                      MiniChip(label: candidate.container.toUpperCase()),
+                      if (candidate.width > 0 && candidate.height > 0)
+                        MiniChip(
+                            label: '${candidate.width}x${candidate.height}'),
+                      if (candidate.durationSeconds > 0)
+                        MiniChip(
+                            label: '${candidate.durationSeconds.round()}s'),
+                      if (candidate.segmentCount > 0)
+                        MiniChip(
+                          label:
+                              '${candidate.segmentCount} ${l.text('segments')}',
+                        ),
+                      if (candidate.audioUrl != null)
+                        const MiniChip(label: 'AV'),
+                      if (candidate.requiresFfmpeg)
+                        const MiniChip(label: 'FFmpeg'),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  if (candidate.reason.isNotEmpty) ...[
+                    Text(
+                      candidate.reason,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: t.textTheme.bodySmall?.copyWith(
+                        color: cs.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   Text(
-                    candidate.reason,
+                    candidate.mediaUrl,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: t.textTheme.bodySmall?.copyWith(
-                      color: cs.primary,
-                      fontWeight: FontWeight.w700,
+                      color: cs.onSurfaceVariant,
                     ),
                   ),
-                  const SizedBox(height: 8),
                 ],
-                Text(
-                  candidate.mediaUrl,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: t.textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class QualityBadgePill extends StatelessWidget {
+  const QualityBadgePill({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final cs = t.colorScheme;
+    final premium = label.contains('会员');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        borderRadius: SegmerisShapes.of(context).pill,
+        color: cs.tertiaryContainer,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (premium) ...[
+            Icon(
+              Icons.workspace_premium_rounded,
+              size: 13,
+              color: cs.onTertiaryContainer,
+            ),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: t.textTheme.labelSmall?.copyWith(
+              color: cs.onTertiaryContainer,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
       ),
     );
   }

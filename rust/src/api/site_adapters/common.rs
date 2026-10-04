@@ -125,15 +125,6 @@ pub(crate) fn is_supported_media_like(url: &str) -> bool {
         || url.contains(".mpd")
 }
 
-pub(crate) fn first_array_pointer<'a>(
-    value: &'a Value,
-    pointers: &[&str],
-) -> Option<&'a Vec<Value>> {
-    pointers
-        .iter()
-        .find_map(|pointer| value.pointer(pointer).and_then(Value::as_array))
-}
-
 pub(crate) fn first_string_pointer(value: &Value, pointers: &[&str]) -> Option<String> {
     pointers.iter().find_map(|pointer| {
         value

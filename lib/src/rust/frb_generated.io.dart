@@ -32,7 +32,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  DownloadOptions dco_decode_box_autoadd_download_options(dynamic raw);
+
+  @protected
+  MediaCollection dco_decode_box_autoadd_media_collection(dynamic raw);
+
+  @protected
   RequestContext dco_decode_box_autoadd_request_context(dynamic raw);
+
+  @protected
+  DownloadOptions dco_decode_download_options(dynamic raw);
 
   @protected
   double dco_decode_f_64(dynamic raw);
@@ -53,22 +62,44 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<MediaCandidate> dco_decode_list_media_candidate(dynamic raw);
 
   @protected
+  List<MediaCollectionEntry> dco_decode_list_media_collection_entry(
+      dynamic raw);
+
+  @protected
+  List<MediaSubtitleTrack> dco_decode_list_media_subtitle_track(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
   MediaCandidate dco_decode_media_candidate(dynamic raw);
 
   @protected
+  MediaCollection dco_decode_media_collection(dynamic raw);
+
+  @protected
+  MediaCollectionEntry dco_decode_media_collection_entry(dynamic raw);
+
+  @protected
   MediaInspectionResult dco_decode_media_inspection_result(dynamic raw);
 
   @protected
+  MediaSubtitleTrack dco_decode_media_subtitle_track(dynamic raw);
+
+  @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  MediaCollection? dco_decode_opt_box_autoadd_media_collection(dynamic raw);
 
   @protected
   ProgressUpdate dco_decode_progress_update(dynamic raw);
 
   @protected
   RequestContext dco_decode_request_context(dynamic raw);
+
+  @protected
+  SubtitleMode dco_decode_subtitle_mode(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -90,8 +121,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  DownloadOptions sse_decode_box_autoadd_download_options(
+      SseDeserializer deserializer);
+
+  @protected
+  MediaCollection sse_decode_box_autoadd_media_collection(
+      SseDeserializer deserializer);
+
+  @protected
   RequestContext sse_decode_box_autoadd_request_context(
       SseDeserializer deserializer);
+
+  @protected
+  DownloadOptions sse_decode_download_options(SseDeserializer deserializer);
 
   @protected
   double sse_decode_f_64(SseDeserializer deserializer);
@@ -113,23 +155,49 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  List<MediaCollectionEntry> sse_decode_list_media_collection_entry(
+      SseDeserializer deserializer);
+
+  @protected
+  List<MediaSubtitleTrack> sse_decode_list_media_subtitle_track(
+      SseDeserializer deserializer);
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
   MediaCandidate sse_decode_media_candidate(SseDeserializer deserializer);
 
   @protected
+  MediaCollection sse_decode_media_collection(SseDeserializer deserializer);
+
+  @protected
+  MediaCollectionEntry sse_decode_media_collection_entry(
+      SseDeserializer deserializer);
+
+  @protected
   MediaInspectionResult sse_decode_media_inspection_result(
+      SseDeserializer deserializer);
+
+  @protected
+  MediaSubtitleTrack sse_decode_media_subtitle_track(
       SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
+  MediaCollection? sse_decode_opt_box_autoadd_media_collection(
+      SseDeserializer deserializer);
+
+  @protected
   ProgressUpdate sse_decode_progress_update(SseDeserializer deserializer);
 
   @protected
   RequestContext sse_decode_request_context(SseDeserializer deserializer);
+
+  @protected
+  SubtitleMode sse_decode_subtitle_mode(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_8(SseDeserializer deserializer);
@@ -152,8 +220,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_download_options(
+      DownloadOptions self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_media_collection(
+      MediaCollection self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_request_context(
       RequestContext self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_download_options(
+      DownloadOptions self, SseSerializer serializer);
 
   @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
@@ -176,6 +256,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       List<MediaCandidate> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_media_collection_entry(
+      List<MediaCollectionEntry> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_media_subtitle_track(
+      List<MediaSubtitleTrack> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
       Uint8List self, SseSerializer serializer);
 
@@ -184,11 +272,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       MediaCandidate self, SseSerializer serializer);
 
   @protected
+  void sse_encode_media_collection(
+      MediaCollection self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_media_collection_entry(
+      MediaCollectionEntry self, SseSerializer serializer);
+
+  @protected
   void sse_encode_media_inspection_result(
       MediaInspectionResult self, SseSerializer serializer);
 
   @protected
+  void sse_encode_media_subtitle_track(
+      MediaSubtitleTrack self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_media_collection(
+      MediaCollection? self, SseSerializer serializer);
 
   @protected
   void sse_encode_progress_update(
@@ -197,6 +301,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_request_context(
       RequestContext self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_subtitle_mode(SubtitleMode self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_8(int self, SseSerializer serializer);

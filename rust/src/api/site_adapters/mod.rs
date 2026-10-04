@@ -3,7 +3,6 @@ use url::Url;
 
 use crate::api::downloader::CandidateCollector;
 
-mod bilibili;
 mod common;
 mod generic;
 mod youtube;
@@ -30,14 +29,12 @@ pub(crate) fn inspect_page_candidates(
     collector: &mut CandidateCollector,
     warnings: &mut Vec<SiteWarning>,
 ) -> Result<()> {
-    match adapter_for_host(page_url.domain()) {
-        Some(SiteAdapterKind::YouTube) => {
-            youtube::extract_youtube_candidates(page_url, html, collector, warnings)?;
-        }
-        Some(SiteAdapterKind::Bilibili) => {
-            bilibili::extract_bilibili_candidates(page_url, html, collector, warnings)?;
-        }
-        None => {}
+    // Bilibili pages never reach this HTML sniffing path: the downloader
+    // resolves them straight from the public API (see
+    // `crate::api::bilibili`) before a page fetch could happen, so only
+    // YouTube and the generic meta scan run here.
+    if let Some(SiteAdapterKind::YouTube) = adapter_for_host(page_url.domain()) {
+        youtube::extract_youtube_candidates(page_url, html, collector, warnings)?;
     }
 
     generic::extract_generic_candidates(page_url, html, collector)?;
@@ -200,145 +197,6 @@ mod tests {
                 && candidate.protocol == "hls"
                 && candidate.media_url == "https://rr3---sn.example/replay_master.m3u8"
                 && candidate.title == "Fixture Live Replay"
-        }));
-    }
-
-    #[test]
-    fn bilibili_inline_fixture_prefers_best_audio_track() {
-        let html = include_str!("fixtures/bilibili_inline.html");
-        let (candidates, warnings) =
-            inspect_fixture("https://www.bilibili.com/video/BV1fixture", html);
-
-        assert!(warnings.is_empty());
-        assert!(candidates.iter().any(|candidate| {
-            candidate.extractor == "bilibili"
-                && candidate.audio_url.as_deref() == Some("https://cn.example/audio-256.m4a")
-                && candidate.height == 1080
-                && candidate.title == "Fixture Bili Inline"
-        }));
-    }
-
-    #[test]
-    fn bilibili_json_parse_fixture_supports_flac_audio_and_progressive() {
-        let html = include_str!("fixtures/bilibili_json_parse.html");
-        let (candidates, warnings) =
-            inspect_fixture("https://www.bilibili.com/video/BV1parse", html);
-
-        assert!(warnings.is_empty());
-        assert!(candidates.iter().any(|candidate| {
-            candidate.extractor == "bilibili"
-                && candidate.audio_url.as_deref() == Some("https://upos.example/audio-flac.m4a")
-                && candidate.height == 2160
-        }));
-        assert!(candidates.iter().any(|candidate| {
-            candidate.extractor == "bilibili"
-                && candidate.audio_url.is_none()
-                && candidate.media_url == "https://upos.example/progressive-part-1.mp4"
-        }));
-    }
-
-    #[test]
-    fn bilibili_bangumi_fixture_builds_title_from_initial_state() {
-        let html = include_str!("fixtures/bilibili_bangumi.html");
-        let (candidates, warnings) =
-            inspect_fixture("https://www.bilibili.com/bangumi/play/ep1fixture", html);
-
-        assert!(warnings.is_empty());
-        assert!(candidates.iter().any(|candidate| {
-            candidate.extractor == "bilibili"
-                && candidate.audio_url.as_deref() == Some("https://bangumi.example/audio-128.m4a")
-                && candidate.title == "Fixture Bangumi Season · 第1话 · 星际启程"
-        }));
-    }
-
-    #[test]
-    fn bilibili_collection_fixture_builds_title_from_ugc_season_state() {
-        let html = include_str!("fixtures/bilibili_collection.html");
-        let (candidates, warnings) =
-            inspect_fixture("https://www.bilibili.com/video/BV1collection", html);
-
-        assert!(warnings.is_empty());
-        assert!(candidates.iter().any(|candidate| {
-            candidate.extractor == "bilibili"
-                && candidate.audio_url.as_deref()
-                    == Some("https://collection.example/audio-128.m4a")
-                && candidate.title == "Fixture Collection · Part 03"
-                && candidate.height == 720
-        }));
-    }
-
-    #[test]
-    fn bilibili_bangumi_pagination_fixture_uses_current_episode_from_list() {
-        let html = include_str!("fixtures/bilibili_bangumi_pagination.html");
-        let (candidates, warnings) =
-            inspect_fixture("https://www.bilibili.com/bangumi/play/ep-pagination", html);
-
-        assert!(warnings.is_empty());
-        assert!(candidates.iter().any(|candidate| {
-            candidate.extractor == "bilibili"
-                && candidate.audio_url.as_deref() == Some("https://bangumi-page.example/audio.m4a")
-                && candidate.title == "Fixture Paginated Season · 第2话 · 月落"
-        }));
-    }
-
-    #[test]
-    fn bilibili_multi_p_fixture_uses_current_page_part() {
-        let html = include_str!("fixtures/bilibili_multi_p.html");
-        let (candidates, warnings) =
-            inspect_fixture("https://www.bilibili.com/video/BV1multiP", html);
-
-        assert!(warnings.is_empty());
-        assert!(candidates.iter().any(|candidate| {
-            candidate.extractor == "bilibili"
-                && candidate.audio_url.as_deref() == Some("https://multi-p.example/audio.m4a")
-                && candidate.title == "Fixture Multi-P Collection · Part B"
-                && candidate.height == 720
-        }));
-    }
-
-    #[test]
-    fn bilibili_members_only_fixture_emits_membership_warning() {
-        let html = include_str!("fixtures/bilibili_members_only.html");
-        let (candidates, warnings) =
-            inspect_fixture("https://www.bilibili.com/bangumi/play/ep-members", html);
-
-        assert!(candidates.is_empty());
-        assert!(warnings
-            .iter()
-            .any(|warning| warning.contains("[auth:bilibili-membership-required]")));
-    }
-
-    #[test]
-    fn bilibili_short_link_fixture_uses_b23_dispatch() {
-        let html = include_str!("fixtures/bilibili_short_link.html");
-        let (candidates, warnings) = inspect_fixture("https://b23.tv/fixture-short", html);
-
-        assert!(warnings.is_empty());
-        assert!(candidates.iter().any(|candidate| {
-            candidate.extractor == "bilibili"
-                && candidate.audio_url.as_deref() == Some("https://b23.example/audio-128.m4a")
-                && candidate.title == "Fixture Short Link Video"
-        }));
-    }
-
-    #[test]
-    fn bilibili_multi_audio_fixture_exposes_multiple_audio_variants() {
-        let html = include_str!("fixtures/bilibili_multi_audio.html");
-        let (candidates, warnings) =
-            inspect_fixture("https://www.bilibili.com/video/BV1multiAudio", html);
-
-        assert!(warnings.is_empty());
-        assert!(candidates.iter().any(|candidate| {
-            candidate.extractor == "bilibili"
-                && candidate.audio_url.as_deref()
-                    == Some("https://multi-audio.example/audio-zh.m4a")
-                && candidate.quality_label == "1080p · Mandarin"
-        }));
-        assert!(candidates.iter().any(|candidate| {
-            candidate.extractor == "bilibili"
-                && candidate.audio_url.as_deref()
-                    == Some("https://multi-audio.example/audio-ja.m4a")
-                && candidate.quality_label == "1080p · Japanese"
         }));
     }
 

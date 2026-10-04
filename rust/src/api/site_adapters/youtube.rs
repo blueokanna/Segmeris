@@ -3,7 +3,7 @@ use nextjson::Value;
 use regex::Regex;
 use url::Url;
 
-use crate::api::downloader::CandidateCollector;
+use crate::api::downloader::{CandidateCollector, CandidateSpec};
 
 use super::common::{
     extract_json_object_after_any, extract_json_string_after_any, extract_page_title,
@@ -61,31 +61,27 @@ pub(crate) fn extract_youtube_candidates(
     ] {
         if let Some(manifest) = first_string_pointer(&value, &[pointer]) {
             found_manifest = true;
-            collector.push(
-                manifest,
-                None,
-                title.clone(),
-                Some(label.to_string()),
-                Some(mime_type.to_string()),
-                None,
-                None,
-                Some("youtube"),
-            );
+            collector.push(CandidateSpec {
+                media_url: manifest,
+                title: title.clone(),
+                quality_label: Some(label.to_string()),
+                mime_type: Some(mime_type.to_string()),
+                extractor: Some("youtube"),
+                ..CandidateSpec::default()
+            });
         }
     }
 
     for (label, mime_type, raw) in extract_direct_manifest_urls(page_url, html)? {
         found_manifest = true;
-        collector.push(
-            raw,
-            None,
-            title.clone(),
-            Some(label),
-            Some(mime_type),
-            None,
-            None,
-            Some("youtube"),
-        );
+        collector.push(CandidateSpec {
+            media_url: raw,
+            title: title.clone(),
+            quality_label: Some(label),
+            mime_type: Some(mime_type),
+            extractor: Some("youtube"),
+            ..CandidateSpec::default()
+        });
     }
 
     let best_audio = value
@@ -126,28 +122,32 @@ pub(crate) fn extract_youtube_candidates(
                 found_stream = true;
                 let is_video_only =
                     mime_type.starts_with("video/") && path.ends_with("adaptiveFormats");
-                collector.push(
+                collector.push(CandidateSpec {
                     media_url,
-                    if is_video_only {
+                    audio_url: if is_video_only {
                         best_audio.clone()
                     } else {
                         None
                     },
-                    title.clone(),
-                    item.get("qualityLabel")
+                    title: title.clone(),
+                    quality_label: item
+                        .get("qualityLabel")
                         .or_else(|| item.get("audioQuality"))
                         .or_else(|| item.get("quality"))
                         .and_then(Value::as_str)
                         .map(str::to_string),
-                    Some(mime_type.to_string()),
-                    item.get("width")
+                    mime_type: Some(mime_type.to_string()),
+                    width: item
+                        .get("width")
                         .and_then(Value::as_i64)
                         .map(|value| value as i32),
-                    item.get("height")
+                    height: item
+                        .get("height")
                         .and_then(Value::as_i64)
                         .map(|value| value as i32),
-                    Some("youtube"),
-                );
+                    extractor: Some("youtube"),
+                    ..CandidateSpec::default()
+                });
             }
         }
     }

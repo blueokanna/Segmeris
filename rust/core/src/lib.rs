@@ -1,11 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 
-//! Platform-independent Segmeris types, validation, and wire encoding.
-//!
-//! Network, filesystem, Flutter FFI, and hardware codec implementations belong
-//! to platform adapters. This crate intentionally stays usable without `std`.
-
 use core::fmt;
 use nextjson::{NsonDeserialize, NsonSerialize};
 

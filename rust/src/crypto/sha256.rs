@@ -96,14 +96,10 @@ impl Sha256 {
     /// reusing it.
     pub fn finalize(mut self) -> [u8; 32] {
         let bit_len = self.total_len.wrapping_mul(8);
-        // Append the 0x80 padding byte.
         self.update(&[0x80]);
-        // Zero-fill the remainder of the block, then the final 8 bytes
-        // hold the big-endian bit length.
         while self.buffered != 56 {
             self.update(&[0x00]);
         }
-        // `buffered == 56`: exactly room for the length word.
         let len_bytes = bit_len.to_be_bytes();
         self.update(&len_bytes);
         debug_assert_eq!(self.buffered, 0);

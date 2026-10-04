@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -1942244692;
+  int get rustContentHash => -460048549;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -82,28 +82,15 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
-  Stream<ProgressUpdate> crateApiDownloaderDownloadMediaRun(
-      {required String pageUrl,
-      required String mediaUrl,
-      String? audioUrl,
-      required String output,
-      required int concurrency,
-      required int retries,
-      required int videoBitrate,
-      required int audioBitrate,
-      required bool keepTemp});
-
   Stream<ProgressUpdate> crateApiDownloaderDownloadMediaWithContext(
       {required String pageUrl,
       required String mediaUrl,
       String? audioUrl,
       required String output,
-      required int concurrency,
-      required int retries,
-      required int videoBitrate,
-      required int audioBitrate,
-      required bool keepTemp,
+      required DownloadOptions options,
       required RequestContext requestContext});
+
+  Future<DownloadOptions> crateApiDownloaderDownloadOptionsDefault();
 
   Stream<ProgressUpdate> crateApiDownloaderHls2Mp4Run(
       {required String url,
@@ -134,83 +121,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
-  Stream<ProgressUpdate> crateApiDownloaderDownloadMediaRun(
-      {required String pageUrl,
-      required String mediaUrl,
-      String? audioUrl,
-      required String output,
-      required int concurrency,
-      required int retries,
-      required int videoBitrate,
-      required int audioBitrate,
-      required bool keepTemp}) {
-    final sink = RustStreamSink<ProgressUpdate>();
-    unawaited(handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_StreamSink_progress_update_Sse(sink, serializer);
-        sse_encode_String(pageUrl, serializer);
-        sse_encode_String(mediaUrl, serializer);
-        sse_encode_opt_String(audioUrl, serializer);
-        sse_encode_String(output, serializer);
-        sse_encode_i_32(concurrency, serializer);
-        sse_encode_i_32(retries, serializer);
-        sse_encode_i_32(videoBitrate, serializer);
-        sse_encode_i_32(audioBitrate, serializer);
-        sse_encode_bool(keepTemp, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 1, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_unit,
-        decodeErrorData: sse_decode_AnyhowException,
-      ),
-      constMeta: kCrateApiDownloaderDownloadMediaRunConstMeta,
-      argValues: [
-        sink,
-        pageUrl,
-        mediaUrl,
-        audioUrl,
-        output,
-        concurrency,
-        retries,
-        videoBitrate,
-        audioBitrate,
-        keepTemp
-      ],
-      apiImpl: this,
-    )));
-    return sink.stream;
-  }
-
-  TaskConstMeta get kCrateApiDownloaderDownloadMediaRunConstMeta =>
-      const TaskConstMeta(
-        debugName: "download_media_run",
-        argNames: [
-          "sink",
-          "pageUrl",
-          "mediaUrl",
-          "audioUrl",
-          "output",
-          "concurrency",
-          "retries",
-          "videoBitrate",
-          "audioBitrate",
-          "keepTemp"
-        ],
-      );
-
-  @override
   Stream<ProgressUpdate> crateApiDownloaderDownloadMediaWithContext(
       {required String pageUrl,
       required String mediaUrl,
       String? audioUrl,
       required String output,
-      required int concurrency,
-      required int retries,
-      required int videoBitrate,
-      required int audioBitrate,
-      required bool keepTemp,
+      required DownloadOptions options,
       required RequestContext requestContext}) {
     final sink = RustStreamSink<ProgressUpdate>();
     unawaited(handler.executeNormal(NormalTask(
@@ -221,14 +137,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(mediaUrl, serializer);
         sse_encode_opt_String(audioUrl, serializer);
         sse_encode_String(output, serializer);
-        sse_encode_i_32(concurrency, serializer);
-        sse_encode_i_32(retries, serializer);
-        sse_encode_i_32(videoBitrate, serializer);
-        sse_encode_i_32(audioBitrate, serializer);
-        sse_encode_bool(keepTemp, serializer);
+        sse_encode_box_autoadd_download_options(options, serializer);
         sse_encode_box_autoadd_request_context(requestContext, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 2, port: port_);
+            funcId: 1, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_unit,
@@ -241,11 +153,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         mediaUrl,
         audioUrl,
         output,
-        concurrency,
-        retries,
-        videoBitrate,
-        audioBitrate,
-        keepTemp,
+        options,
         requestContext
       ],
       apiImpl: this,
@@ -262,13 +170,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "mediaUrl",
           "audioUrl",
           "output",
-          "concurrency",
-          "retries",
-          "videoBitrate",
-          "audioBitrate",
-          "keepTemp",
+          "options",
           "requestContext"
         ],
+      );
+
+  @override
+  Future<DownloadOptions> crateApiDownloaderDownloadOptionsDefault() {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 2, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_download_options,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateApiDownloaderDownloadOptionsDefaultConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateApiDownloaderDownloadOptionsDefaultConstMeta =>
+      const TaskConstMeta(
+        debugName: "download_options_default",
+        argNames: [],
       );
 
   @override
@@ -456,9 +384,38 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  DownloadOptions dco_decode_box_autoadd_download_options(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_download_options(raw);
+  }
+
+  @protected
+  MediaCollection dco_decode_box_autoadd_media_collection(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_media_collection(raw);
+  }
+
+  @protected
   RequestContext dco_decode_box_autoadd_request_context(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_request_context(raw);
+  }
+
+  @protected
+  DownloadOptions dco_decode_download_options(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return DownloadOptions(
+      concurrency: dco_decode_i_32(arr[0]),
+      retries: dco_decode_i_32(arr[1]),
+      videoBitrate: dco_decode_i_32(arr[2]),
+      audioBitrate: dco_decode_i_32(arr[3]),
+      keepTemp: dco_decode_bool(arr[4]),
+      subtitleMode: dco_decode_subtitle_mode(arr[5]),
+      subtitleValue: dco_decode_String(arr[6]),
+    );
   }
 
   @protected
@@ -504,6 +461,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<MediaCollectionEntry> dco_decode_list_media_collection_entry(
+      dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_media_collection_entry)
+        .toList();
+  }
+
+  @protected
+  List<MediaSubtitleTrack> dco_decode_list_media_subtitle_track(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_media_subtitle_track).toList();
+  }
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
@@ -513,8 +485,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MediaCandidate dco_decode_media_candidate(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 18)
-      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
+    if (arr.length != 20)
+      throw Exception('unexpected arr length: expect 20 but see ${arr.length}');
     return MediaCandidate(
       id: dco_decode_String(arr[0]),
       title: dco_decode_String(arr[1]),
@@ -526,14 +498,47 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       protocol: dco_decode_String(arr[7]),
       mimeType: dco_decode_String(arr[8]),
       qualityLabel: dco_decode_String(arr[9]),
-      width: dco_decode_i_32(arr[10]),
-      height: dco_decode_i_32(arr[11]),
-      requiresFfmpeg: dco_decode_bool(arr[12]),
-      score: dco_decode_i_32(arr[13]),
-      segmentCount: dco_decode_i_32(arr[14]),
-      durationSeconds: dco_decode_f_64(arr[15]),
-      primary: dco_decode_bool(arr[16]),
-      reason: dco_decode_String(arr[17]),
+      qualityBadge: dco_decode_String(arr[10]),
+      codec: dco_decode_String(arr[11]),
+      width: dco_decode_i_32(arr[12]),
+      height: dco_decode_i_32(arr[13]),
+      requiresFfmpeg: dco_decode_bool(arr[14]),
+      score: dco_decode_i_32(arr[15]),
+      segmentCount: dco_decode_i_32(arr[16]),
+      durationSeconds: dco_decode_f_64(arr[17]),
+      primary: dco_decode_bool(arr[18]),
+      reason: dco_decode_String(arr[19]),
+    );
+  }
+
+  @protected
+  MediaCollection dco_decode_media_collection(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return MediaCollection(
+      kind: dco_decode_String(arr[0]),
+      title: dco_decode_String(arr[1]),
+      entries: dco_decode_list_media_collection_entry(arr[2]),
+    );
+  }
+
+  @protected
+  MediaCollectionEntry dco_decode_media_collection_entry(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    return MediaCollectionEntry(
+      id: dco_decode_String(arr[0]),
+      index: dco_decode_i_32(arr[1]),
+      title: dco_decode_String(arr[2]),
+      durationSeconds: dco_decode_f_64(arr[3]),
+      pageUrl: dco_decode_String(arr[4]),
+      available: dco_decode_bool(arr[5]),
+      unavailableReason: dco_decode_String(arr[6]),
+      current: dco_decode_bool(arr[7]),
     );
   }
 
@@ -541,16 +546,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MediaInspectionResult dco_decode_media_inspection_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return MediaInspectionResult(
       pageUrl: dco_decode_String(arr[0]),
       pageTitle: dco_decode_String(arr[1]),
       extractor: dco_decode_String(arr[2]),
       candidates: dco_decode_list_media_candidate(arr[3]),
-      warnings: dco_decode_list_String(arr[4]),
-      authRequired: dco_decode_bool(arr[5]),
-      challengeReason: dco_decode_String(arr[6]),
+      subtitles: dco_decode_list_media_subtitle_track(arr[4]),
+      warnings: dco_decode_list_String(arr[5]),
+      authRequired: dco_decode_bool(arr[6]),
+      challengeReason: dco_decode_String(arr[7]),
+      collection: dco_decode_opt_box_autoadd_media_collection(arr[8]),
+    );
+  }
+
+  @protected
+  MediaSubtitleTrack dco_decode_media_subtitle_track(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return MediaSubtitleTrack(
+      language: dco_decode_String(arr[0]),
+      label: dco_decode_String(arr[1]),
+      url: dco_decode_String(arr[2]),
+      selected: dco_decode_bool(arr[3]),
     );
   }
 
@@ -558,6 +579,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  MediaCollection? dco_decode_opt_box_autoadd_media_collection(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_media_collection(raw);
   }
 
   @protected
@@ -586,6 +613,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       cookie: dco_decode_String(arr[3]),
       headers: dco_decode_list_header_entry(arr[4]),
     );
+  }
+
+  @protected
+  SubtitleMode dco_decode_subtitle_mode(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return SubtitleMode.values[raw as int];
   }
 
   @protected
@@ -628,10 +661,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  DownloadOptions sse_decode_box_autoadd_download_options(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_download_options(deserializer));
+  }
+
+  @protected
+  MediaCollection sse_decode_box_autoadd_media_collection(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_media_collection(deserializer));
+  }
+
+  @protected
   RequestContext sse_decode_box_autoadd_request_context(
       SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_request_context(deserializer));
+  }
+
+  @protected
+  DownloadOptions sse_decode_download_options(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_concurrency = sse_decode_i_32(deserializer);
+    var var_retries = sse_decode_i_32(deserializer);
+    var var_videoBitrate = sse_decode_i_32(deserializer);
+    var var_audioBitrate = sse_decode_i_32(deserializer);
+    var var_keepTemp = sse_decode_bool(deserializer);
+    var var_subtitleMode = sse_decode_subtitle_mode(deserializer);
+    var var_subtitleValue = sse_decode_String(deserializer);
+    return DownloadOptions(
+        concurrency: var_concurrency,
+        retries: var_retries,
+        videoBitrate: var_videoBitrate,
+        audioBitrate: var_audioBitrate,
+        keepTemp: var_keepTemp,
+        subtitleMode: var_subtitleMode,
+        subtitleValue: var_subtitleValue);
   }
 
   @protected
@@ -692,6 +759,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<MediaCollectionEntry> sse_decode_list_media_collection_entry(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <MediaCollectionEntry>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_media_collection_entry(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<MediaSubtitleTrack> sse_decode_list_media_subtitle_track(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <MediaSubtitleTrack>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_media_subtitle_track(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -711,6 +804,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_protocol = sse_decode_String(deserializer);
     var var_mimeType = sse_decode_String(deserializer);
     var var_qualityLabel = sse_decode_String(deserializer);
+    var var_qualityBadge = sse_decode_String(deserializer);
+    var var_codec = sse_decode_String(deserializer);
     var var_width = sse_decode_i_32(deserializer);
     var var_height = sse_decode_i_32(deserializer);
     var var_requiresFfmpeg = sse_decode_bool(deserializer);
@@ -730,6 +825,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         protocol: var_protocol,
         mimeType: var_mimeType,
         qualityLabel: var_qualityLabel,
+        qualityBadge: var_qualityBadge,
+        codec: var_codec,
         width: var_width,
         height: var_height,
         requiresFfmpeg: var_requiresFfmpeg,
@@ -741,6 +838,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MediaCollection sse_decode_media_collection(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_String(deserializer);
+    var var_title = sse_decode_String(deserializer);
+    var var_entries = sse_decode_list_media_collection_entry(deserializer);
+    return MediaCollection(
+        kind: var_kind, title: var_title, entries: var_entries);
+  }
+
+  @protected
+  MediaCollectionEntry sse_decode_media_collection_entry(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_index = sse_decode_i_32(deserializer);
+    var var_title = sse_decode_String(deserializer);
+    var var_durationSeconds = sse_decode_f_64(deserializer);
+    var var_pageUrl = sse_decode_String(deserializer);
+    var var_available = sse_decode_bool(deserializer);
+    var var_unavailableReason = sse_decode_String(deserializer);
+    var var_current = sse_decode_bool(deserializer);
+    return MediaCollectionEntry(
+        id: var_id,
+        index: var_index,
+        title: var_title,
+        durationSeconds: var_durationSeconds,
+        pageUrl: var_pageUrl,
+        available: var_available,
+        unavailableReason: var_unavailableReason,
+        current: var_current);
+  }
+
+  @protected
   MediaInspectionResult sse_decode_media_inspection_result(
       SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -748,17 +878,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_pageTitle = sse_decode_String(deserializer);
     var var_extractor = sse_decode_String(deserializer);
     var var_candidates = sse_decode_list_media_candidate(deserializer);
+    var var_subtitles = sse_decode_list_media_subtitle_track(deserializer);
     var var_warnings = sse_decode_list_String(deserializer);
     var var_authRequired = sse_decode_bool(deserializer);
     var var_challengeReason = sse_decode_String(deserializer);
+    var var_collection =
+        sse_decode_opt_box_autoadd_media_collection(deserializer);
     return MediaInspectionResult(
         pageUrl: var_pageUrl,
         pageTitle: var_pageTitle,
         extractor: var_extractor,
         candidates: var_candidates,
+        subtitles: var_subtitles,
         warnings: var_warnings,
         authRequired: var_authRequired,
-        challengeReason: var_challengeReason);
+        challengeReason: var_challengeReason,
+        collection: var_collection);
+  }
+
+  @protected
+  MediaSubtitleTrack sse_decode_media_subtitle_track(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_language = sse_decode_String(deserializer);
+    var var_label = sse_decode_String(deserializer);
+    var var_url = sse_decode_String(deserializer);
+    var var_selected = sse_decode_bool(deserializer);
+    return MediaSubtitleTrack(
+        language: var_language,
+        label: var_label,
+        url: var_url,
+        selected: var_selected);
   }
 
   @protected
@@ -767,6 +917,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  MediaCollection? sse_decode_opt_box_autoadd_media_collection(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_media_collection(deserializer));
     } else {
       return null;
     }
@@ -796,6 +958,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         origin: var_origin,
         cookie: var_cookie,
         headers: var_headers);
+  }
+
+  @protected
+  SubtitleMode sse_decode_subtitle_mode(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return SubtitleMode.values[inner];
   }
 
   @protected
@@ -842,10 +1011,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_download_options(
+      DownloadOptions self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_download_options(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_media_collection(
+      MediaCollection self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_media_collection(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_request_context(
       RequestContext self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_request_context(self, serializer);
+  }
+
+  @protected
+  void sse_encode_download_options(
+      DownloadOptions self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.concurrency, serializer);
+    sse_encode_i_32(self.retries, serializer);
+    sse_encode_i_32(self.videoBitrate, serializer);
+    sse_encode_i_32(self.audioBitrate, serializer);
+    sse_encode_bool(self.keepTemp, serializer);
+    sse_encode_subtitle_mode(self.subtitleMode, serializer);
+    sse_encode_String(self.subtitleValue, serializer);
   }
 
   @protected
@@ -897,6 +1093,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_media_collection_entry(
+      List<MediaCollectionEntry> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_media_collection_entry(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_media_subtitle_track(
+      List<MediaSubtitleTrack> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_media_subtitle_track(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
       Uint8List self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -918,6 +1134,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.protocol, serializer);
     sse_encode_String(self.mimeType, serializer);
     sse_encode_String(self.qualityLabel, serializer);
+    sse_encode_String(self.qualityBadge, serializer);
+    sse_encode_String(self.codec, serializer);
     sse_encode_i_32(self.width, serializer);
     sse_encode_i_32(self.height, serializer);
     sse_encode_bool(self.requiresFfmpeg, serializer);
@@ -929,6 +1147,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_media_collection(
+      MediaCollection self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.kind, serializer);
+    sse_encode_String(self.title, serializer);
+    sse_encode_list_media_collection_entry(self.entries, serializer);
+  }
+
+  @protected
+  void sse_encode_media_collection_entry(
+      MediaCollectionEntry self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_i_32(self.index, serializer);
+    sse_encode_String(self.title, serializer);
+    sse_encode_f_64(self.durationSeconds, serializer);
+    sse_encode_String(self.pageUrl, serializer);
+    sse_encode_bool(self.available, serializer);
+    sse_encode_String(self.unavailableReason, serializer);
+    sse_encode_bool(self.current, serializer);
+  }
+
+  @protected
   void sse_encode_media_inspection_result(
       MediaInspectionResult self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -936,9 +1177,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.pageTitle, serializer);
     sse_encode_String(self.extractor, serializer);
     sse_encode_list_media_candidate(self.candidates, serializer);
+    sse_encode_list_media_subtitle_track(self.subtitles, serializer);
     sse_encode_list_String(self.warnings, serializer);
     sse_encode_bool(self.authRequired, serializer);
     sse_encode_String(self.challengeReason, serializer);
+    sse_encode_opt_box_autoadd_media_collection(self.collection, serializer);
+  }
+
+  @protected
+  void sse_encode_media_subtitle_track(
+      MediaSubtitleTrack self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.language, serializer);
+    sse_encode_String(self.label, serializer);
+    sse_encode_String(self.url, serializer);
+    sse_encode_bool(self.selected, serializer);
   }
 
   @protected
@@ -948,6 +1201,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_media_collection(
+      MediaCollection? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_media_collection(self, serializer);
     }
   }
 
@@ -969,6 +1233,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.origin, serializer);
     sse_encode_String(self.cookie, serializer);
     sse_encode_list_header_entry(self.headers, serializer);
+  }
+
+  @protected
+  void sse_encode_subtitle_mode(SubtitleMode self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected
