@@ -298,9 +298,17 @@ impl BilibiliApi {
         url.to_string()
     }
 
-    /// Resolve a `b23.tv` / `bili2233.cn` short link into its final URL by
-    /// following redirects manually (the HTTP engine hides the final URL,
-    /// and redirect targets are exactly what we need).
+    /// Resolve a `b23.tv` / `bili2233.cn` short link into its final page URL by
+    /// following redirects manually (the HTTP engine hides the final URL, and
+    /// redirect targets are exactly what we need).
+    ///
+    /// Only URLs this downloader actually understands are ever returned: a
+    /// hop page's HTML is scanned for *candidates* and each one is validated
+    /// against [`super::url::parse_target`], because that HTML cannot be
+    /// trusted — Bilibili's own `og:url` for bangumi pages drops the slash
+    /// between host and path (`https://www.bilibili.combangumi/play/ep…`), and
+    /// returning the first URL-looking string out of it is how a shared
+    /// `b23.tv/ep…` link used to be reported as an unsupported page.
     pub(crate) fn resolve_short_link(&self, short_url: &str) -> Result<url::Url> {
         let mut current = url::Url::parse(short_url).context("Invalid short link URL")?;
 
@@ -327,10 +335,22 @@ impl BilibiliApi {
             }
 
             if (200..300).contains(&status) {
+                // A redirect chain ends on the page itself, and then the URL
+                // we asked for *is* the answer: parsing metadata out of the
+                // page would be guesswork on top of a URL that already
+                // resolved.
+                if is_supported_page(&current) {
+                    return Ok(current);
+                }
                 let html = String::from_utf8_lossy(&body);
-                let target = extract_page_url_from_html(&html)
-                    .context("Short link page did not expose a Bilibili URL")?;
-                return url::Url::parse(&target).context("Short link exposed an invalid URL");
+                return page_url_candidates(&html)
+                    .into_iter()
+                    .find(is_supported_page)
+                    .with_context(|| {
+                        format!(
+                            "Short link page {current} did not expose a Bilibili page URL this downloader supports"
+                        )
+                    });
             }
 
             bail!("Short link resolution failed with HTTP {status}");
@@ -1078,8 +1098,24 @@ impl BilibiliApi {
     }
 }
 
-/// Pull the first Bilibili page URL out of a tiny redirect-hop HTML page.
-fn extract_page_url_from_html(html: &str) -> Option<String> {
+/// Whether a URL is a page this downloader can actually work with (i.e. not
+/// another short link, not an unsupported page type).
+fn is_supported_page(url: &url::Url) -> bool {
+    matches!(
+        super::url::parse_target(url),
+        Some(target) if !matches!(target, Target::ShortLink { .. })
+    )
+}
+
+/// Every Bilibili URL in a short-link hop page, in the order it appears.
+///
+/// The scan is deliberately dumb and the *caller* validates the results:
+/// hop pages are small HTML documents that embed the destination in a meta
+/// refresh, a canonical link or a script string, and their URLs can carry
+/// HTML entities (`&amp;`) or JavaScript escapes (`\/`, `\u002F`), which are
+/// decoded here before parsing.
+fn page_url_candidates(html: &str) -> Vec<url::Url> {
+    let mut found: Vec<url::Url> = Vec::new();
     let mut search = html;
     while let Some(index) = search.find("http") {
         let candidate = &search[index..];
@@ -1088,19 +1124,27 @@ fn extract_page_url_from_html(html: &str) -> Option<String> {
                 ch == '"' || ch == '\'' || ch == '<' || ch == '>' || ch.is_whitespace()
             })
             .unwrap_or(candidate.len());
-        let candidate = &candidate[..end];
-        if (candidate.contains("bilibili.com")
-            || candidate.contains("b23.tv")
-            || candidate.contains("bili2233.cn"))
-            && !candidate.contains("fe-static")
-        {
-            if let Ok(parsed) = url::Url::parse(candidate) {
-                return Some(parsed.to_string());
+        let candidate = decode_url_text(&candidate[..end]);
+        if !candidate.contains("fe-static") {
+            if let Ok(parsed) = url::Url::parse(&candidate) {
+                let host = parsed.host_str().unwrap_or_default();
+                if super::url::is_bilibili_host(host) && !found.contains(&parsed) {
+                    found.push(parsed);
+                }
             }
         }
         search = &search[index + end..];
     }
-    None
+    found
+}
+
+/// Undo the escaping hop pages apply to embedded URLs: HTML entities and the
+/// JavaScript line-continuation forms used inside inline scripts.
+fn decode_url_text(text: &str) -> String {
+    text.replace("&amp;", "&")
+        .replace("\\/", "/")
+        .replace("\\u002F", "/")
+        .replace("\\u002f", "/")
 }
 
 fn parse_archive_list(value: Option<&Value>) -> Vec<CollectionArchive> {
@@ -1133,10 +1177,11 @@ fn parse_archive_list(value: Option<&Value>) -> Vec<CollectionArchive> {
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_api_error, ensure_api_ok, extract_page_url_from_html, normalize_stream_url,
-        parse_pgc_season_payload, parse_playurl_payload, parse_view_payload,
+        classify_api_error, ensure_api_ok, is_supported_page, normalize_stream_url,
+        page_url_candidates, parse_pgc_season_payload, parse_playurl_payload, parse_view_payload,
     };
     use nextjson::Value;
+    use url::Url;
 
     fn parse_json(text: &str) -> Value {
         nextjson::from_str::<Value>(text).expect("fixture must be valid JSON")
@@ -1507,6 +1552,40 @@ mod tests {
         assert!(format!("{error:#}").contains("did not contain any playable streams"));
     }
 
+    /// Live regression for the field report: a shared `b23.tv` short link must
+    /// resolve to the page the app can actually download.
+    #[test]
+    #[ignore = "hits the live Bilibili API"]
+    fn bilibili_live_short_link_round_trip() {
+        use crate::api::downloader::RequestContext;
+
+        let api =
+            super::BilibiliApi::new(&RequestContext::default()).expect("HTTP client must build");
+        for (short, expected) in [
+            (
+                "https://b23.tv/ep1994063",
+                "https://www.bilibili.com/bangumi/play/ep1994063",
+            ),
+            (
+                "https://b23.tv/BV1GJ411x7h7",
+                "https://www.bilibili.com/video/BV1GJ411x7h7",
+            ),
+        ] {
+            let parsed = url::Url::parse(short).expect("short link parses");
+            let (resolved, target) = api
+                .resolve_target(&parsed)
+                .expect("resolution must not fail")
+                .unwrap_or_else(|| panic!("{short} must resolve to a supported page"));
+            // The host may gain a path suffix (`/video/BV…/`), so compare the
+            // page it points at rather than the exact string.
+            assert!(
+                resolved.as_str().starts_with(expected),
+                "{short} resolved to {resolved}, expected {expected}"
+            );
+            println!("{short} -> {resolved} ({target:?})");
+        }
+    }
+
     #[test]
     fn parses_pgc_payload_from_result_root() {
         let payload = parse_json(
@@ -1599,13 +1678,63 @@ mod tests {
     fn extracts_page_urls_from_hop_html() {
         let html = r#"<html><head><meta http-equiv="refresh" content="0;url=https://www.bilibili.com/video/BV1xx411c7mD?share_source=short_link"></head></html>"#;
         assert_eq!(
-            extract_page_url_from_html(html).as_deref(),
-            Some("https://www.bilibili.com/video/BV1xx411c7mD?share_source=short_link")
+            page_url_candidates(html),
+            vec![
+                Url::parse("https://www.bilibili.com/video/BV1xx411c7mD?share_source=short_link")
+                    .expect("fixture URL parses")
+            ]
+        );
+        // A host that is not Bilibili at all is never a candidate, and the
+        // JavaScript/HTML escaping hop pages use is decoded before parsing.
+        assert!(
+            page_url_candidates(r#"<a href="https://i0.hdslb.com/bfs/face.jpg">x</a>"#).is_empty()
         );
         assert_eq!(
-            extract_page_url_from_html(r#"<a href="https://i0.hdslb.com/bfs/face.jpg">x</a>"#),
-            None
+            page_url_candidates(
+                r#"<script>var u="https:\/\/www.bilibili.com\/video\/BV1xx411c7mD"</script>"#
+            ),
+            vec![Url::parse("https://www.bilibili.com/video/BV1xx411c7mD")
+                .expect("escaped URL parses")]
         );
+        assert_eq!(
+            page_url_candidates(
+                r#"<meta property="og:url" content="https://www.bilibili.com/x?a=1&amp;b=2"/>"#
+            ),
+            vec![Url::parse("https://www.bilibili.com/x?a=1&b=2").expect("entity URL parses")]
+        );
+    }
+
+    #[test]
+    fn skips_a_malformed_page_url_for_the_canonical_one() {
+        // Verbatim from the live bangumi page: Bilibili's own `og:url` drops
+        // the slash between host and path (`…bilibili.combangumi/…`), and it
+        // comes *before* the correct canonical link. Its host is not a
+        // Bilibili host at all, so it is dropped and the canonical URL wins —
+        // trusting the first URL-looking string is what made a shared
+        // `b23.tv/ep…` link resolve to a host that then looked unsupported.
+        let html = r#"<head><meta property="og:url" content="https://www.bilibili.combangumi/play/ep1994063"/><link rel="canonical" href="https://www.bilibili.com/bangumi/play/ep1994063"/></head>"#;
+        let candidates = page_url_candidates(html);
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|url| url.as_str())
+                .collect::<Vec<_>>(),
+            vec!["https://www.bilibili.com/bangumi/play/ep1994063"]
+        );
+        assert!(is_supported_page(&candidates[0]));
+    }
+
+    #[test]
+    fn recognises_supported_pages_for_short_link_resolution() {
+        let supported = |url: &str| is_supported_page(&Url::parse(url).expect("URL parses"));
+        assert!(supported("https://www.bilibili.com/bangumi/play/ep1994063"));
+        assert!(supported("https://www.bilibili.com/video/BV1xx411c7mD"));
+        // Another short link is not a destination, and neither is a page
+        // type the downloader does not implement.
+        assert!(!supported("https://b23.tv/ep1994063"));
+        assert!(!supported(
+            "https://www.bilibili.com/blackboard/activity-abc.html"
+        ));
     }
 
     /// Live smoke test against the production API. It is ignored by
