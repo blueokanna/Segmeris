@@ -75,7 +75,9 @@ fn wire__crate__api__downloader__download_media_with_context_impl(
             >>::sse_decode(&mut deserializer);
             let api_page_url = <String>::sse_decode(&mut deserializer);
             let api_media_url = <String>::sse_decode(&mut deserializer);
+            let api_media_fallback_urls = <Vec<String>>::sse_decode(&mut deserializer);
             let api_audio_url = <Option<String>>::sse_decode(&mut deserializer);
+            let api_audio_fallback_urls = <Vec<String>>::sse_decode(&mut deserializer);
             let api_output = <String>::sse_decode(&mut deserializer);
             let api_options =
                 <crate::api::downloader::DownloadOptions>::sse_decode(&mut deserializer);
@@ -89,7 +91,9 @@ fn wire__crate__api__downloader__download_media_with_context_impl(
                             api_sink,
                             api_page_url,
                             api_media_url,
+                            api_media_fallback_urls,
                             api_audio_url,
+                            api_audio_fallback_urls,
                             api_output,
                             api_options,
                             api_request_context,
@@ -512,7 +516,9 @@ impl SseDecode for crate::api::downloader::MediaCandidate {
         let mut var_extractor = <String>::sse_decode(deserializer);
         let mut var_pageUrl = <String>::sse_decode(deserializer);
         let mut var_mediaUrl = <String>::sse_decode(deserializer);
+        let mut var_mediaFallbackUrls = <Vec<String>>::sse_decode(deserializer);
         let mut var_audioUrl = <Option<String>>::sse_decode(deserializer);
+        let mut var_audioFallbackUrls = <Vec<String>>::sse_decode(deserializer);
         let mut var_container = <String>::sse_decode(deserializer);
         let mut var_protocol = <String>::sse_decode(deserializer);
         let mut var_mimeType = <String>::sse_decode(deserializer);
@@ -533,7 +539,9 @@ impl SseDecode for crate::api::downloader::MediaCandidate {
             extractor: var_extractor,
             page_url: var_pageUrl,
             media_url: var_mediaUrl,
+            media_fallback_urls: var_mediaFallbackUrls,
             audio_url: var_audioUrl,
+            audio_fallback_urls: var_audioFallbackUrls,
             container: var_container,
             protocol: var_protocol,
             mime_type: var_mimeType,
@@ -833,7 +841,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::downloader::MediaCandidate {
             self.extractor.into_into_dart().into_dart(),
             self.page_url.into_into_dart().into_dart(),
             self.media_url.into_into_dart().into_dart(),
+            self.media_fallback_urls.into_into_dart().into_dart(),
             self.audio_url.into_into_dart().into_dart(),
+            self.audio_fallback_urls.into_into_dart().into_dart(),
             self.container.into_into_dart().into_dart(),
             self.protocol.into_into_dart().into_dart(),
             self.mime_type.into_into_dart().into_dart(),
@@ -1169,7 +1179,9 @@ impl SseEncode for crate::api::downloader::MediaCandidate {
         <String>::sse_encode(self.extractor, serializer);
         <String>::sse_encode(self.page_url, serializer);
         <String>::sse_encode(self.media_url, serializer);
+        <Vec<String>>::sse_encode(self.media_fallback_urls, serializer);
         <Option<String>>::sse_encode(self.audio_url, serializer);
+        <Vec<String>>::sse_encode(self.audio_fallback_urls, serializer);
         <String>::sse_encode(self.container, serializer);
         <String>::sse_encode(self.protocol, serializer);
         <String>::sse_encode(self.mime_type, serializer);

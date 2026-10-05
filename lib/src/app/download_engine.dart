@@ -27,7 +27,9 @@ abstract class DownloadEngine {
   Stream<ProgressUpdate> download({
     required String pageUrl,
     required String mediaUrl,
+    List<String> mediaFallbackUrls = const [],
     String? audioUrl,
+    List<String> audioFallbackUrls = const [],
     required String output,
     required DownloadOptions options,
     required RequestContext requestContext,
@@ -63,7 +65,9 @@ class FrbDownloadEngine implements DownloadEngine {
   Stream<ProgressUpdate> download({
     required String pageUrl,
     required String mediaUrl,
+    List<String> mediaFallbackUrls = const [],
     String? audioUrl,
+    List<String> audioFallbackUrls = const [],
     required String output,
     required DownloadOptions options,
     required RequestContext requestContext,
@@ -71,7 +75,9 @@ class FrbDownloadEngine implements DownloadEngine {
     return downloadMediaWithContext(
       pageUrl: pageUrl,
       mediaUrl: mediaUrl,
+      mediaFallbackUrls: mediaFallbackUrls,
       audioUrl: audioUrl,
+      audioFallbackUrls: audioFallbackUrls,
       output: output,
       options: options,
       requestContext: requestContext,

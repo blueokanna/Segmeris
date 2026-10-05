@@ -131,6 +131,7 @@ pub(crate) struct DashMedia {
     /// Frames per second of the encoded stream; 0 when unreported.
     pub frame_rate: f64,
     pub url: String,
+    pub backup_urls: Vec<String>,
 }
 
 /// One entry of the playurl `support_formats` list: the official product
@@ -925,7 +926,7 @@ fn looks_like_legacy_format_code(text: &str) -> bool {
 }
 
 fn parse_dash_media(value: &Value) -> Option<DashMedia> {
-    let url = choose_stream_url(value)?;
+    let (url, backup_urls) = choose_stream_urls(value)?;
     Some(DashMedia {
         quality_id: value.get("id").and_then(Value::as_i64).unwrap_or(0),
         bandwidth: value.get("bandwidth").and_then(Value::as_i64).unwrap_or(0),
@@ -953,15 +954,17 @@ fn parse_dash_media(value: &Value) -> Option<DashMedia> {
             .and_then(Value::as_f64)
             .unwrap_or(0.0),
         url,
+        backup_urls,
     })
 }
 
-/// Pick the best URL out of `base_url` + `backup_url`.
+/// Pick the preferred URL and preserve the remaining API-provided mirrors.
 ///
 /// `upos-*` CDN hosts are direct and consistently fast; the rotated
-/// `mcdn`/P2P hosts some responses carry as the primary URL are slower and
-/// occasionally dead, so they are kept only as the fallback.
-fn choose_stream_url(value: &Value) -> Option<String> {
+/// `mcdn`/P2P hosts some responses carry as the primary URL are slower.
+/// Every alternate is retained so a failed CDN can be retried without
+/// asking the API for a new signed URL.
+fn choose_stream_urls(value: &Value) -> Option<(String, Vec<String>)> {
     let mut candidates = Vec::new();
     for key in ["base_url", "baseUrl", "url"] {
         if let Some(url) = value.get(key).and_then(Value::as_str) {
@@ -974,18 +977,32 @@ fn choose_stream_url(value: &Value) -> Option<String> {
         }
     }
 
-    candidates
-        .into_iter()
-        .map(|url| normalize_stream_url(&url))
-        .find(|url| url.contains("upos-"))
-        .or_else(|| {
-            value
-                .get("base_url")
-                .or_else(|| value.get("baseUrl"))
-                .or_else(|| value.get("url"))
-                .and_then(Value::as_str)
-                .map(normalize_stream_url)
+    let mut normalized = Vec::new();
+    for candidate in candidates {
+        let candidate = normalize_stream_url(&candidate);
+        let Ok(parsed) = url::Url::parse(&candidate) else {
+            continue;
+        };
+        if parsed.scheme() != "https" || parsed.host_str().is_none() {
+            continue;
+        }
+        if !normalized.contains(&candidate) {
+            normalized.push(candidate);
+        }
+    }
+
+    let primary_index = normalized
+        .iter()
+        .position(|candidate| {
+            url::Url::parse(candidate)
+                .ok()
+                .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+                .is_some_and(|host| host.starts_with("upos-"))
         })
+        .or_else(|| (!normalized.is_empty()).then_some(0))?;
+    let primary = normalized.remove(primary_index);
+    let backup_urls = normalized.into_iter().take(8).collect();
+    Some((primary, backup_urls))
 }
 
 fn normalize_stream_url(url: &str) -> String {
@@ -1160,7 +1177,10 @@ mod tests {
                             {
                                 "id": 80,
                                 "base_url": "http://mcdn.example/video-1080p.m4s?sign=1",
-                                "backup_url": ["https://upos-sz-mirror.example/video-1080p.m4s?sign=2"],
+                                "backup_url": [
+                                    "https://upos-sz-mirror.example/video-1080p.m4s?sign=2",
+                                    "https://upos-sz-backup.example/video-1080p.m4s?sign=3"
+                                ],
                                 "bandwidth": 2200000,
                                 "codecid": 7,
                                 "codecs": "avc1.640032",
@@ -1256,6 +1276,13 @@ mod tests {
         assert_eq!(
             streams.video[0].url,
             "https://upos-sz-mirror.example/video-1080p.m4s?sign=2"
+        );
+        assert_eq!(
+            streams.video[0].backup_urls,
+            vec![
+                "https://mcdn.example/video-1080p.m4s?sign=1",
+                "https://upos-sz-backup.example/video-1080p.m4s?sign=3"
+            ]
         );
         assert_eq!(streams.video[0].codecs, "avc1.640032");
         assert_eq!(streams.video[0].frame_rate, 0.0);
@@ -1451,6 +1478,117 @@ mod tests {
         assert_eq!(
             extract_page_url_from_html(r#"<a href="https://i0.hdslb.com/bfs/face.jpg">x</a>"#),
             None
+        );
+    }
+
+    /// Live smoke test against the production API. It is ignored by
+    /// default — run it explicitly after touching the request path:
+    ///
+    /// ```text
+    /// cargo test --lib bilibili_live_smoke -- --ignored --nocapture
+    /// ```
+    ///
+    /// It drives the exact code the app uses (cookie-free request context →
+    /// WBI signing → typed parsing → error classification) for a public UGC
+    /// video and for the PGC episode from the field report, so a change that
+    /// breaks signing or parsing shows up before the app does. Nothing is
+    /// downloaded and no credentials are involved; whether a PGC episode's
+    /// streams are gated is an account property the test only reports.
+    #[test]
+    #[ignore = "hits the live Bilibili API"]
+    fn bilibili_live_smoke() {
+        use crate::api::downloader::RequestContext;
+
+        let api =
+            super::BilibiliApi::new(&RequestContext::default()).expect("HTTP client must build");
+
+        let view = api
+            .view(Some("BV1GJ411x7h7"), None)
+            .expect("anonymous view must resolve a public video");
+        assert!(!view.title.is_empty(), "view returned an empty title");
+        assert!(
+            view.cid > 0 || !view.pages.is_empty(),
+            "view returned no playable part"
+        );
+        println!(
+            "view ok: {} ({} part(s)) title={}",
+            view.bvid,
+            view.pages.len().max(1),
+            view.title
+        );
+
+        let cid = view.pages.first().map(|page| page.cid).unwrap_or(view.cid);
+        let streams = api
+            .playurl(&view.bvid, cid)
+            .expect("playurl must resolve for a public video");
+        assert!(
+            !streams.video.is_empty(),
+            "playurl returned no video streams"
+        );
+        println!(
+            "playurl ok: {} video tier(s), {} audio track(s), {} official format name(s)",
+            streams.video.len(),
+            streams.audio.len(),
+            streams.formats.len()
+        );
+        for media in &streams.video {
+            println!(
+                "  qn={} codec={} {}x{} bandwidth={}",
+                media.quality_id, media.codec_id, media.width, media.height, media.bandwidth
+            );
+        }
+
+        // The episode from the field report: the metadata endpoint must
+        // answer even anonymously.
+        match api.pgc_season(Some(1994063), None) {
+            Ok(season) => println!(
+                "pgc ok: {} ({} episode(s))",
+                season.title,
+                season.episodes.len()
+            ),
+            Err(error) => println!("pgc outcome: {error:#}"),
+        }
+
+        // Media handshake: every official mirror of the selected stream is
+        // tried with the exact headers the downloader sends (Referer /
+        // Origin / Cookie / UA), in the same order the runtime fallback
+        // uses. At least one must answer, and only the first byte of each
+        // is requested.
+        let stream = streams.video.first().expect("playurl returned no stream");
+        let page = url::Url::parse("https://www.bilibili.com/").expect("static page URL parses");
+        let headers = crate::api::downloader::request_headers(&page, &RequestContext::default())
+            .expect("download headers must build");
+        let client = crate::net::SyncHttpClient::with_timeouts(
+            std::time::Duration::from_secs(10),
+            std::time::Duration::from_secs(30),
+        )
+        .expect("HTTP client must build");
+        let mut mirrors = vec![stream.url.clone()];
+        mirrors.extend(stream.backup_urls.iter().cloned());
+        let mut working_mirror = None;
+        for url in &mirrors {
+            let host = url::Url::parse(url)
+                .ok()
+                .and_then(|parsed| parsed.host_str().map(str::to_string))
+                .unwrap_or_else(|| "<unparseable>".to_string());
+            match client.get_range(url, &headers, 0, 0) {
+                Ok((status, _, body)) if status == 206 || status == 200 => {
+                    println!(
+                        "media handshake ok: HTTP {status}, {} byte(s) from {host}",
+                        body.len()
+                    );
+                    working_mirror = Some(host);
+                    break;
+                }
+                Ok((status, _, _)) => println!("media mirror {host} answered HTTP {status}"),
+                Err(error) => {
+                    println!("media mirror {host} failed: {}", error.root_cause())
+                }
+            }
+        }
+        assert!(
+            working_mirror.is_some(),
+            "no Bilibili CDN mirror answered the media range request"
         );
     }
 }

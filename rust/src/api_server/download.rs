@@ -22,13 +22,21 @@ fn execute_download_task(task_id: &str, req: &DownloadRequest, tasks: &TaskStore
     tasks.update_progress(task_id, "running", "Inspecting source...", Some(1.0), None);
 
     let request_context: RequestContext = req.request_context.clone().unwrap_or_default().into();
-    let (page_url, media_url, audio_url, inferred_name) = resolve_media(req, &request_context)?;
+    let (page_url, media_url, media_fallback_urls, audio_url, audio_fallback_urls, inferred_name) =
+        resolve_media(req, &request_context)?;
+    if media_fallback_urls.len() > 8 || audio_fallback_urls.len() > 8 {
+        return Err(anyhow!(
+            "A media stream may have at most 8 CDN fallback URLs"
+        ));
+    }
     // SSRF guard (defense in depth on top of the scheme allow-list): the API
     // server is network-exposed, so refuse any target that resolves to a
     // private / loopback / link-local address unless explicitly allowlisted.
     for target in std::iter::once(page_url.as_str())
         .chain(std::iter::once(media_url.as_str()))
+        .chain(media_fallback_urls.iter().map(String::as_str))
         .chain(audio_url.iter().map(String::as_str))
+        .chain(audio_fallback_urls.iter().map(String::as_str))
     {
         super::validate_public_http_url(target)?;
     }
@@ -68,7 +76,9 @@ fn execute_download_task(task_id: &str, req: &DownloadRequest, tasks: &TaskStore
     download_service::download_media(
         page_url,
         media_url,
+        media_fallback_urls,
         audio_url,
+        audio_fallback_urls,
         output_path_string.clone(),
         DownloadOptions {
             concurrency: req.concurrency.unwrap_or(8) as i32,
@@ -96,12 +106,21 @@ fn execute_download_task(task_id: &str, req: &DownloadRequest, tasks: &TaskStore
 fn resolve_media(
     req: &DownloadRequest,
     request_context: &RequestContext,
-) -> Result<(String, String, Option<String>, String)> {
+) -> Result<(
+    String,
+    String,
+    Vec<String>,
+    Option<String>,
+    Vec<String>,
+    String,
+)> {
     if let Some(media_url) = &req.media_url {
         return Ok((
             req.url.clone(),
             media_url.clone(),
+            req.media_fallback_urls.clone().unwrap_or_default(),
             req.audio_url.clone(),
+            req.audio_fallback_urls.clone().unwrap_or_default(),
             req.output_filename
                 .clone()
                 .unwrap_or_else(|| infer_name_from_url(media_url)),
@@ -129,7 +148,9 @@ fn resolve_media(
     Ok((
         candidate.page_url,
         candidate.media_url,
+        candidate.media_fallback_urls,
         candidate.audio_url,
+        candidate.audio_fallback_urls,
         if candidate.title.trim().is_empty() {
             infer_name_from_url(&req.url)
         } else {

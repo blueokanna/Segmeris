@@ -23,7 +23,9 @@ class _DownloadTaskRequest {
   const _DownloadTaskRequest({
     required this.pageUrl,
     required this.mediaUrl,
+    this.mediaFallbackUrls = const [],
     required this.audioUrl,
+    this.audioFallbackUrls = const [],
     required this.output,
     required this.chosenDir,
     required this.options,
@@ -34,7 +36,9 @@ class _DownloadTaskRequest {
 
   final String pageUrl;
   final String mediaUrl;
+  final List<String> mediaFallbackUrls;
   final String? audioUrl;
+  final List<String> audioFallbackUrls;
   final String output;
   final String? chosenDir;
 
@@ -49,7 +53,9 @@ class _DownloadTaskRequest {
     return _DownloadTaskRequest(
       pageUrl: pageUrl,
       mediaUrl: mediaUrl,
+      mediaFallbackUrls: mediaFallbackUrls,
       audioUrl: audioUrl,
+      audioFallbackUrls: audioFallbackUrls,
       output: output,
       chosenDir: chosenDir,
       options: options,
@@ -453,7 +459,13 @@ class _HomePageState extends State<HomePage> {
         candidateMatchesInput ? selectedCandidate.pageUrl : enteredUrl;
     final mediaUrl =
         candidateMatchesInput ? selectedCandidate.mediaUrl : enteredUrl;
+    final mediaFallbackUrls = candidateMatchesInput
+        ? selectedCandidate.mediaFallbackUrls
+        : const <String>[];
     final audioUrl = candidateMatchesInput ? selectedCandidate.audioUrl : null;
+    final audioFallbackUrls = candidateMatchesInput
+        ? selectedCandidate.audioFallbackUrls
+        : const <String>[];
     final sourcePage = pageUrl;
 
     final fileName = _normalizeOutputName(_fileNameCtrl.text.trim());
@@ -476,7 +488,9 @@ class _HomePageState extends State<HomePage> {
     final request = _DownloadTaskRequest(
       pageUrl: pageUrl,
       mediaUrl: mediaUrl,
+      mediaFallbackUrls: mediaFallbackUrls,
       audioUrl: audioUrl,
+      audioFallbackUrls: audioFallbackUrls,
       output: output,
       chosenDir: chosenDir,
       options: DownloadOptions(
@@ -717,7 +731,9 @@ class _HomePageState extends State<HomePage> {
       await for (final event in _engine.download(
         pageUrl: request.pageUrl,
         mediaUrl: request.mediaUrl,
+        mediaFallbackUrls: request.mediaFallbackUrls,
         audioUrl: request.audioUrl,
+        audioFallbackUrls: request.audioFallbackUrls,
         output: request.output,
         options: request.options,
         requestContext: request.requestContext,

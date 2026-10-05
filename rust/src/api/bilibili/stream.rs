@@ -211,7 +211,7 @@ pub(crate) fn collect_stream_candidates(
     streams: &DashStreams,
     warnings: &mut Vec<SiteWarning>,
 ) {
-    let audio = best_audio(streams).map(|media| media.url.clone());
+    let audio = best_audio(streams);
 
     if !streams.video.is_empty() {
         if audio.is_none() {
@@ -226,7 +226,11 @@ pub(crate) fn collect_stream_candidates(
             let label = quality_label(streams, media);
             collector.push(CandidateSpec {
                 media_url: media.url.clone(),
-                audio_url: audio.clone(),
+                audio_url: audio.map(|audio| audio.url.clone()),
+                media_fallback_urls: media.backup_urls.clone(),
+                audio_fallback_urls: audio
+                    .map(|audio| audio.backup_urls.clone())
+                    .unwrap_or_default(),
                 title: Some(title.to_string()),
                 quality_badge: quality_badge(streams, media, &label),
                 codec: codec_name_for(media).map(str::to_string),
@@ -242,7 +246,7 @@ pub(crate) fn collect_stream_candidates(
             });
         }
 
-        let best_url = tiers.first().map(|media| media.url.clone());
+        let best = tiers.first().copied();
 
         // Which audio extras can end up in the MP4 is decided by the muxer,
         // not by the entitlement: FFmpeg (desktop / API server) carries FLAC
@@ -260,10 +264,12 @@ pub(crate) fn collect_stream_candidates(
             return;
         }
 
-        if let (Some(best_url), Some(flac)) = (best_url.as_ref(), streams.flac.as_ref()) {
+        if let (Some(best), Some(flac)) = (best, streams.flac.as_ref()) {
             collector.push(CandidateSpec {
-                media_url: best_url.clone(),
+                media_url: best.url.clone(),
                 audio_url: Some(flac.url.clone()),
+                media_fallback_urls: best.backup_urls.clone(),
+                audio_fallback_urls: flac.backup_urls.clone(),
                 title: Some(title.to_string()),
                 quality_label: Some("Hi-Res 无损".to_string()),
                 mime_type: Some("video/mp4".to_string()),
@@ -272,10 +278,12 @@ pub(crate) fn collect_stream_candidates(
             });
         }
 
-        if let (Some(best_url), Some(dolby)) = (best_url.as_ref(), streams.dolby.as_ref()) {
+        if let (Some(best), Some(dolby)) = (best, streams.dolby.as_ref()) {
             collector.push(CandidateSpec {
-                media_url: best_url.clone(),
+                media_url: best.url.clone(),
                 audio_url: Some(dolby.url.clone()),
+                media_fallback_urls: best.backup_urls.clone(),
+                audio_fallback_urls: dolby.backup_urls.clone(),
                 title: Some(title.to_string()),
                 quality_label: Some("杜比全景声".to_string()),
                 mime_type: Some("video/mp4".to_string()),
@@ -291,6 +299,7 @@ pub(crate) fn collect_stream_candidates(
     for media in &streams.progressive {
         collector.push(CandidateSpec {
             media_url: media.url.clone(),
+            media_fallback_urls: media.backup_urls.clone(),
             title: Some(title.to_string()),
             quality_label: Some(quality_label(streams, media)),
             codec: codec_name_for(media).map(str::to_string),
@@ -319,6 +328,7 @@ mod tests {
             height,
             frame_rate: 0.0,
             url: url.to_string(),
+            backup_urls: Vec::new(),
         }
     }
 
@@ -333,6 +343,7 @@ mod tests {
             height: 0,
             frame_rate: 0.0,
             url: url.to_string(),
+            backup_urls: Vec::new(),
         }
     }
 
@@ -470,14 +481,18 @@ mod tests {
 
     #[test]
     fn dedupes_tiers_by_codec_priority() {
+        let mut plus = media(112, 12, 1080, 6_000_000, "https://upos.example/plus.m4s");
+        plus.backup_urls = vec!["https://upos.example/plus-backup.m4s".to_string()];
+        let mut audio_track = audio(30280, 192_000, "https://upos.example/audio.m4s");
+        audio_track.backup_urls = vec!["https://upos.example/audio-backup.m4s".to_string()];
         let streams = DashStreams {
             video: vec![
                 media(80, 12, 1080, 2_000_000, "https://upos.example/hevc.m4s"),
                 media(80, 7, 1080, 2_100_000, "https://upos.example/avc.m4s"),
                 media(80, 13, 1080, 1_900_000, "https://upos.example/av1.m4s"),
-                media(112, 12, 1080, 6_000_000, "https://upos.example/plus.m4s"),
+                plus,
             ],
-            audio: vec![audio(30280, 192_000, "https://upos.example/audio.m4s")],
+            audio: vec![audio_track],
             ..DashStreams::default()
         };
 
@@ -490,6 +505,14 @@ mod tests {
         assert_eq!(
             candidates[0].audio_url.as_deref(),
             Some("https://upos.example/audio.m4s")
+        );
+        assert_eq!(
+            candidates[0].media_fallback_urls,
+            vec!["https://upos.example/plus-backup.m4s"]
+        );
+        assert_eq!(
+            candidates[0].audio_fallback_urls,
+            vec!["https://upos.example/audio-backup.m4s"]
         );
         assert_eq!(candidates[1].quality_label, "1080P 高清");
         assert_eq!(candidates[1].codec, "AVC");

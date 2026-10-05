@@ -733,7 +733,9 @@ pub struct MediaCandidate {
     pub extractor: String,
     pub page_url: String,
     pub media_url: String,
+    pub media_fallback_urls: Vec<String>,
     pub audio_url: Option<String>,
+    pub audio_fallback_urls: Vec<String>,
     pub container: String,
     pub protocol: String,
     pub mime_type: String,
@@ -2259,7 +2261,9 @@ pub async fn download_media_with_context(
     sink: StreamSink<ProgressUpdate>,
     page_url: String,
     media_url: String,
+    media_fallback_urls: Vec<String>,
     audio_url: Option<String>,
+    audio_fallback_urls: Vec<String>,
     output: String,
     options: DownloadOptions,
     request_context: RequestContext,
@@ -2272,7 +2276,9 @@ pub async fn download_media_with_context(
                 worker,
                 page_url,
                 media_url,
+                media_fallback_urls,
                 audio_url,
+                audio_fallback_urls,
                 output,
                 options,
                 request_context,
@@ -2290,7 +2296,9 @@ pub(crate) fn download_media_with_context_core(
     reporter: ProgressReporter,
     page_url: String,
     media_url: String,
+    media_fallback_urls: Vec<String>,
     audio_url: Option<String>,
+    audio_fallback_urls: Vec<String>,
     output: String,
     options: DownloadOptions,
     request_context: RequestContext,
@@ -2330,9 +2338,17 @@ pub(crate) fn download_media_with_context_core(
 
     let page_url = normalize_source_url(&page_url)?;
     let media_url = normalize_source_url(&media_url)?;
+    let media_fallback_urls = normalize_fallback_urls(media_fallback_urls, &media_url)?;
     let audio_url = audio_url
         .map(|url| normalize_source_url(&url))
         .transpose()?;
+    if audio_url.is_none() && !audio_fallback_urls.is_empty() {
+        bail!("Audio CDN fallback URLs require a primary audio URL");
+    }
+    let audio_fallback_urls = normalize_fallback_urls(
+        audio_fallback_urls,
+        audio_url.as_deref().unwrap_or_default(),
+    )?;
 
     let auto_inspect =
         should_auto_inspect_download_target(&page_url, &media_url, audio_url.as_deref());
@@ -2408,7 +2424,9 @@ pub(crate) fn download_media_with_context_core(
             reporter,
             selected_candidate.page_url,
             selected_candidate.media_url,
+            selected_candidate.media_fallback_urls,
             selected_candidate.audio_url,
+            selected_candidate.audio_fallback_urls,
             output,
             DownloadOptions {
                 concurrency,
@@ -2477,9 +2495,10 @@ pub(crate) fn download_media_with_context_core(
             let video_temp = temp_dir.join("stream_video_input.bin");
             let audio_temp = temp_dir.join("stream_audio_input.bin");
 
-            download_with_retries(
+            download_with_fallbacks(
                 &client,
                 &media_url,
+                &media_fallback_urls,
                 &headers,
                 &video_temp,
                 true,
@@ -2489,9 +2508,10 @@ pub(crate) fn download_media_with_context_core(
                 &reporter,
                 "Downloading video stream",
             )?;
-            download_with_retries(
+            download_with_fallbacks(
                 &client,
                 &audio,
+                &audio_fallback_urls,
                 &headers,
                 &audio_temp,
                 true,
@@ -2519,9 +2539,10 @@ pub(crate) fn download_media_with_context_core(
         None => {
             let extension = container_from_url(&media_url);
             if extension == "mp4" && video_bitrate <= 0 && audio_bitrate <= 0 {
-                download_with_retries(
+                download_with_fallbacks(
                     &client,
                     &media_url,
+                    &media_fallback_urls,
                     &headers,
                     &output_path,
                     false,
@@ -2533,9 +2554,10 @@ pub(crate) fn download_media_with_context_core(
                 )?;
             } else {
                 let temp_input = temp_dir.join(format!("direct_input.{}", extension));
-                download_with_retries(
+                download_with_fallbacks(
                     &client,
                     &media_url,
+                    &media_fallback_urls,
                     &headers,
                     &temp_input,
                     true,
@@ -3169,7 +3191,9 @@ fn init_runtime_logging() {
 #[derive(Default)]
 pub(crate) struct CandidateSpec<'a> {
     pub media_url: String,
+    pub media_fallback_urls: Vec<String>,
     pub audio_url: Option<String>,
+    pub audio_fallback_urls: Vec<String>,
     pub title: Option<String>,
     pub quality_label: Option<String>,
     pub quality_badge: Option<String>,
@@ -3230,7 +3254,9 @@ impl CandidateCollector {
             extractor: spec.extractor.unwrap_or(&self.extractor).to_string(),
             page_url: self.page_url.clone(),
             media_url: spec.media_url,
+            media_fallback_urls: spec.media_fallback_urls,
             audio_url: audio_url.clone(),
+            audio_fallback_urls: spec.audio_fallback_urls,
             container,
             protocol,
             mime_type: spec
@@ -3342,6 +3368,25 @@ fn normalize_source_url(input: &str) -> Result<String> {
     Ok(url.to_string())
 }
 
+fn normalize_fallback_urls(fallback_urls: Vec<String>, primary_url: &str) -> Result<Vec<String>> {
+    if fallback_urls.len() > 8 {
+        bail!("A media candidate may contain at most 8 CDN fallback URLs");
+    }
+
+    let mut normalized = Vec::with_capacity(fallback_urls.len());
+    for fallback in fallback_urls {
+        let parsed = Url::parse(fallback.trim()).context("Invalid media CDN fallback URL")?;
+        if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+            bail!("Media CDN fallback URLs must be absolute HTTP(S) URLs");
+        }
+        let fallback = parsed.to_string();
+        if fallback != primary_url && !normalized.contains(&fallback) {
+            normalized.push(fallback);
+        }
+    }
+    Ok(normalized)
+}
+
 fn direct_media_candidate(page_url: &str, media_url: &str) -> Option<MediaCandidate> {
     if !is_supported_media_like(media_url) {
         return None;
@@ -3353,7 +3398,9 @@ fn direct_media_candidate(page_url: &str, media_url: &str) -> Option<MediaCandid
         extractor: "direct".to_string(),
         page_url: page_url.to_string(),
         media_url: media_url.to_string(),
+        media_fallback_urls: Vec::new(),
         audio_url: None,
+        audio_fallback_urls: Vec::new(),
         container: container_from_url(media_url),
         protocol: protocol_from_url(media_url),
         mime_type: mime_from_extension(&container_from_url(media_url)).to_string(),
@@ -4245,12 +4292,17 @@ fn download_with_retries(
             Ok(()) => return Ok(()),
             Err(error) => {
                 if attempt == retries {
-                    return Err(error)
-                        .with_context(|| format!("Failed to download media: {}", url));
+                    let safe_url = safe_media_url_label(url);
+                    let details = format!("{error:#}").replace(url, &safe_url);
+                    return Err(anyhow!(
+                        "Failed to download media from {safe_url}: {details}"
+                    ));
                 }
                 warn!(
                     "Media stream attempt {} failed for {}: {}",
-                    attempt, url, error
+                    attempt,
+                    safe_media_url_label(url),
+                    format!("{error:#}").replace(url, safe_media_url_label(url).as_str())
                 );
                 let delay = retry_backoff_delay(attempt, None);
                 std::thread::sleep(delay);
@@ -4258,7 +4310,97 @@ fn download_with_retries(
         }
     }
 
-    bail!("Failed to download media after retries: {}", url)
+    bail!(
+        "Failed to download media after retries from {}",
+        safe_media_url_label(url)
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn download_with_fallbacks(
+    client: &SyncHttpClient,
+    primary_url: &str,
+    fallback_urls: &[String],
+    headers: &[(String, String)],
+    path: &Path,
+    reuse_completed_file: bool,
+    retries: u8,
+    progress_start: f64,
+    progress_end: f64,
+    reporter: &ProgressReporter,
+    label: &str,
+) -> Result<()> {
+    if fallback_urls.is_empty() {
+        return download_with_retries(
+            client,
+            primary_url,
+            headers,
+            path,
+            reuse_completed_file,
+            retries,
+            progress_start,
+            progress_end,
+            reporter,
+            label,
+        );
+    }
+
+    let mut urls = Vec::with_capacity(fallback_urls.len() + 1);
+    urls.push(primary_url);
+    urls.extend(
+        fallback_urls
+            .iter()
+            .map(String::as_str)
+            .filter(|fallback| *fallback != primary_url),
+    );
+    let mut errors = Vec::new();
+    for (index, url) in urls.iter().enumerate() {
+        if index > 0 {
+            emit_progress(
+                reporter,
+                format!(
+                    "{label} CDN unavailable; trying alternate {}/{}",
+                    index,
+                    urls.len() - 1
+                ),
+                progress_start,
+            );
+        }
+        match download_with_retries(
+            client,
+            url,
+            headers,
+            path,
+            reuse_completed_file,
+            retries,
+            progress_start,
+            progress_end,
+            reporter,
+            label,
+        ) {
+            Ok(()) => return Ok(()),
+            Err(error) => errors.push(error.to_string()),
+        }
+    }
+
+    bail!(
+        "All {} candidate CDN URLs failed: {}",
+        urls.len(),
+        errors.join("; ")
+    )
+}
+
+fn safe_media_url_label(raw_url: &str) -> String {
+    Url::parse(raw_url)
+        .map(|url| {
+            format!(
+                "{}://{}{}",
+                url.scheme(),
+                url.host_str().unwrap_or_default(),
+                url.path()
+            )
+        })
+        .unwrap_or_else(|_| "media URL".to_string())
 }
 
 struct DashDownloadPlan {
@@ -4432,8 +4574,8 @@ mod tests {
         canonical_site_context, checksum_for_release_asset, clear_resumable_partial,
         has_mp4_signature, hls_response_bytes, hls_segment_cache_key,
         is_complete_unsatisfied_range, is_valid_header_value_byte, is_valid_hls_segment_cache,
-        normalize_source_url, parse_content_range, parse_ytdlp_progress, playlist_base_url,
-        range_response_has_safe_resume_identity, read_resumable_metadata,
+        normalize_fallback_urls, normalize_source_url, parse_content_range, parse_ytdlp_progress,
+        playlist_base_url, range_response_has_safe_resume_identity, read_resumable_metadata,
         resolve_dash_download_plan_from_manifest, resolve_hls_byte_range,
         resumable_metadata_from_response, resumable_metadata_matches_response,
         resumable_partial_path, select_best_hls_variant, select_hls_audio_rendition,
@@ -4450,6 +4592,29 @@ mod tests {
         assert_eq!(
             normalize_source_url(source).expect("shared URL should resolve"),
             "https://b23.tv/AbC123"
+        );
+    }
+
+    #[test]
+    fn validates_and_deduplicates_media_fallback_urls() {
+        let primary = "https://cdn.example/video.m4s?token=primary";
+        let fallbacks = normalize_fallback_urls(
+            vec![
+                primary.to_string(),
+                "https://backup.example/video.m4s?token=backup".to_string(),
+                "https://backup.example/video.m4s?token=backup".to_string(),
+            ],
+            primary,
+        )
+        .expect("valid fallback URLs should be accepted");
+        assert_eq!(
+            fallbacks,
+            vec!["https://backup.example/video.m4s?token=backup"]
+        );
+        assert!(normalize_fallback_urls(vec!["file:///etc/passwd".to_string()], primary).is_err());
+        assert!(
+            normalize_fallback_urls(vec!["https://backup.example/".to_string(); 9], primary)
+                .is_err()
         );
     }
 
@@ -4977,6 +5142,12 @@ fn merge_media_streams(
 ) -> Result<()> {
     let requires_reencode = video_bitrate > 0 || audio_bitrate > 0;
 
+    /// Failure note for the Android merge attempts, surfaced in the final
+    /// error when no backend (and no FFmpeg) could package the streams, so
+    /// the user sees what actually failed instead of a misleading hint.
+    #[cfg(target_os = "android")]
+    let mut android_merge_error: Option<String> = None;
+
     #[cfg(target_os = "android")]
     {
         if let Some(transcoder) = ANDROID_HW_TRANSCODER.get() {
@@ -5010,6 +5181,42 @@ fn merge_media_streams(
                 )
             };
 
+            // Last-resort rescue: MediaMuxer cannot always package the
+            // original streams (a codec its MPEG4 writer does not support on
+            // this device, B-frames it cannot represent, …). Re-encode only
+            // the video track to AVC with the hardware encoder, then mux that
+            // AVC video with the untouched audio. Without this, Android
+            // would dead-end in "FFmpeg is required" on a platform that
+            // ships no FFmpeg.
+            let rescue_encode = |target: &str, requested_video_bitrate: u32| -> Result<()> {
+                emit_progress(
+                    &reporter,
+                    "MediaMuxer could not package the source streams; re-encoding the video with the hardware encoder",
+                    0.9,
+                );
+                let rescue_video = video_path.with_file_name(format!(
+                    "android_rescue_video_{}.mp4",
+                    Uuid::new_v4().simple()
+                ));
+                let result = (|| -> Result<()> {
+                    transcoder.transcode(
+                        video_path.to_string_lossy().as_ref(),
+                        rescue_video.to_string_lossy().as_ref(),
+                        requested_video_bitrate,
+                        0,
+                        expected_duration,
+                    )?;
+                    transcoder.mux(
+                        rescue_video.to_string_lossy().as_ref(),
+                        audio_path.to_string_lossy().as_ref(),
+                        target,
+                        expected_duration,
+                    )
+                })();
+                let _ = std::fs::remove_file(&rescue_video);
+                result
+            };
+
             if !requires_reencode {
                 emit_progress(
                     &reporter,
@@ -5018,10 +5225,18 @@ fn merge_media_streams(
                 );
                 match mux_with_fallback(output_path) {
                     Ok(_) => return Ok(()),
-                    Err(e) => warn!(
-                        "Android MediaMuxer merge failed, falling back if possible: {}",
-                        e
-                    ),
+                    Err(e) => {
+                        warn!("Android MediaMuxer merge failed: {}", e);
+                        match rescue_encode(output_path, 0) {
+                            Ok(()) => return Ok(()),
+                            Err(rescue_error) => {
+                                warn!("Android rescue re-encode failed: {}", rescue_error);
+                                android_merge_error = Some(format!(
+                                    "MediaMuxer: {e}; rescue re-encode: {rescue_error}"
+                                ));
+                            }
+                        }
+                    }
                 }
             } else {
                 let mux_input = video_path.with_file_name(format!(
@@ -5035,11 +5250,10 @@ fn merge_media_streams(
                 );
                 let mux_result = mux_with_fallback(mux_input.to_string_lossy().as_ref());
 
+                let mut preparation_error: Option<String> = None;
                 if let Err(error) = mux_result {
-                    warn!(
-                        "Android MediaMuxer preparation failed, falling back if possible: {}",
-                        error
-                    );
+                    warn!("Android MediaMuxer preparation failed: {}", error);
+                    preparation_error = Some(error.to_string());
                 } else {
                     emit_progress(&reporter, "Using Android MediaCodec hardware encoder", 0.93);
                     let transcode_result = transcoder.transcode(
@@ -5053,16 +5267,29 @@ fn merge_media_streams(
                     match transcode_result {
                         Ok(()) => return Ok(()),
                         Err(error) => {
-                            warn!(
-                                "Android MediaCodec hardware encode failed, falling back if possible: {}",
-                                error
-                            );
+                            warn!("Android MediaCodec hardware encode failed: {}", error);
                             let _ = std::fs::remove_file(output_path);
+                            preparation_error = Some(error.to_string());
                         }
                     }
                 }
                 let _ = std::fs::remove_file(&mux_input);
+                if let Some(error) = preparation_error {
+                    match rescue_encode(output_path, video_bitrate) {
+                        Ok(()) => return Ok(()),
+                        Err(rescue_error) => {
+                            warn!("Android rescue re-encode failed: {}", rescue_error);
+                            android_merge_error =
+                                Some(format!("{error}; rescue re-encode: {rescue_error}"));
+                        }
+                    }
+                }
             }
+        } else {
+            android_merge_error = Some(
+                "the Android MediaCodec transcoder is not registered (JNI_OnLoad did not run)"
+                    .to_string(),
+            );
         }
     }
 
@@ -5090,8 +5317,20 @@ fn merge_media_streams(
 
     // iOS always returns above; the FFmpeg path below serves Android/desktop.
     #[cfg_attr(target_os = "ios", allow(unreachable_code))]
-    let ffmpeg_path = resolve_ffmpeg_path()
-        .ok_or_else(|| anyhow!("FFmpeg is required to merge separated audio and video streams"))?;
+    let ffmpeg_path = match resolve_ffmpeg_path() {
+        Some(path) => path,
+        None => {
+            #[cfg(target_os = "android")]
+            {
+                if let Some(note) = android_merge_error.as_deref() {
+                    bail!(
+                        "Android could not merge the downloaded audio and video streams and no FFmpeg is installed: {note}"
+                    );
+                }
+            }
+            bail!("FFmpeg is required to merge separated audio and video streams");
+        }
+    };
 
     // Prefer concat demuxer segment lists (written by download_and_merge_once)
     // over the naively-concatenated TS files, for the same discontinuity reasons

@@ -203,7 +203,13 @@ class ApiDownloadEngine implements DownloadEngine {
       extractor: raw['extractor'] as String? ?? '',
       pageUrl: raw['page_url'] as String? ?? '',
       mediaUrl: raw['media_url'] as String? ?? '',
+      mediaFallbackUrls: _asList(raw['media_fallback_urls'])
+          .whereType<String>()
+          .toList(),
       audioUrl: raw['audio_url'] as String?,
+      audioFallbackUrls: _asList(raw['audio_fallback_urls'])
+          .whereType<String>()
+          .toList(),
       container: raw['container'] as String? ?? '',
       protocol: raw['protocol'] as String? ?? '',
       mimeType: raw['mime_type'] as String? ?? '',
@@ -225,7 +231,9 @@ class ApiDownloadEngine implements DownloadEngine {
   Stream<ProgressUpdate> download({
     required String pageUrl,
     required String mediaUrl,
+    List<String> mediaFallbackUrls = const [],
     String? audioUrl,
+    List<String> audioFallbackUrls = const [],
     required String output,
     required DownloadOptions options,
     required RequestContext requestContext,
@@ -233,7 +241,9 @@ class ApiDownloadEngine implements DownloadEngine {
     final accepted = await _postJson('/download', {
       'url': pageUrl,
       'media_url': mediaUrl,
+      'media_fallback_urls': mediaFallbackUrls,
       'audio_url': audioUrl,
+      'audio_fallback_urls': audioFallbackUrls,
       'output_filename': _basename(output),
       'concurrency': options.concurrency,
       'retries': options.retries,

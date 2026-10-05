@@ -85,7 +85,9 @@ abstract class RustLibApi extends BaseApi {
   Stream<ProgressUpdate> crateApiDownloaderDownloadMediaWithContext(
       {required String pageUrl,
       required String mediaUrl,
+      required List<String> mediaFallbackUrls,
       String? audioUrl,
+      required List<String> audioFallbackUrls,
       required String output,
       required DownloadOptions options,
       required RequestContext requestContext});
@@ -124,7 +126,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Stream<ProgressUpdate> crateApiDownloaderDownloadMediaWithContext(
       {required String pageUrl,
       required String mediaUrl,
+      required List<String> mediaFallbackUrls,
       String? audioUrl,
+      required List<String> audioFallbackUrls,
       required String output,
       required DownloadOptions options,
       required RequestContext requestContext}) {
@@ -135,7 +139,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_StreamSink_progress_update_Sse(sink, serializer);
         sse_encode_String(pageUrl, serializer);
         sse_encode_String(mediaUrl, serializer);
+        sse_encode_list_String(mediaFallbackUrls, serializer);
         sse_encode_opt_String(audioUrl, serializer);
+        sse_encode_list_String(audioFallbackUrls, serializer);
         sse_encode_String(output, serializer);
         sse_encode_box_autoadd_download_options(options, serializer);
         sse_encode_box_autoadd_request_context(requestContext, serializer);
@@ -151,7 +157,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sink,
         pageUrl,
         mediaUrl,
+        mediaFallbackUrls,
         audioUrl,
+        audioFallbackUrls,
         output,
         options,
         requestContext
@@ -168,7 +176,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "sink",
           "pageUrl",
           "mediaUrl",
+          "mediaFallbackUrls",
           "audioUrl",
+          "audioFallbackUrls",
           "output",
           "options",
           "requestContext"
@@ -485,29 +495,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MediaCandidate dco_decode_media_candidate(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 20)
-      throw Exception('unexpected arr length: expect 20 but see ${arr.length}');
+    if (arr.length != 22)
+      throw Exception('unexpected arr length: expect 22 but see ${arr.length}');
     return MediaCandidate(
       id: dco_decode_String(arr[0]),
       title: dco_decode_String(arr[1]),
       extractor: dco_decode_String(arr[2]),
       pageUrl: dco_decode_String(arr[3]),
       mediaUrl: dco_decode_String(arr[4]),
-      audioUrl: dco_decode_opt_String(arr[5]),
-      container: dco_decode_String(arr[6]),
-      protocol: dco_decode_String(arr[7]),
-      mimeType: dco_decode_String(arr[8]),
-      qualityLabel: dco_decode_String(arr[9]),
-      qualityBadge: dco_decode_String(arr[10]),
-      codec: dco_decode_String(arr[11]),
-      width: dco_decode_i_32(arr[12]),
-      height: dco_decode_i_32(arr[13]),
-      requiresFfmpeg: dco_decode_bool(arr[14]),
-      score: dco_decode_i_32(arr[15]),
-      segmentCount: dco_decode_i_32(arr[16]),
-      durationSeconds: dco_decode_f_64(arr[17]),
-      primary: dco_decode_bool(arr[18]),
-      reason: dco_decode_String(arr[19]),
+      mediaFallbackUrls: dco_decode_list_String(arr[5]),
+      audioUrl: dco_decode_opt_String(arr[6]),
+      audioFallbackUrls: dco_decode_list_String(arr[7]),
+      container: dco_decode_String(arr[8]),
+      protocol: dco_decode_String(arr[9]),
+      mimeType: dco_decode_String(arr[10]),
+      qualityLabel: dco_decode_String(arr[11]),
+      qualityBadge: dco_decode_String(arr[12]),
+      codec: dco_decode_String(arr[13]),
+      width: dco_decode_i_32(arr[14]),
+      height: dco_decode_i_32(arr[15]),
+      requiresFfmpeg: dco_decode_bool(arr[16]),
+      score: dco_decode_i_32(arr[17]),
+      segmentCount: dco_decode_i_32(arr[18]),
+      durationSeconds: dco_decode_f_64(arr[19]),
+      primary: dco_decode_bool(arr[20]),
+      reason: dco_decode_String(arr[21]),
     );
   }
 
@@ -799,7 +811,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_extractor = sse_decode_String(deserializer);
     var var_pageUrl = sse_decode_String(deserializer);
     var var_mediaUrl = sse_decode_String(deserializer);
+    var var_mediaFallbackUrls = sse_decode_list_String(deserializer);
     var var_audioUrl = sse_decode_opt_String(deserializer);
+    var var_audioFallbackUrls = sse_decode_list_String(deserializer);
     var var_container = sse_decode_String(deserializer);
     var var_protocol = sse_decode_String(deserializer);
     var var_mimeType = sse_decode_String(deserializer);
@@ -820,7 +834,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         extractor: var_extractor,
         pageUrl: var_pageUrl,
         mediaUrl: var_mediaUrl,
+        mediaFallbackUrls: var_mediaFallbackUrls,
         audioUrl: var_audioUrl,
+        audioFallbackUrls: var_audioFallbackUrls,
         container: var_container,
         protocol: var_protocol,
         mimeType: var_mimeType,
@@ -1129,7 +1145,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.extractor, serializer);
     sse_encode_String(self.pageUrl, serializer);
     sse_encode_String(self.mediaUrl, serializer);
+    sse_encode_list_String(self.mediaFallbackUrls, serializer);
     sse_encode_opt_String(self.audioUrl, serializer);
+    sse_encode_list_String(self.audioFallbackUrls, serializer);
     sse_encode_String(self.container, serializer);
     sse_encode_String(self.protocol, serializer);
     sse_encode_String(self.mimeType, serializer);
