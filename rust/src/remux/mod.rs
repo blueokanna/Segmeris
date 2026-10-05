@@ -58,6 +58,15 @@ impl ts::SampleSink for Mp4Sink {
     fn audio_sample(&mut self, data: &[u8]) -> Result<()> {
         self.writer.write_audio_sample(data)
     }
+
+    fn set_source_starts(
+        &mut self,
+        video_ticks: Option<i64>,
+        audio_ticks: Option<i64>,
+    ) -> Result<()> {
+        self.writer.set_source_starts(video_ticks, audio_ticks);
+        Ok(())
+    }
 }
 
 /// Stream-copy a merged MPEG-TS file into an MP4 without re-encoding.
@@ -110,8 +119,6 @@ mod tests {
         assert!(summary.width > 0 && summary.height > 0);
         assert!(summary.duration_seconds > 0.5, "implausible duration");
 
-        // Structural sanity: ftyp at the start, moov and mdat present, the
-        // mdat size covers exactly the bytes up to the following moov box.
         let bytes = std::fs::read(&output).expect("read output");
         assert_eq!(&bytes[4..8], b"ftyp");
         let moov = bytes

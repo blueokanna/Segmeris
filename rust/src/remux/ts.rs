@@ -54,6 +54,24 @@ pub trait SampleSink {
     fn set_audio_config(&mut self, config: AacConfig) -> Result<()>;
     fn video_sample(&mut self, data: &[u8], dts: i64, cts_offset: i32, key: bool) -> Result<()>;
     fn audio_sample(&mut self, data: &[u8]) -> Result<()>;
+
+    /// Where each track began in the source timeline, in 90 kHz ticks.
+    ///
+    /// Both output timelines are rebuilt from a frame count — video from a
+    /// picture grid, audio from an AAC frame count — which leaves the two
+    /// tracks *zero-based*: a source whose audio starts half a second after
+    /// its video would come out perfectly aligned, i.e. half a second out of
+    /// sync. The sink needs the source starts to restore that offset. Values
+    /// arrive as they are learned (either may still be `None`), so a sink that
+    /// only writes its header at the end can simply remember the latest pair.
+    fn set_source_starts(
+        &mut self,
+        video_ticks: Option<i64>,
+        audio_ticks: Option<i64>,
+    ) -> Result<()> {
+        let _ = (video_ticks, audio_ticks);
+        Ok(())
+    }
 }
 
 /// True when `head` looks like a 188-byte MPEG-TS stream.
@@ -149,6 +167,12 @@ struct TsParser<'s> {
     audio_frame_ticks: Option<i64>,
     audio_config_sent: bool,
 
+    /// First presentation timestamp seen on each track, in 90 kHz ticks — the
+    /// source's own answer to "when does this track start", which the rebuilt
+    /// timelines would otherwise lose. See [`SampleSink::set_source_starts`].
+    video_first_pts: Option<i64>,
+    audio_first_pts: Option<i64>,
+
     video_samples: u64,
     audio_frames: u64,
 }
@@ -222,6 +246,8 @@ impl<'s> TsParser<'s> {
             audio_tb: Timebase::new(),
             audio_frame_ticks: None,
             audio_config_sent: false,
+            video_first_pts: None,
+            audio_first_pts: None,
             video_samples: 0,
             audio_frames: 0,
         }
@@ -374,10 +400,6 @@ impl<'s> TsParser<'s> {
                     info!("MPEG-TS: AAC audio PID = {pid}");
                     self.audio_pid = Some(pid);
                 }
-                // Audio we cannot copy losslessly into an MP4: AC-3,
-                // Enhanced AC-3, MPEG-1/2 audio, LATM AAC. Dropping them
-                // silently would produce a mute video, so record the type and
-                // let the caller fall back to the platform transcoder.
                 0x81 | 0x87 | 0x03 | 0x04 | 0x11 => {
                     if self.unsupported_audio_type.is_none() {
                         warn!("MPEG-TS: unsupported audio stream type 0x{stream_type:02X}");
@@ -417,7 +439,11 @@ impl<'s> TsParser<'s> {
         } else {
             (payload, None, None)
         };
-        let _ = pts;
+        if let Some(pts) = pts.filter(|_| self.video_first_pts.is_none()) {
+            self.video_first_pts = Some(pts);
+            self.sink
+                .set_source_starts(self.video_first_pts, self.audio_first_pts)?;
+        }
         if let Some(dts) = dts {
             self.calibrate_video_interval(dts);
         }
@@ -516,7 +542,6 @@ impl<'s> TsParser<'s> {
         match nal[0] & 0x1F {
             7 => {
                 let mut params = parse_sps(&nal)?;
-                // Keep the PPS-derived flag until the next PPS arrives.
                 params.bottom_field_poc_present = self.params.bottom_field_poc_present;
                 self.params = params;
                 self.sps = Some(nal);
@@ -554,8 +579,6 @@ impl<'s> TsParser<'s> {
         self.video_picture_key = false;
         let prefix = std::mem::take(&mut self.video_prefix);
         self.video_picture.extend(prefix);
-        // Fallback ordering: arrival order (correct for streams without
-        // reordering and still monotonic for streams we cannot reorder).
         self.video_picture_fallback_poc = self.gop.len() as i64;
         self.video_picture_poc = self.video_picture_fallback_poc;
         Ok(())
@@ -596,8 +619,6 @@ impl<'s> TsParser<'s> {
         if self.gop.is_empty() {
             return Ok(());
         }
-        // Resolve the decoder configuration (and the VUI frame interval)
-        // BEFORE deriving any timestamp from it.
         if !self.video_config_sent {
             let (Some(sps), Some(pps)) = (self.sps.as_ref(), self.pps.as_ref()) else {
                 bail!("H.264 SPS/PPS were not present before the first slice");
@@ -670,6 +691,11 @@ impl<'s> TsParser<'s> {
                 let flags = payload[7] >> 6;
                 if flags & 0x2 != 0 && payload.len() >= 14 {
                     let pts = read_pts(&payload[9..14])?;
+                    if self.audio_first_pts.is_none() {
+                        self.audio_first_pts = Some(pts);
+                        self.sink
+                            .set_source_starts(self.video_first_pts, self.audio_first_pts)?;
+                    }
                     let mapped = self.audio_tb.map(pts);
                     match self.audio_next_pts {
                         None => self.audio_next_pts = Some(mapped),
@@ -854,8 +880,6 @@ fn parse_slice(nal: &[u8], params: &H264Params) -> Result<SliceInfo> {
         let _colour_plane_id = reader.read_bits(2)?;
     }
     let _frame_num = reader.read_bits(params.log2_max_frame_num.min(16))?;
-    // frame_mbs_only == false is rejected while parsing the SPS, so no field
-    // flags follow.
     let is_idr = nal_type == 5;
     if is_idr {
         let _idr_pic_id = reader.read_ue()?;

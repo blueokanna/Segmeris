@@ -55,6 +55,8 @@ pub struct Mp4Writer {
     mdat_start: u64,
     video: Option<VideoTrack>,
     audio: Option<AudioTrack>,
+    /// [`Mp4Writer::set_source_starts`].
+    source_starts: (Option<i64>, Option<i64>),
     finished: bool,
 }
 
@@ -64,7 +66,6 @@ impl Mp4Writer {
             .with_context(|| format!("cannot create MP4 output: {}", path.display()))?;
         let mut out = Out::new(file);
         write_ftyp(&mut out)?;
-        // `mdat` header; the size is patched once every sample is written.
         let mdat_start = out.pos;
         out.u32(0)?;
         out.bytes(b"mdat")?;
@@ -73,6 +74,7 @@ impl Mp4Writer {
             mdat_start,
             video: None,
             audio: None,
+            source_starts: (None, None),
             finished: false,
         })
     }
@@ -140,10 +142,47 @@ impl Mp4Writer {
         Ok(())
     }
 
+    /// Tell the writer where each track began in the source timeline, in
+    /// 90 kHz ticks (the MPEG-TS clock).
+    ///
+    /// The output timelines are rebuilt from a frame count — video from a
+    /// picture grid, audio from an AAC frame count — so both start at zero. A
+    /// source whose audio starts half a second after its video would then be
+    /// muxed with the two tracks *aligned*, i.e. half a second out of sync. The
+    /// offset is restored the way container formats express it: an
+    /// `edts`/`elst` edit list holding the later track back by the difference,
+    /// so players stay on the source's own timeline.
+    ///
+    /// Either value may be missing; unless both are known no edit list is
+    /// written and the output keeps the zero-based timeline.
+    pub fn set_source_starts(&mut self, video_ticks: Option<i64>, audio_ticks: Option<i64>) {
+        self.source_starts = (video_ticks, audio_ticks);
+    }
+
+    /// Delay to insert in front of each track, `(video_ms, audio_ms)` — at most
+    /// one of them is non-zero.
+    fn start_delays_ms(&self) -> (u32, u32) {
+        let (Some(video_start), Some(audio_start)) = self.source_starts else {
+            return (0, 0);
+        };
+        let first_presented = self
+            .video
+            .as_ref()
+            .and_then(|track| track.cts_offsets.first().copied())
+            .unwrap_or(0) as i64;
+        let delta_ticks = (audio_start - video_start) + first_presented;
+        if delta_ticks >= 0 {
+            (0, ticks_to_ms(delta_ticks))
+        } else {
+            (ticks_to_ms(-delta_ticks), 0)
+        }
+    }
+
     /// Finalize the file: `moov` is written after `mdat`, then the `mdat`
     /// size is back-patched.
     pub fn finish(mut self) -> Result<Mp4Summary> {
         self.finished = true;
+        let delays_ms = self.start_delays_ms();
         let video = self
             .video
             .as_mut()
@@ -165,7 +204,8 @@ impl Mp4Writer {
             _ => (0, 0),
         };
         let video_duration_ms = video_duration_90k * 1000 / 90_000;
-        let movie_duration_ms = video_duration_ms.max(audio_duration);
+        let movie_duration_ms =
+            video_duration_ms.max(audio_duration) + u64::from(delays_ms.0.max(delays_ms.1));
 
         let mdat_end = self.out.pos;
         let mdat_size = u32::try_from(mdat_end - self.mdat_start)
@@ -177,6 +217,7 @@ impl Mp4Writer {
             self.audio.as_ref(),
             movie_duration_ms,
             video_duration_ms,
+            delays_ms,
         )?;
 
         self.out.patch_u32(self.mdat_start, mdat_size)?;
@@ -280,6 +321,12 @@ fn write_ftyp(out: &mut Out) -> Result<()> {
 
 const UNITY_MATRIX: [u32; 9] = [0x0001_0000, 0, 0, 0, 0x0001_0000, 0, 0, 0, 0x4000_0000];
 
+/// 90 kHz ticks → milliseconds, rounded to the nearest one — the finest a delay
+/// can be expressed with in a movie whose timescale is 1000.
+fn ticks_to_ms(ticks: i64) -> u32 {
+    u32::try_from((ticks.max(0) + 45) / 90).unwrap_or(u32::MAX)
+}
+
 fn write_matrix(out: &mut Out) -> Result<()> {
     for value in UNITY_MATRIX {
         out.u32(value)?;
@@ -293,7 +340,9 @@ fn write_moov(
     audio: Option<&AudioTrack>,
     movie_duration_ms: u64,
     video_duration_ms: u64,
+    delays_ms: (u32, u32),
 ) -> Result<()> {
+    let (video_delay_ms, audio_delay_ms) = delays_ms;
     let moov = begin_box(out, b"moov")?;
 
     // mvhd
@@ -314,15 +363,47 @@ fn write_moov(
     out.u32(next_track_id)?;
     end_box(out, mvhd)?;
 
-    write_video_trak(out, video, video_duration_ms)?;
+    write_video_trak(
+        out,
+        video,
+        video_duration_ms + u64::from(video_delay_ms),
+        video_delay_ms,
+    )?;
     if let Some(audio) = audio.filter(|track| !track.samples.is_empty()) {
-        write_audio_trak(out, audio, movie_duration_ms)?;
+        write_audio_trak(
+            out,
+            audio,
+            movie_duration_ms + u64::from(audio_delay_ms),
+            audio_delay_ms,
+        )?;
     }
 
     end_box(out, moov)
 }
 
-fn write_video_trak(out: &mut Out, track: &VideoTrack, duration_ms: u64) -> Result<()> {
+/// `edts`/`elst` holding a track back by `delay_ms` (the movie timescale is
+/// 1000): one empty edit, then the media itself.
+fn write_edts(out: &mut Out, delay_ms: u32) -> Result<()> {
+    let edts = begin_box(out, b"edts")?;
+    let elst = begin_box(out, b"elst")?;
+    write_full_box_header(out, 0, 0)?;
+    out.u32(2)?; // entry count
+    out.u32(delay_ms)?; // empty edit: wait this long before the media starts
+    out.u32(u32::MAX)?; // media_time -1 marks an empty edit
+    out.u32(0x0001_0000)?; // media_rate 1.0
+    out.u32(0)?; // remaining segment duration (0 = rest of the movie)
+    out.u32(0)?; // media_time 0: the track's first sample
+    out.u32(0x0001_0000)?; // media_rate 1.0
+    end_box(out, elst)?;
+    end_box(out, edts)
+}
+
+fn write_video_trak(
+    out: &mut Out,
+    track: &VideoTrack,
+    duration_ms: u64,
+    delay_ms: u32,
+) -> Result<()> {
     let trak = begin_box(out, b"trak")?;
 
     // tkhd
@@ -343,6 +424,10 @@ fn write_video_trak(out: &mut Out, track: &VideoTrack, duration_ms: u64) -> Resu
     out.u32(track.config.width << 16)?;
     out.u32(track.config.height << 16)?;
     end_box(out, tkhd)?;
+
+    if delay_ms > 0 {
+        write_edts(out, delay_ms)?;
+    }
 
     // mdia
     let mdia = begin_box(out, b"mdia")?;
@@ -368,7 +453,12 @@ fn write_video_trak(out: &mut Out, track: &VideoTrack, duration_ms: u64) -> Resu
     end_box(out, trak)
 }
 
-fn write_audio_trak(out: &mut Out, track: &AudioTrack, duration_ms: u64) -> Result<()> {
+fn write_audio_trak(
+    out: &mut Out,
+    track: &AudioTrack,
+    duration_ms: u64,
+    delay_ms: u32,
+) -> Result<()> {
     let trak = begin_box(out, b"trak")?;
 
     let tkhd = begin_box(out, b"tkhd")?;
@@ -388,6 +478,10 @@ fn write_audio_trak(out: &mut Out, track: &AudioTrack, duration_ms: u64) -> Resu
     out.u32(0)?;
     out.u32(0)?;
     end_box(out, tkhd)?;
+
+    if delay_ms > 0 {
+        write_edts(out, delay_ms)?;
+    }
 
     let mdia = begin_box(out, b"mdia")?;
     let frames = track.samples.len() as u64;
@@ -713,7 +807,6 @@ mod tests {
         path: std::path::PathBuf,
         file: Option<File>,
     }
-
     impl TempFile {
         fn take_file(&mut self) -> File {
             self.file.take().unwrap()
@@ -734,5 +827,173 @@ mod tests {
             path,
             file: Some(file),
         }
+    }
+
+    /// Unique, self-deleting `.mp4` path for the muxer tests: tests share one
+    /// process, so the pid alone would collide.
+    struct TempPath {
+        path: std::path::PathBuf,
+    }
+
+    impl Drop for TempPath {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    fn temp_path(label: &str) -> TempPath {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
+        TempPath {
+            path: std::env::temp_dir().join(format!(
+                "segmeris-mp4-{label}-{}-{sequence}.mp4",
+                std::process::id()
+            )),
+        }
+    }
+
+    fn video_config() -> AvcConfig {
+        AvcConfig {
+            sps: vec![0x67, 0x42, 0x00, 0x1E],
+            pps: vec![0x68, 0xCE, 0x3C, 0x80],
+            profile: 0x42,
+            compat: 0x00,
+            level: 0x1E,
+            width: 320,
+            height: 240,
+            frame_interval_ticks: Some(3000),
+        }
+    }
+
+    fn audio_config() -> AacConfig {
+        AacConfig {
+            asc: vec![0x11, 0x90],
+            sample_rate: 48_000,
+            channels: 2,
+        }
+    }
+
+    /// Mux one second of video (30 frames @ 30 fps) plus 981 ms of AAC, with
+    /// `first_cts_offset` on the first picture and the given source starts.
+    fn mux_fixture(
+        path: &Path,
+        first_cts_offset: i32,
+        source_starts: (Option<i64>, Option<i64>),
+    ) -> Mp4Summary {
+        let mut writer = Mp4Writer::create(path).unwrap();
+        writer.set_source_starts(source_starts.0, source_starts.1);
+        writer.set_video_config(video_config());
+        writer.set_audio_config(audio_config());
+        for index in 0..30 {
+            writer
+                .write_video_sample(
+                    &[0, 0, 0, 4, 0x65, 0x88, 0x84, 0x00],
+                    i64::from(index) * 3000,
+                    if index == 0 { first_cts_offset } else { 0 },
+                    index % 15 == 0,
+                )
+                .unwrap();
+        }
+        for _ in 0..46 {
+            writer.write_audio_sample(&[0x21, 0x10, 0x05]).unwrap();
+        }
+        writer.finish().unwrap()
+    }
+
+    /// Every box of `kind` lying directly inside `start..end`.
+    fn child_boxes(bytes: &[u8], start: usize, end: usize, kind: &[u8; 4]) -> Vec<(usize, usize)> {
+        let mut found = Vec::new();
+        let mut position = start;
+        while position + 8 <= end {
+            let size =
+                u32::from_be_bytes(bytes[position..position + 4].try_into().unwrap()) as usize;
+            if size < 8 || position + size > end {
+                break;
+            }
+            if &bytes[position + 4..position + 8] == kind {
+                found.push((position, position + size));
+            }
+            position += size;
+        }
+        found
+    }
+
+    /// `(handler, empty-edit duration in ms, media_time)` for every track that
+    /// carries an `edts`/`elst`, in file order.
+    fn edit_lists(path: &Path) -> Vec<(&'static str, u32, i32)> {
+        let bytes = std::fs::read(path).unwrap();
+        let (moov, moov_end) = child_boxes(&bytes, 0, bytes.len(), b"moov")[0];
+        let mut edits = Vec::new();
+        for (trak, trak_end) in child_boxes(&bytes, moov + 8, moov_end, b"trak") {
+            let body = trak + 8;
+            let (mdia, mdia_end) = child_boxes(&bytes, body, trak_end, b"mdia")[0];
+            let (hdlr, _) = child_boxes(&bytes, mdia + 8, mdia_end, b"hdlr")[0];
+            let handler = match &bytes[hdlr + 16..hdlr + 20] {
+                b"vide" => "vide",
+                b"soun" => "soun",
+                other => panic!("unexpected handler {other:?}"),
+            };
+            let Some((edts, edts_end)) = child_boxes(&bytes, body, trak_end, b"edts")
+                .into_iter()
+                .next()
+            else {
+                continue;
+            };
+            let (elst, _) = child_boxes(&bytes, edts + 8, edts_end, b"elst")[0];
+            let entries = u32::from_be_bytes(bytes[elst + 12..elst + 16].try_into().unwrap());
+            assert_eq!(entries, 2, "expected an empty edit followed by the media");
+            let duration = u32::from_be_bytes(bytes[elst + 16..elst + 20].try_into().unwrap());
+            let media_time = i32::from_be_bytes(bytes[elst + 20..elst + 24].try_into().unwrap());
+            edits.push((handler, duration, media_time));
+        }
+        edits
+    }
+
+    #[test]
+    fn delays_the_audio_track_that_starts_later_in_the_source() {
+        let file = temp_path("audio-defers");
+        let summary = mux_fixture(&file.path, 3600, (Some(133_200), Some(176_280)));
+
+        let edits = edit_lists(&file.path);
+        assert_eq!(edits.len(), 1, "only the later track needs an edit list");
+        let (handler, delay_ms, media_time) = edits[0];
+        assert_eq!(handler, "soun");
+        assert_eq!(delay_ms, 519, "audio waits 46680 ticks ≈ 519 ms");
+        assert_eq!(media_time, -1, "the first edit must be empty");
+
+        let duration_ms = (summary.duration_seconds * 1000.0).round() as u64;
+        assert_eq!(duration_ms, 1_000 + 519, "the movie must cover the delay");
+    }
+
+    #[test]
+    fn delays_the_video_track_that_starts_later_in_the_source() {
+        let file = temp_path("video-defers");
+        let summary = mux_fixture(&file.path, 0, (Some(176_280), Some(133_200)));
+
+        let edits = edit_lists(&file.path);
+        assert_eq!(edits.len(), 1);
+        let (handler, delay_ms, media_time) = edits[0];
+        assert_eq!(handler, "vide");
+        assert_eq!(delay_ms, 479, "478.67 ms rounds to the nearest millisecond");
+        assert_eq!(media_time, -1);
+
+        let duration_ms = (summary.duration_seconds * 1000.0).round() as u64;
+        assert_eq!(duration_ms, 1_000 + 479);
+    }
+
+    #[test]
+    fn keeps_the_zero_based_timeline_without_source_starts() {
+        let file = temp_path("no-origins");
+        mux_fixture(&file.path, 3600, (None, None));
+        assert!(edit_lists(&file.path).is_empty());
+    }
+
+    #[test]
+    fn ignores_sub_millisecond_offsets() {
+        // 30 ticks = 0.33 ms, below what a timescale of 1000 can express.
+        let file = temp_path("sub-millisecond");
+        mux_fixture(&file.path, 0, (Some(100_000), Some(100_030)));
+        assert!(edit_lists(&file.path).is_empty());
     }
 }

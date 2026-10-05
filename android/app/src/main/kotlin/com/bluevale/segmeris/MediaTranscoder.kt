@@ -175,6 +175,13 @@ object MediaTranscoder {
             val muxVideoIndex = muxer.addTrack(videoTrack.format)
             val muxAudioIndex = muxer.addTrack(audioTrack.format)
             muxer.start()
+            val timeline =
+                    SharedTimeline(
+                            sharedOriginUs(
+                                    firstSamplePts(videoPath, videoTrack.index),
+                                    firstSamplePts(audioPath, audioTrack.index)
+                            )
+                    )
             val videoHasBframes = videoNeedsReencode(videoPath)
             val canMuxBframes = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1
             val videoSamples =
@@ -184,7 +191,8 @@ object MediaTranscoder {
                             muxVideoIndex,
                             muxer,
                             video = true,
-                            preserveBframes = videoHasBframes && canMuxBframes
+                            preserveBframes = videoHasBframes && canMuxBframes,
+                            timeline = timeline
                     )
             val audioSamples =
                     writeTrackSamples(
@@ -193,7 +201,8 @@ object MediaTranscoder {
                             muxAudioIndex,
                             muxer,
                             video = false,
-                            preserveBframes = false
+                            preserveBframes = false,
+                            timeline = timeline
                     )
             muxer.stop()
             val ok =
@@ -473,6 +482,76 @@ object MediaTranscoder {
     }
 
     /**
+     * The single presentation clock every track of one output file is written against.
+     *
+     * Two decisions used to be made per track, and both break A/V sync silently:
+     *
+     *  * the **origin** — each track was rebased on its *own* first sample, which cancels the offset
+     *    the source keeps between its tracks (and, in the transcode paths, left the re-encoded video
+     *    on raw source timestamps while the copied audio started at zero: seconds of drift);
+     *  * the **lift** applied after a timestamp restart (naively re-cut HLS segments restart their
+     *    clock at every boundary) — measured per track, so after each restart the two tracks could
+     *    sit a frame apart instead of moving together.
+     *
+     * Here the origin is measured once, from the head of every stream that goes into the file, and the
+     * lift of segment `i` is measured once — by the pass that writes the first track — then reused
+     * verbatim by the other track's pass, exactly like a concat demuxer handing both streams the same
+     * global offset.
+     */
+    private class SharedTimeline(
+            /** Earliest first sample among the tracks, in source time. */
+            val originUs: Long
+    ) {
+        private val segmentLifts = ArrayList<Long>()
+        private var measuredEndUs = Long.MIN_VALUE
+
+        /**
+         * Lift that puts segment [index] right after the previous one when the source restarted its
+         * clock there (naively re-cut HLS segments do that at every boundary), or `0` when the
+         * timestamps already continue. [measure] must be true for exactly one pass — the first one —
+         * so both tracks always move by the same amount.
+         */
+        fun beginSegment(index: Int, headUs: Long, measure: Boolean): Long {
+            if (index < segmentLifts.size) return segmentLifts[index]
+            if (!measure) {
+                return segmentLifts.lastOrNull() ?: 0L
+            }
+            val head = headUs - originUs
+            val lift =
+                    if (segmentLifts.isEmpty() || head >= measuredEndUs) 0L
+                    else measuredEndUs - head + 1L
+            measuredEndUs = head + lift
+            segmentLifts.add(lift)
+            return lift
+        }
+
+        /** Records the highest timestamp written for the segment in progress. */
+        fun observe(ptsUs: Long) {
+            if (ptsUs > measuredEndUs) measuredEndUs = ptsUs
+        }
+    }
+
+    /** Presentation timestamp of a track's first sample, or null when it cannot be read. */
+    private fun firstSamplePts(path: String, trackIndex: Int): Long? {
+        if (trackIndex < 0) return null
+        val extractor = MediaExtractor()
+        return try {
+            extractor.setDataSource(path)
+            extractor.selectTrack(trackIndex)
+            extractor.sampleTime.takeIf { it >= 0 }
+        } catch (e: Exception) {
+            Log.w(TAG, "firstSamplePts failed for $path track $trackIndex: ${e.message}")
+            null
+        } finally {
+            runCatching { extractor.release() }
+        }
+    }
+
+    /** Earliest first sample among the given tracks; 0 when none could be read. */
+    private fun sharedOriginUs(vararg heads: Long?): Long =
+            heads.filterNotNull().minOrNull() ?: 0L
+
+    /**
      * True when the video stream in `path` uses B-frame reordering (a backward PTS step between
      * consecutive decode-order samples).
      *
@@ -493,8 +572,6 @@ object MediaTranscoder {
             extractor.selectTrack(videoIdx)
             var previousPts = Long.MIN_VALUE
             var seen = 0
-            // Walk decode order only (no sample data is copied). 20k samples
-            // (~11 min at 30 fps) is far beyond where B-frames can first appear.
             while (seen < 20_000) {
                 val pts = extractor.sampleTime
                 if (seen > 0 && pts < previousPts) {
@@ -549,32 +626,15 @@ object MediaTranscoder {
             video: Boolean,
             dstIdx: Int,
             muxer: MediaMuxer,
-            preserveBframes: Boolean = false
+            timeline: SharedTimeline,
+            preserveBframes: Boolean = false,
+            measure: Boolean = video
     ): Int {
         val buf = ByteBuffer.allocateDirect(8 * 1024 * 1024)
         val info = MediaCodec.BufferInfo()
-        var lastPts = Long.MIN_VALUE
-        var ptsOffset = 0L
-        var firstPts = -1L
         var samples = 0
-        val bframeTimeline = DecoderPtsTimeline()
-        // Map a source PTS to the PTS handed to the muxer. B-frame video keeps
-        // its real (swinging) decode-order PTS so MediaMuxer can emit ctts;
-        // everything else is clamped to a strictly monotonic timeline.
-        val mapPts: (Long) -> Long =
-                if (video && preserveBframes) {
-                    { raw -> bframeTimeline.next(raw) }
-                } else {
-                    { raw ->
-                        var adjusted = raw + ptsOffset
-                        if (adjusted <= lastPts) {
-                            ptsOffset += (lastPts - adjusted) + 1L
-                            adjusted = raw + ptsOffset
-                        }
-                        lastPts = adjusted
-                        adjusted
-                    }
-                }
+        var lastOutPts = Long.MIN_VALUE
+        val swinging = video && preserveBframes
         for (i in 0 until total) {
             val ext = MediaExtractor()
             try {
@@ -588,21 +648,22 @@ object MediaTranscoder {
                     continue
                 }
                 ext.selectTrack(srcIdx)
+                val liftUs =
+                        timeline.beginSegment(i, ext.sampleTime.coerceAtLeast(0L), measure = measure)
                 while (true) {
                     val sz = ext.readSampleData(buf, 0)
                     if (sz < 0) break
                     info.offset = 0
                     info.size = sz
-                    val mappedPts = mapPts(ext.sampleTime)
+                    var mappedPts = ext.sampleTime - timeline.originUs + liftUs
+                    if (!swinging && mappedPts <= lastOutPts) mappedPts = lastOutPts + 1L
+                    if (mappedPts < 0) mappedPts = 0L
+                    if (mappedPts > lastOutPts) lastOutPts = mappedPts
                     info.presentationTimeUs = mappedPts
                     info.flags = ext.sampleFlags
-                    // Zero-base each track like the encoder output so audio
-                    // and video stay aligned regardless of source PTS origin.
-                    if (firstPts < 0) firstPts = mappedPts
-                    if (firstPts > 0) info.presentationTimeUs -= firstPts
-                    if (info.presentationTimeUs < 0) info.presentationTimeUs = 0
                     muxer.writeSampleData(dstIdx, buf, info)
                     samples++
+                    if (measure) timeline.observe(mappedPts)
                     ext.advance()
                 }
             } catch (e: Exception) {
@@ -649,6 +710,15 @@ object MediaTranscoder {
             first.release()
             probe = null
 
+            // One clock for both tracks of this stream (see SharedTimeline).
+            val timeline =
+                    SharedTimeline(
+                            sharedOriginUs(
+                                    firstSamplePts(firstPath, videoIdx),
+                                    if (audioIdx >= 0) firstSamplePts(firstPath, audioIdx) else null
+                            )
+                    )
+
             val muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
             try {
                 val setup = MediaExtractor().also { it.setDataSource(firstPath) }
@@ -666,12 +736,13 @@ object MediaTranscoder {
                                 true,
                                 vOutIdx,
                                 muxer,
+                                timeline,
                                 preserveBframes = allowBframes
                         )
                 var audioSamples = 0
                 if (audioIdx >= 0 && aOutIdx >= 0) {
                     audioSamples =
-                            writeSegmentTrack(segmentDir, prefix, total, false, aOutIdx, muxer)
+                            writeSegmentTrack(segmentDir, prefix, total, false, aOutIdx, muxer, timeline)
                 }
                 muxer.stop()
                 Log.i(TAG, "remuxSegments video=$videoSamples audio=$audioSamples")
@@ -733,6 +804,14 @@ object MediaTranscoder {
                 val aOutIdx = muxer.addTrack(aSetup.getTrackFormat(audioIdx))
                 aSetup.release()
 
+                val timeline =
+                        SharedTimeline(
+                                sharedOriginUs(
+                                        firstSamplePts(vFirst, videoIdx),
+                                        firstSamplePts(aFirst, audioIdx)
+                                )
+                        )
+
                 muxer.start()
                 val videoSamples =
                         writeSegmentTrack(
@@ -742,10 +821,19 @@ object MediaTranscoder {
                                 true,
                                 vOutIdx,
                                 muxer,
+                                timeline,
                                 preserveBframes = allowBframes
                         )
                 val audioSamples =
-                        writeSegmentTrack(audioDir, audioPrefix, audioTotal, false, aOutIdx, muxer)
+                        writeSegmentTrack(
+                                audioDir,
+                                audioPrefix,
+                                audioTotal,
+                                false,
+                                aOutIdx,
+                                muxer,
+                                timeline
+                        )
                 muxer.stop()
                 Log.i(TAG, "remuxDirs video=$videoSamples audio=$audioSamples")
                 return videoSamples > 0 && audioSamples > 0
@@ -839,10 +927,11 @@ object MediaTranscoder {
 
             // Audio passthrough preparation from the first segment.
             var audioMuxIdx = -1
+            var audioIdx = -1
             val aProbe = MediaExtractor()
             try {
                 aProbe.setDataSource(firstPath)
-                val audioIdx = findTrackIdx(aProbe, false)
+                audioIdx = findTrackIdx(aProbe, false)
                 if (audioIdx >= 0) {
                     val aFmt = aProbe.getTrackFormat(audioIdx)
                     val aMime = aFmt.getString(MediaFormat.KEY_MIME) ?: ""
@@ -862,10 +951,19 @@ object MediaTranscoder {
             var decoderDone = false
             var encoderDone = false
             var frames = 0
-            var firstVideoPts = -1L
             var lastProgressMs = System.currentTimeMillis()
             var segmentIndex = 0
             val ptsTimeline = DecoderPtsTimeline()
+            // The transcoded video and the copied audio must ride one clock
+            // (see SharedTimeline): the origin is the earliest first sample of
+            // the two, so the source's own A/V offset survives the transcode.
+            val timeline =
+                    SharedTimeline(
+                            sharedOriginUs(
+                                    firstSamplePts(firstPath, videoIdx),
+                                    if (audioIdx >= 0) firstSamplePts(firstPath, audioIdx) else null
+                            )
+                    )
 
             val decInfo = MediaCodec.BufferInfo()
             val encInfo = MediaCodec.BufferInfo()
@@ -987,15 +1085,11 @@ object MediaTranscoder {
                             muxer.start()
                             muxerStarted = true
                         }
-                        if (firstVideoPts < 0) {
-                            firstVideoPts = encInfo.presentationTimeUs
-                        }
-                        if (firstVideoPts > 0) {
-                            encInfo.presentationTimeUs -= firstVideoPts
-                        }
-                        if (encInfo.presentationTimeUs < 0) {
-                            encInfo.presentationTimeUs = 0
-                        }
+                        // The re-encoded video rides the same clock as the
+                        // copied audio (see SharedTimeline), instead of keeping
+                        // its raw source timestamps while the audio starts at 0.
+                        encInfo.presentationTimeUs =
+                                (encInfo.presentationTimeUs - timeline.originUs).coerceAtLeast(0L)
                         data.position(encInfo.offset)
                         data.limit(encInfo.offset + encInfo.size)
                         muxer.writeSampleData(videoMuxIdx, data, encInfo)
@@ -1027,7 +1121,19 @@ object MediaTranscoder {
 
             // ── 4. Audio passthrough across all segments ──
             if (audioMuxIdx >= 0 && muxerStarted) {
-                writeSegmentTrack(segmentDir, prefix, total, false, audioMuxIdx, muxer)
+                // The video pass here is the encoder, so this pass measures the
+                // per-segment lifts itself — the audio still gets a continuous
+                // timeline instead of a per-segment restart.
+                writeSegmentTrack(
+                        segmentDir,
+                        prefix,
+                        total,
+                        false,
+                        audioMuxIdx,
+                        muxer,
+                        timeline,
+                        measure = true
+                )
             }
 
             muxer.stop()
@@ -1286,7 +1392,8 @@ object MediaTranscoder {
             destinationIndex: Int,
             muxer: MediaMuxer,
             video: Boolean,
-            preserveBframes: Boolean
+            preserveBframes: Boolean,
+            timeline: SharedTimeline
     ): Int {
         val extractor = MediaExtractor()
         try {
@@ -1296,7 +1403,6 @@ object MediaTranscoder {
             // 1 MiB per NAL unit) never overflow the read buffer.
             val buffer = ByteBuffer.allocateDirect(8 * 1024 * 1024)
             val info = MediaCodec.BufferInfo()
-            var firstPts = -1L
             var samples = 0
             // Map a source PTS to the PTS handed to the muxer. B-frame video
             // keeps its real (swinging) decode-order PTS so MediaMuxer (API
@@ -1328,10 +1434,8 @@ object MediaTranscoder {
                 if (size < 0) break
                 info.offset = 0
                 info.size = size
-                var adjustedPts = mapPts(extractor.sampleTime)
+                var adjustedPts = mapPts(extractor.sampleTime) - timeline.originUs
                 info.flags = extractor.sampleFlags
-                if (firstPts < 0) firstPts = adjustedPts
-                if (firstPts > 0) adjustedPts -= firstPts
                 if (adjustedPts < 0) adjustedPts = 0
                 info.presentationTimeUs = adjustedPts
                 muxer.writeSampleData(destinationIndex, buffer, info)
@@ -1404,6 +1508,17 @@ object MediaTranscoder {
             val aOutIdx = if (audioIdx >= 0) muxer.addTrack(setup.getTrackFormat(audioIdx)) else -1
             setup.release()
 
+            // One clock for both tracks of this file (see SharedTimeline), so
+            // the source's own A/V offset is preserved instead of being zeroed
+            // away track by track.
+            val timeline =
+                    SharedTimeline(
+                            sharedOriginUs(
+                                    firstSamplePts(inputPath, videoIdx),
+                                    if (audioIdx >= 0) firstSamplePts(inputPath, audioIdx) else null
+                            )
+                    )
+
             muxer.start()
 
             // Write each track with its own extractor to avoid PTS interleaving.
@@ -1416,7 +1531,8 @@ object MediaTranscoder {
                             vOutIdx,
                             muxer,
                             video = true,
-                            preserveBframes = allowBframes
+                            preserveBframes = allowBframes,
+                            timeline = timeline
                     )
             var audioSamples = 0
             if (audioIdx >= 0 && aOutIdx >= 0) {
@@ -1427,7 +1543,8 @@ object MediaTranscoder {
                                 aOutIdx,
                                 muxer,
                                 video = false,
-                                preserveBframes = false
+                                preserveBframes = false,
+                                timeline = timeline
                         )
             }
             muxer.stop()
@@ -1537,6 +1654,16 @@ object MediaTranscoder {
                 }
             }
 
+            // One clock for the re-encoded video and the copied audio: measured
+            // from the head of both streams so the source's A/V offset survives.
+            val timeline =
+                    SharedTimeline(
+                            sharedOriginUs(
+                                    firstSamplePts(inputPath, videoIdx),
+                                    if (audioIdx >= 0) firstSamplePts(inputPath, audioIdx) else null
+                            )
+                    )
+
             extractor.selectTrack(videoIdx)
 
             var videoMuxIdx = -1
@@ -1545,7 +1672,6 @@ object MediaTranscoder {
             var decoderDone = false
             var encoderDone = false
             var frames = 0
-            var firstVideoPts = -1L
             var lastProgressMs = System.currentTimeMillis()
             val ptsTimeline = DecoderPtsTimeline()
 
@@ -1630,15 +1756,11 @@ object MediaTranscoder {
                             muxer.start()
                             muxerStarted = true
                         }
-                        if (firstVideoPts < 0) {
-                            firstVideoPts = encInfo.presentationTimeUs
-                        }
-                        if (firstVideoPts > 0) {
-                            encInfo.presentationTimeUs -= firstVideoPts
-                        }
-                        if (encInfo.presentationTimeUs < 0) {
-                            encInfo.presentationTimeUs = 0
-                        }
+                        // The re-encoded video rides the same clock as the
+                        // copied audio (see SharedTimeline), instead of keeping
+                        // its raw source timestamps while the audio starts at 0.
+                        encInfo.presentationTimeUs =
+                                (encInfo.presentationTimeUs - timeline.originUs).coerceAtLeast(0L)
                         data.position(encInfo.offset)
                         data.limit(encInfo.offset + encInfo.size)
                         muxer.writeSampleData(videoMuxIdx, data, encInfo)
@@ -1669,7 +1791,7 @@ object MediaTranscoder {
             }
 
             if (audioIdx >= 0 && audioMuxIdx >= 0 && muxerStarted) {
-                writeAudioPassthrough(inputPath, audioIdx, audioMuxIdx, muxer)
+                writeAudioPassthrough(inputPath, audioIdx, audioMuxIdx, muxer, timeline)
             }
 
             muxer.stop()
@@ -1836,7 +1958,8 @@ object MediaTranscoder {
             inputPath: String,
             trackIdx: Int,
             muxIdx: Int,
-            muxer: MediaMuxer
+            muxer: MediaMuxer,
+            timeline: SharedTimeline
     ) {
         val ext = MediaExtractor()
         try {
@@ -1844,11 +1967,13 @@ object MediaTranscoder {
             ext.selectTrack(trackIdx)
             val buf = ByteBuffer.allocateDirect(256 * 1024)
             val info = MediaCodec.BufferInfo()
-            var firstPts = -1L
             var n = 0
             // Audio in a naively-concatenated TS also restarts its PTS at each
             // HLS segment boundary; re-base the timeline so audio stays
-            // monotonic and aligned with the (already re-based) video track.
+            // monotonic and on the same clock as the re-encoded video: the raw
+            // timestamps are put back on the shared origin (the video pass no
+            // longer zero-bases itself, so the two can no longer disagree by the
+            // source's own start offset).
             var lastPts = Long.MIN_VALUE
             var ptsOffset = 0L
             while (true) {
@@ -1864,12 +1989,9 @@ object MediaTranscoder {
                     adjustedPts = rawPts + ptsOffset
                 }
                 lastPts = adjustedPts
-                info.presentationTimeUs = adjustedPts
+                info.presentationTimeUs = (adjustedPts - timeline.originUs).coerceAtLeast(0L)
                 info.flags = ext.sampleFlags
 
-                if (firstPts < 0) firstPts = info.presentationTimeUs
-                if (firstPts > 0) info.presentationTimeUs -= firstPts
-                if (info.presentationTimeUs < 0) info.presentationTimeUs = 0
                 muxer.writeSampleData(muxIdx, buf, info)
                 n++
                 ext.advance()
