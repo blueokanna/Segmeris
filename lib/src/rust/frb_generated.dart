@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 1053547929;
+  int get rustContentHash => 781274510;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -91,11 +91,7 @@ abstract class RustLibApi extends BaseApi {
       {required RequestContext requestContext});
 
   Stream<ProgressUpdate> crateApiDownloaderDownloadMediaWithContext(
-      {required String pageUrl,
-      required String mediaUrl,
-      required List<String> mediaFallbackUrls,
-      String? audioUrl,
-      required List<String> audioFallbackUrls,
+      {required MediaSource source,
       required String output,
       required DownloadOptions options,
       required RequestContext requestContext});
@@ -118,6 +114,8 @@ abstract class RustLibApi extends BaseApi {
 
   Future<MediaInspectionResult> crateApiDownloaderInspectMediaWithContext(
       {required String url, required RequestContext requestContext});
+
+  Future<MediaSource> crateApiDownloaderMediaSourceDefault();
 
   Future<RequestContext> crateApiDownloaderRequestContextDefault();
 }
@@ -188,11 +186,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Stream<ProgressUpdate> crateApiDownloaderDownloadMediaWithContext(
-      {required String pageUrl,
-      required String mediaUrl,
-      required List<String> mediaFallbackUrls,
-      String? audioUrl,
-      required List<String> audioFallbackUrls,
+      {required MediaSource source,
       required String output,
       required DownloadOptions options,
       required RequestContext requestContext}) {
@@ -201,11 +195,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_StreamSink_progress_update_Sse(sink, serializer);
-        sse_encode_String(pageUrl, serializer);
-        sse_encode_String(mediaUrl, serializer);
-        sse_encode_list_String(mediaFallbackUrls, serializer);
-        sse_encode_opt_String(audioUrl, serializer);
-        sse_encode_list_String(audioFallbackUrls, serializer);
+        sse_encode_box_autoadd_media_source(source, serializer);
         sse_encode_String(output, serializer);
         sse_encode_box_autoadd_download_options(options, serializer);
         sse_encode_box_autoadd_request_context(requestContext, serializer);
@@ -217,17 +207,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         decodeErrorData: sse_decode_AnyhowException,
       ),
       constMeta: kCrateApiDownloaderDownloadMediaWithContextConstMeta,
-      argValues: [
-        sink,
-        pageUrl,
-        mediaUrl,
-        mediaFallbackUrls,
-        audioUrl,
-        audioFallbackUrls,
-        output,
-        options,
-        requestContext
-      ],
+      argValues: [sink, source, output, options, requestContext],
       apiImpl: this,
     )));
     return sink.stream;
@@ -236,17 +216,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiDownloaderDownloadMediaWithContextConstMeta =>
       const TaskConstMeta(
         debugName: "download_media_with_context",
-        argNames: [
-          "sink",
-          "pageUrl",
-          "mediaUrl",
-          "mediaFallbackUrls",
-          "audioUrl",
-          "audioFallbackUrls",
-          "output",
-          "options",
-          "requestContext"
-        ],
+        argNames: ["sink", "source", "output", "options", "requestContext"],
       );
 
   @override
@@ -409,12 +379,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<RequestContext> crateApiDownloaderRequestContextDefault() {
+  Future<MediaSource> crateApiDownloaderMediaSourceDefault() {
     return handler.executeNormal(NormalTask(
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
             funcId: 9, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_media_source,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateApiDownloaderMediaSourceDefaultConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateApiDownloaderMediaSourceDefaultConstMeta =>
+      const TaskConstMeta(
+        debugName: "media_source_default",
+        argNames: [],
+      );
+
+  @override
+  Future<RequestContext> crateApiDownloaderRequestContextDefault() {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 10, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_request_context,
@@ -493,6 +487,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MediaCollection dco_decode_box_autoadd_media_collection(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_media_collection(raw);
+  }
+
+  @protected
+  MediaSource dco_decode_box_autoadd_media_source(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_media_source(raw);
   }
 
   @protected
@@ -664,6 +664,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MediaSource dco_decode_media_source(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return MediaSource(
+      pageUrl: dco_decode_String(arr[0]),
+      mediaUrl: dco_decode_String(arr[1]),
+      mediaFallbackUrls: dco_decode_list_String(arr[2]),
+      audioUrl: dco_decode_opt_String(arr[3]),
+      audioFallbackUrls: dco_decode_list_String(arr[4]),
+    );
+  }
+
+  @protected
   MediaSubtitleTrack dco_decode_media_subtitle_track(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -794,6 +809,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_media_collection(deserializer));
+  }
+
+  @protected
+  MediaSource sse_decode_box_autoadd_media_source(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_media_source(deserializer));
   }
 
   @protected
@@ -1023,6 +1045,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MediaSource sse_decode_media_source(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_pageUrl = sse_decode_String(deserializer);
+    var var_mediaUrl = sse_decode_String(deserializer);
+    var var_mediaFallbackUrls = sse_decode_list_String(deserializer);
+    var var_audioUrl = sse_decode_opt_String(deserializer);
+    var var_audioFallbackUrls = sse_decode_list_String(deserializer);
+    return MediaSource(
+        pageUrl: var_pageUrl,
+        mediaUrl: var_mediaUrl,
+        mediaFallbackUrls: var_mediaFallbackUrls,
+        audioUrl: var_audioUrl,
+        audioFallbackUrls: var_audioFallbackUrls);
+  }
+
+  @protected
   MediaSubtitleTrack sse_decode_media_subtitle_track(
       SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -1166,6 +1204,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       MediaCollection self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_media_collection(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_media_source(
+      MediaSource self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_media_source(self, serializer);
   }
 
   @protected
@@ -1328,6 +1373,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.authRequired, serializer);
     sse_encode_String(self.challengeReason, serializer);
     sse_encode_opt_box_autoadd_media_collection(self.collection, serializer);
+  }
+
+  @protected
+  void sse_encode_media_source(MediaSource self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.pageUrl, serializer);
+    sse_encode_String(self.mediaUrl, serializer);
+    sse_encode_list_String(self.mediaFallbackUrls, serializer);
+    sse_encode_opt_String(self.audioUrl, serializer);
+    sse_encode_list_String(self.audioFallbackUrls, serializer);
   }
 
   @protected

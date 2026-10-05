@@ -73,11 +73,13 @@ class FrbDownloadEngine implements DownloadEngine {
     required RequestContext requestContext,
   }) {
     return downloadMediaWithContext(
-      pageUrl: pageUrl,
-      mediaUrl: mediaUrl,
-      mediaFallbackUrls: mediaFallbackUrls,
-      audioUrl: audioUrl,
-      audioFallbackUrls: audioFallbackUrls,
+      source: MediaSource(
+        pageUrl: pageUrl,
+        mediaUrl: mediaUrl,
+        mediaFallbackUrls: mediaFallbackUrls,
+        audioUrl: audioUrl,
+        audioFallbackUrls: audioFallbackUrls,
+      ),
       output: output,
       options: options,
       requestContext: requestContext,

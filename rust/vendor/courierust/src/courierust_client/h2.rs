@@ -127,6 +127,10 @@ impl H2Conn {
             .fetch_add(body_weight(body_bytes), Ordering::AcqRel);
     }
 
+    // Renamed to `try_update` in Rust 1.99, which is still an unstable
+    // feature on the workspace MSRV (1.88): keep the pre-rename name and
+    // silence the deprecation rather than break the MSRV build.
+    #[allow(deprecated)]
     pub(crate) fn release(&self, body_bytes: usize) {
         let _ = self
             .reservations

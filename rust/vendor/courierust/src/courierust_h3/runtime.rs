@@ -612,10 +612,13 @@ impl H3Conn {
         self.reservations.fetch_add(1, Ordering::AcqRel);
     }
 
+    // `fetch_update` (Rust 1.45) retries the CAS, so a release under
+    // contention is never dropped; `try_update` (Rust 1.95) is both above our
+    // MSRV and can return `Err`, leaking a reservation. 1.99 renamed the
+    // method and deprecated the name the MSRV has, so the deprecation is
+    // silenced here instead of switching to a name 1.88 does not have.
+    #[allow(deprecated)]
     pub(crate) fn release(&self) {
-        // `fetch_update` (Rust 1.45) retries the CAS, so a release under
-        // contention is never dropped; `try_update` (Rust 1.95) is both
-        // above our MSRV and can return `Err`, leaking a reservation.
         let _ = self
             .reservations
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {

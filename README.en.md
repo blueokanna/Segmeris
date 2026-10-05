@@ -16,7 +16,7 @@ It focuses on HLS / M3U8: fetch the playlist, download segments concurrently, de
 - **Remux / transcode** — FFmpeg on desktop (auto-detects NVENC / AMF / Intel QSV / VAAPI / VideoToolbox); Android uses the system `MediaCodec` hardware codecs, no FFmpeg required. When the device's MP4 muxer cannot package a codec directly (AV1 / HEVC-only tiers, older systems), the video track is automatically re-encoded to AVC with the hardware encoder and muxed with the untouched audio instead of failing.
 - **Multiple concurrent tasks** — while a download runs you can edit the URL or file name and start another independent task.
 - **Authorized sessions** — for login-gated sites, provide Cookie / User-Agent / Referer / Origin / custom headers manually or via the built-in authorization browser. It does not bypass Cloudflare, CAPTCHAs, DRM, anti-leech signatures, or rate limits — those shouldn't be bypassed.
-- **Bilibili QR sign-in** — log in through Bilibili's own QR flow (`passport-login/web/qrcode`), with no embedded browser involved: scan, confirm on your phone, and the app holds your account's session. That is the legitimate route to full episodes and high tiers — afterwards the server issues the tier list your account is entitled to (a membership account adds the `大会员` tiers), and the output is still a standard MP4. Nothing is cracked and nobody else's credentials are used.
+- **Bilibili QR sign-in** — log in through Bilibili's own QR flow (`passport-login/web/qrcode`), with no embedded browser involved: scan, confirm on your phone, and the app holds your account's session. A single device is enough too: the dialog can hand the authorization link to that phone's browser instead (see Usage). That is the legitimate route to full episodes and high tiers — afterwards the server issues the tier list your account is entitled to (a membership account adds the `大会员` tiers), and the output is still a standard MP4. Nothing is cracked and nobody else's credentials are used.
 
 ## Layout
 
@@ -131,11 +131,37 @@ docker run --rm -p 3000:3000 -e DOWNLOAD_DIR=/app/downloads \
 
 ## Validation
 
+CI's `validate` job runs exactly this, in this order:
+
 ```bash
+# The minimum supported Rust version (MSRV 1.88.0) must build too
+cd rust
+cargo check --workspace --all-targets --locked
+cargo check -p segmeris-core --no-default-features --locked
+cd ..
+
+# stable: format, lints, tests, packaging
+cd rust
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+cargo package -p segmeris-core --locked --allow-dirty
+cd ..
+
 flutter analyze
 flutter test
-cargo test --manifest-path rust/Cargo.toml
-cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets --locked -- -D warnings
+```
+
+The public-internet round trips are `#[ignore]`d because they need network access and really download tens to hundreds of MB; run them with:
+
+```bash
+cd rust && cargo test --lib -- --ignored --nocapture
+```
+
+`m3u8_api_server` — the binary the Docker image runs — is compiled behind the `api-server` feature, which has its own lint entry point:
+
+```bash
+cd rust && cargo clippy --workspace --all-targets --features api-server --locked -- -D warnings
 ```
 
 CI also builds the Web artifacts (JS + WASM) and scans Rust / Dart / container dependencies. The iOS job (arm64, unsigned) only runs for `v*` tags — a manual trigger skips it unless `skip_ios` is unchecked — and a skipped or failed iOS / Docker (`skip_docker`) job never blocks a release.

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::api::downloader::{self, DownloadOptions, ProgressUpdate, RequestContext};
+use crate::api::downloader::{self, DownloadOptions, MediaSource, ProgressUpdate, RequestContext};
 
 pub type DownloadProgressHandler = Arc<dyn Fn(ProgressUpdate) + Send + Sync>;
 
@@ -35,13 +35,9 @@ pub fn hls_to_mp4(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Download one resolved media source.
 pub fn download_media(
-    page_url: String,
-    media_url: String,
-    media_fallback_urls: Vec<String>,
-    audio_url: Option<String>,
-    audio_fallback_urls: Vec<String>,
+    source: MediaSource,
     output: String,
     options: DownloadOptions,
     request_context: RequestContext,
@@ -49,11 +45,7 @@ pub fn download_media(
 ) -> Result<()> {
     downloader::download_media_with_context_core(
         progress.unwrap_or_else(downloader::noop_progress_reporter),
-        page_url,
-        media_url,
-        media_fallback_urls,
-        audio_url,
-        audio_fallback_urls,
+        source,
         output,
         options,
         request_context,

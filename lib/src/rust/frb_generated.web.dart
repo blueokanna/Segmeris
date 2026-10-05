@@ -46,6 +46,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MediaCollection dco_decode_box_autoadd_media_collection(dynamic raw);
 
   @protected
+  MediaSource dco_decode_box_autoadd_media_source(dynamic raw);
+
+  @protected
   RequestContext dco_decode_box_autoadd_request_context(dynamic raw);
 
   @protected
@@ -90,6 +93,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MediaInspectionResult dco_decode_media_inspection_result(dynamic raw);
+
+  @protected
+  MediaSource dco_decode_media_source(dynamic raw);
 
   @protected
   MediaSubtitleTrack dco_decode_media_subtitle_track(dynamic raw);
@@ -144,6 +150,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  MediaSource sse_decode_box_autoadd_media_source(SseDeserializer deserializer);
+
+  @protected
   RequestContext sse_decode_box_autoadd_request_context(
       SseDeserializer deserializer);
 
@@ -193,6 +202,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   MediaInspectionResult sse_decode_media_inspection_result(
       SseDeserializer deserializer);
+
+  @protected
+  MediaSource sse_decode_media_source(SseDeserializer deserializer);
 
   @protected
   MediaSubtitleTrack sse_decode_media_subtitle_track(
@@ -251,6 +263,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       MediaCollection self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_media_source(
+      MediaSource self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_request_context(
       RequestContext self, SseSerializer serializer);
 
@@ -305,6 +321,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_media_inspection_result(
       MediaInspectionResult self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_media_source(MediaSource self, SseSerializer serializer);
 
   @protected
   void sse_encode_media_subtitle_track(

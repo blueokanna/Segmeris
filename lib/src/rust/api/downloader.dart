@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `android_hardware_transcode`, `augment_youtube_candidates_with_ytdlp`, `base_urls_of`, `canonical_site_context`, `check_ffmpeg`, `checksum_for_release_asset`, `cleanup_segment_temp_files`, `cleanup_temp_files`, `clear_resumable_partial`, `command_with_timeout`, `command`, `concat_list_for_input`, `container_from_url`, `convert_to_mp4`, `create_http_client_for_context`, `create_resume_temp_dir`, `decrypt_hls_resource`, `deliver_pipeline_outcome`, `detect_acceleration`, `detect_access_challenge`, `direct_media_candidate`, `download_and_decrypt_segment`, `download_and_merge_once`, `download_and_merge`, `download_hls_resource`, `download_media_with_context_core`, `download_playlist_with_url`, `download_playlist`, `download_with_fallbacks`, `download_with_retries`, `emit_progress`, `emit_terminal_error`, `encoder`, `ensure_output_file_ready`, `external_command_works`, `failed_exit_status`, `ffmpeg_command_works`, `ffmpeg_transcode_timeout`, `find_ytdlp_output`, `finish`, `has_mp4_signature`, `has_resume_validator`, `hash_file`, `hash_hls_field`, `hash_hls_resource_request`, `hls2mp4_core`, `hls_response_bytes`, `hls_segment_cache_key`, `hls_segment_metadata_path`, `human_bytes`, `if_range_value`, `infer_title_from_url`, `init_runtime_logging`, `inspect_hls_metadata`, `inspect_media_with_context_sync`, `ios_hardware_merge_segments`, `ios_hardware_transcode`, `is_bilibili_domain`, `is_complete_unsatisfied_range`, `is_hls_like`, `is_mp4_file`, `is_mpeg_ts_file`, `is_safe_ytdlp_header_name`, `is_safe_ytdlp_header_value`, `is_supported_media_like`, `is_valid_header_value_byte`, `is_valid_hls_segment_cache`, `is_youtube_domain`, `join_manifest_url`, `label`, `looks_like_mpeg_ts`, `media`, `merge_media_streams`, `mime_from_extension`, `mime_from_urls`, `new`, `noop_progress_reporter`, `normalize_fallback_urls`, `normalize_source_url`, `official_ytdlp_asset_name`, `parse_content_range`, `parse_ffmpeg_duration`, `parse_ytdlp_progress`, `playlist_base_url`, `prepare_output_path`, `probe_ffmpeg_encoder`, `probe_media_duration`, `protocol_from_url`, `provision_ytdlp_command`, `push_accel_encode_args`, `push`, `range_response_has_safe_resume_identity`, `read_resumable_metadata`, `replace_download_output`, `report_hls_segment_completed`, `request_headers`, `resolve_dash_download_plan_from_manifest`, `resolve_dash_download_plan`, `resolve_dash_representation_url`, `resolve_ffmpeg_path`, `resolve_hls_byte_range`, `resolve_ytdlp_command`, `response_header`, `resumable_metadata_from_response`, `resumable_metadata_matches_response`, `resumable_metadata_path`, `resumable_partial_path`, `retry_backoff_delay`, `run_dash_pipeline`, `run_ffmpeg_conversion`, `run_ffmpeg_merge`, `run_ffmpeg`, `run_hls_pipeline`, `run_ytdlp_site_pipeline`, `safe_media_url_label`, `score_candidate`, `score_candidates`, `select_best_hls_variant`, `select_hls_audio_rendition`, `select_transcoder_backend`, `should_auto_inspect_download_target`, `sink_progress_reporter`, `staged_progress_reporter`, `stream_media_response_to_file`, `to_choice`, `transcode_input_to_output`, `validate_header_value`, `validate_output_duration`, `write_hls_segment_cache`, `write_resumable_metadata`, `write_subtitle_sidecar`, `youtube_itag_from_media_url`, `ytdlp_cache_path`, `ytdlp_error_tail`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AccelType`, `CandidateCollector`, `CandidateSpec`, `ContentRange`, `DashDownloadPlan`, `DashRepresentationCandidate`, `ExternalCommandSpec`, `HlsResourceRequest`, `ResumableMetadata`, `SegmentInput`, `SubtitleChoice`, `TranscoderKind`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from_str`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from_str`, `from`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`, `default`
 
 Stream<ProgressUpdate> hls2Mp4Run(
@@ -54,20 +54,12 @@ Future<BilibiliQrLoginPoll> bilibiliQrLoginPoll(
         key: key, cookie: cookie, requestContext: requestContext);
 
 Stream<ProgressUpdate> downloadMediaWithContext(
-        {required String pageUrl,
-        required String mediaUrl,
-        required List<String> mediaFallbackUrls,
-        String? audioUrl,
-        required List<String> audioFallbackUrls,
+        {required MediaSource source,
         required String output,
         required DownloadOptions options,
         required RequestContext requestContext}) =>
     RustLib.instance.api.crateApiDownloaderDownloadMediaWithContext(
-        pageUrl: pageUrl,
-        mediaUrl: mediaUrl,
-        mediaFallbackUrls: mediaFallbackUrls,
-        audioUrl: audioUrl,
-        audioFallbackUrls: audioFallbackUrls,
+        source: source,
         output: output,
         options: options,
         requestContext: requestContext);
@@ -454,6 +446,59 @@ class MediaInspectionResult {
           authRequired == other.authRequired &&
           challengeReason == other.challengeReason &&
           collection == other.collection;
+}
+
+/// The streams one download will fetch, resolved and ready to run.
+///
+/// These five values are the output of an inspection and the input of every
+/// download path — the FFI entry, the HTTP API and the core all hand the same
+/// bundle around — so they travel as one named value instead of five parallel
+/// arguments that every call site has to keep in the same order.
+class MediaSource {
+  /// Page the media belongs to: referer, subtitle lookup, resume identity.
+  final String pageUrl;
+
+  /// The video (or muxed) stream to fetch.
+  final String mediaUrl;
+
+  /// Official mirror URLs for [`Self::media_url`], tried in order.
+  final List<String> mediaFallbackUrls;
+
+  /// Separate audio stream, for DASH downloads.
+  final String? audioUrl;
+
+  /// Official mirror URLs for [`Self::audio_url`].
+  final List<String> audioFallbackUrls;
+
+  const MediaSource({
+    required this.pageUrl,
+    required this.mediaUrl,
+    required this.mediaFallbackUrls,
+    this.audioUrl,
+    required this.audioFallbackUrls,
+  });
+
+  static Future<MediaSource> default_() =>
+      RustLib.instance.api.crateApiDownloaderMediaSourceDefault();
+
+  @override
+  int get hashCode =>
+      pageUrl.hashCode ^
+      mediaUrl.hashCode ^
+      mediaFallbackUrls.hashCode ^
+      audioUrl.hashCode ^
+      audioFallbackUrls.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MediaSource &&
+          runtimeType == other.runtimeType &&
+          pageUrl == other.pageUrl &&
+          mediaUrl == other.mediaUrl &&
+          mediaFallbackUrls == other.mediaFallbackUrls &&
+          audioUrl == other.audioUrl &&
+          audioFallbackUrls == other.audioFallbackUrls;
 }
 
 /// One subtitle track an episode offers, exactly as the source describes

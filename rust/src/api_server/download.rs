@@ -5,7 +5,7 @@ use anyhow::{anyhow, Context, Result};
 use uuid::Uuid;
 
 use crate::api::downloader::{
-    inspect_media_with_context_sync, DownloadOptions, RequestContext, SubtitleMode,
+    inspect_media_with_context_sync, DownloadOptions, MediaSource, RequestContext, SubtitleMode,
 };
 use crate::download_service::{self, DownloadProgressHandler};
 
@@ -22,9 +22,8 @@ fn execute_download_task(task_id: &str, req: &DownloadRequest, tasks: &TaskStore
     tasks.update_progress(task_id, "running", "Inspecting source...", Some(1.0), None);
 
     let request_context: RequestContext = req.request_context.clone().unwrap_or_default().into();
-    let (page_url, media_url, media_fallback_urls, audio_url, audio_fallback_urls, inferred_name) =
-        resolve_media(req, &request_context)?;
-    if media_fallback_urls.len() > 8 || audio_fallback_urls.len() > 8 {
+    let (source, inferred_name) = resolve_media(req, &request_context)?;
+    if source.media_fallback_urls.len() > 8 || source.audio_fallback_urls.len() > 8 {
         return Err(anyhow!(
             "A media stream may have at most 8 CDN fallback URLs"
         ));
@@ -32,11 +31,11 @@ fn execute_download_task(task_id: &str, req: &DownloadRequest, tasks: &TaskStore
     // SSRF guard (defense in depth on top of the scheme allow-list): the API
     // server is network-exposed, so refuse any target that resolves to a
     // private / loopback / link-local address unless explicitly allowlisted.
-    for target in std::iter::once(page_url.as_str())
-        .chain(std::iter::once(media_url.as_str()))
-        .chain(media_fallback_urls.iter().map(String::as_str))
-        .chain(audio_url.iter().map(String::as_str))
-        .chain(audio_fallback_urls.iter().map(String::as_str))
+    for target in std::iter::once(source.page_url.as_str())
+        .chain(std::iter::once(source.media_url.as_str()))
+        .chain(source.media_fallback_urls.iter().map(String::as_str))
+        .chain(source.audio_url.iter().map(String::as_str))
+        .chain(source.audio_fallback_urls.iter().map(String::as_str))
     {
         super::validate_public_http_url(target)?;
     }
@@ -49,7 +48,7 @@ fn execute_download_task(task_id: &str, req: &DownloadRequest, tasks: &TaskStore
     tasks.update_progress(
         task_id,
         "running",
-        &format!("Resolved target stream: {}", media_url),
+        &format!("Resolved target stream: {}", source.media_url),
         Some(5.0),
         Some(output_path_string.clone()),
     );
@@ -74,11 +73,7 @@ fn execute_download_task(task_id: &str, req: &DownloadRequest, tasks: &TaskStore
         None => (SubtitleMode::Auto, String::new()),
     };
     download_service::download_media(
-        page_url,
-        media_url,
-        media_fallback_urls,
-        audio_url,
-        audio_fallback_urls,
+        source,
         output_path_string.clone(),
         DownloadOptions {
             concurrency: req.concurrency.unwrap_or(8) as i32,
@@ -106,21 +101,16 @@ fn execute_download_task(task_id: &str, req: &DownloadRequest, tasks: &TaskStore
 fn resolve_media(
     req: &DownloadRequest,
     request_context: &RequestContext,
-) -> Result<(
-    String,
-    String,
-    Vec<String>,
-    Option<String>,
-    Vec<String>,
-    String,
-)> {
+) -> Result<(MediaSource, String)> {
     if let Some(media_url) = &req.media_url {
         return Ok((
-            req.url.clone(),
-            media_url.clone(),
-            req.media_fallback_urls.clone().unwrap_or_default(),
-            req.audio_url.clone(),
-            req.audio_fallback_urls.clone().unwrap_or_default(),
+            MediaSource {
+                page_url: req.url.clone(),
+                media_url: media_url.clone(),
+                media_fallback_urls: req.media_fallback_urls.clone().unwrap_or_default(),
+                audio_url: req.audio_url.clone(),
+                audio_fallback_urls: req.audio_fallback_urls.clone().unwrap_or_default(),
+            },
             req.output_filename
                 .clone()
                 .unwrap_or_else(|| infer_name_from_url(media_url)),
@@ -145,18 +135,12 @@ fn resolve_media(
         .next()
         .ok_or_else(|| anyhow!("No downloadable media candidates were found for this URL"))?;
 
-    Ok((
-        candidate.page_url,
-        candidate.media_url,
-        candidate.media_fallback_urls,
-        candidate.audio_url,
-        candidate.audio_fallback_urls,
-        if candidate.title.trim().is_empty() {
-            infer_name_from_url(&req.url)
-        } else {
-            candidate.title
-        },
-    ))
+    let inferred_name = if candidate.title.trim().is_empty() {
+        infer_name_from_url(&req.url)
+    } else {
+        candidate.title.clone()
+    };
+    Ok((MediaSource::from(&candidate), inferred_name))
 }
 
 fn build_output_path(download_dir: &str, file_name: &str) -> Result<PathBuf> {

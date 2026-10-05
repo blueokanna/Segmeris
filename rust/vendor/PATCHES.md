@@ -22,3 +22,11 @@
 * Remaining record types (alerts, surprises) are reported with their record type, and alerts with their level/description, instead of the previous generic message.
 
 Nothing else in the crate is modified; every other TLS 1.2/1.3, HTTP/1.1-3, WebSocket and gRPC code path is upstream byte-for-byte. When upgrading `courierust`, re-apply these hunks (both are marked with a comment in the file) or drop the patch once upstream accepts them.
+
+### Deviation 3: `#[allow(deprecated)]` on the three `fetch_update` sites
+
+`src/courierust_h3/runtime.rs` (`H3Conn::release`), `src/courierust_client/h2.rs` (`H2Conn::release`) and `src/courierust_net/stats.rs` (`Stats::decrement`):
+
+* Rust 1.99 renamed `AtomicUsize::fetch_update` to `try_update` and deprecated the old name. `try_update` is still an unstable feature on the workspace MSRV (1.88) — verified with that toolchain, `error[E0658]: use of unstable library feature 'atomic_try_update'` — so the pre-rename name is the only portable choice and the deprecation warning is silenced at those three functions.
+* The method is not interchangeable behaviourally either: `fetch_update` retries its compare-and-swap internally, while `try_update` can return `Err` when it loses the race. These three sites maintain counters (H3 reservations, H2 reservations and body load, live-count metrics) that must not be dropped, which is the same reason the upstream author chose `fetch_update`.
+* When the MSRV moves past the release that stabilises `try_update`, switch the three sites and delete this note.

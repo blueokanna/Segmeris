@@ -16,7 +16,7 @@
 - **转封装 / 转码**：桌面端用 FFmpeg（自动探测 NVENC / AMF / Intel QSV / VAAPI / VideoToolbox）；Android 端用系统 `MediaCodec` 硬件编解码，不依赖 FFmpeg。设备自带的 MP4 muxer 若无法直接封装某档编码（例如只提供 AV1 / HEVC 的档位、或旧系统不支持该编码的封装），会自动用硬件编码器把视频轨重编为 AVC 再与原始音轨封装，而不是直接报错。
 - **多任务**：下载进行中你可以继续改地址、改文件名再开一个新任务，互不干扰。
 - **授权会话**：有些站点需要登录才能下。你可以手动填入 Cookie / User-Agent / Referer / Origin / 自定义请求头，也可以打开内置浏览器登录后一键导入。程序不会绕过 Cloudflare、验证码、DRM、防盗链签名或限流——这些限制本身就不该被绕。
-- **Bilibili 扫码登录**：用 B 站自己的二维码登录（`passport-login/web/qrcode`），不需要内置浏览器——扫一下、在手机上确认，App 直接拿到你账号的会话。这是拿完整剧集与高清晰度的正路：登录后服务端会按你的账号权益下发档位表（大会员账号再解锁 `大会员` 档位），产物仍是标准 MP4。程序不会去破解会员，也不会拿别人的凭据冒充身份。
+- **Bilibili 扫码登录**：用 B 站自己的二维码登录（`passport-login/web/qrcode`），不需要内置浏览器——扫一下、在手机上确认，App 直接拿到你账号的会话。只有一台设备也成立：弹窗可以把这条授权链接交给本机浏览器（已登录 B 站的那个）确认，详见「使用」。这是拿完整剧集与高清晰度的正路：登录后服务端会按你的账号权益下发档位表（大会员账号再解锁 `大会员` 档位），产物仍是标准 MP4。程序不会去破解会员，也不会拿别人的凭据冒充身份。
 
 ## 工程结构
 
@@ -166,11 +166,37 @@ CI（GitHub Actions）会构建并推送 `linux/amd64`、`linux/arm64`、`linux/
 
 ## 验证
 
+CI 的 `validate` 任务按这个顺序跑，本地照抄即可：
+
 ```bash
+# 最低支持的 Rust 版本（MSRV 1.88.0）也必须能编译
+cd rust
+cargo check --workspace --all-targets --locked
+cargo check -p segmeris-core --no-default-features --locked
+cd ..
+
+# stable：格式、lint、测试、打包
+cd rust
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+cargo package -p segmeris-core --locked --allow-dirty
+cd ..
+
 flutter analyze
 flutter test
-cargo test --manifest-path rust/Cargo.toml
-cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets --locked -- -D warnings
+```
+
+真实网络的往返测试默认 `#[ignore]`（需要联网、会真的下载几十到几百 MB），要跑的时候：
+
+```bash
+cd rust && cargo test --lib -- --ignored --nocapture
+```
+
+Docker 镜像里的 `m3u8_api_server` 是靠 `api-server` 特性编译的，改动它有额外的 lint 入口：
+
+```bash
+cd rust && cargo clippy --workspace --all-targets --features api-server --locked -- -D warnings
 ```
 
 CI 还会构建 Web（JS + WASM）等跨平台产物，并对 Rust/Dart/容器依赖做安全扫描。iOS（arm64，未签名）只在推送 `v*` tag 发版时构建，手动触发默认跳过（取消勾选 `skip_ios` 可构建）；iOS 或 Docker（`skip_docker`）被跳过 / 失败时都不会阻塞 Release 发布。

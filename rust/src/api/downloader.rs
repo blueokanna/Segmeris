@@ -2317,14 +2317,42 @@ pub fn bilibili_qr_login_poll(
     })
 }
 
+/// The streams one download will fetch, resolved and ready to run.
+///
+/// These five values are the output of an inspection and the input of every
+/// download path — the FFI entry, the HTTP API and the core all hand the same
+/// bundle around — so they travel as one named value instead of five parallel
+/// arguments that every call site has to keep in the same order.
+#[derive(Clone, Debug, Default)]
+pub struct MediaSource {
+    /// Page the media belongs to: referer, subtitle lookup, resume identity.
+    pub page_url: String,
+    /// The video (or muxed) stream to fetch.
+    pub media_url: String,
+    /// Official mirror URLs for [`Self::media_url`], tried in order.
+    pub media_fallback_urls: Vec<String>,
+    /// Separate audio stream, for DASH downloads.
+    pub audio_url: Option<String>,
+    /// Official mirror URLs for [`Self::audio_url`].
+    pub audio_fallback_urls: Vec<String>,
+}
+
+impl From<&MediaCandidate> for MediaSource {
+    fn from(candidate: &MediaCandidate) -> Self {
+        Self {
+            page_url: candidate.page_url.clone(),
+            media_url: candidate.media_url.clone(),
+            media_fallback_urls: candidate.media_fallback_urls.clone(),
+            audio_url: candidate.audio_url.clone(),
+            audio_fallback_urls: candidate.audio_fallback_urls.clone(),
+        }
+    }
+}
+
 #[flutter_rust_bridge::frb()]
 pub async fn download_media_with_context(
     sink: StreamSink<ProgressUpdate>,
-    page_url: String,
-    media_url: String,
-    media_fallback_urls: Vec<String>,
-    audio_url: Option<String>,
-    audio_fallback_urls: Vec<String>,
+    source: MediaSource,
     output: String,
     options: DownloadOptions,
     request_context: RequestContext,
@@ -2332,19 +2360,7 @@ pub async fn download_media_with_context(
     let reporter = sink_progress_reporter(sink);
     let worker = reporter.clone();
     let outcome = flutter_rust_bridge::spawn_blocking_with(
-        move || {
-            download_media_with_context_core(
-                worker,
-                page_url,
-                media_url,
-                media_fallback_urls,
-                audio_url,
-                audio_fallback_urls,
-                output,
-                options,
-                request_context,
-            )
-        },
+        move || download_media_with_context_core(worker, source, output, options, request_context),
         (),
     )
     .await
@@ -2352,18 +2368,20 @@ pub async fn download_media_with_context(
     deliver_pipeline_outcome(&reporter, outcome)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn download_media_with_context_core(
     reporter: ProgressReporter,
-    page_url: String,
-    media_url: String,
-    media_fallback_urls: Vec<String>,
-    audio_url: Option<String>,
-    audio_fallback_urls: Vec<String>,
+    source: MediaSource,
     output: String,
     options: DownloadOptions,
     request_context: RequestContext,
 ) -> Result<()> {
+    let MediaSource {
+        page_url,
+        media_url,
+        media_fallback_urls,
+        audio_url,
+        audio_fallback_urls,
+    } = source;
     init_runtime_logging();
 
     let plan = DownloadPlan {
@@ -2483,11 +2501,7 @@ pub(crate) fn download_media_with_context_core(
 
         return download_media_with_context_core(
             reporter,
-            selected_candidate.page_url,
-            selected_candidate.media_url,
-            selected_candidate.media_fallback_urls,
-            selected_candidate.audio_url,
-            selected_candidate.audio_fallback_urls,
+            MediaSource::from(&selected_candidate),
             output,
             DownloadOptions {
                 concurrency,
@@ -4614,8 +4628,6 @@ fn join_manifest_url(
     }
 
     let joined = current.join(leaf).ok()?;
-    // Enforce an http/https-only allow-list so a malicious MPD cannot
-    // redirect the client to file://, ftp://, data:, etc.
     if !matches!(joined.scheme(), "http" | "https") {
         return None;
     }
@@ -4648,7 +4660,7 @@ mod tests {
     /// transport, the download core or the muxing path.
     mod live {
         use super::super::{
-            download_media_with_context_core, noop_progress_reporter, DownloadOptions,
+            download_media_with_context_core, noop_progress_reporter, DownloadOptions, MediaSource,
             RequestContext,
         };
         use crate::api::bilibili::BilibiliApi;
@@ -4735,11 +4747,13 @@ mod tests {
             let output = scratch.file("bilibili.mp4");
             download_media_with_context_core(
                 noop_progress_reporter(),
-                format!("https://www.bilibili.com/video/{}", view.bvid),
-                video.url.clone(),
-                video.backup_urls.clone(),
-                Some(audio.url.clone()),
-                audio.backup_urls.clone(),
+                MediaSource {
+                    page_url: format!("https://www.bilibili.com/video/{}", view.bvid),
+                    media_url: video.url.clone(),
+                    media_fallback_urls: video.backup_urls.clone(),
+                    audio_url: Some(audio.url.clone()),
+                    audio_fallback_urls: audio.backup_urls.clone(),
+                },
                 output.to_string_lossy().into_owned(),
                 DownloadOptions {
                     concurrency: 4,
@@ -4795,11 +4809,7 @@ mod tests {
             let output = scratch.file("pgc.mp4");
             download_media_with_context_core(
                 noop_progress_reporter(),
-                candidate.page_url.clone(),
-                candidate.media_url.clone(),
-                candidate.media_fallback_urls.clone(),
-                candidate.audio_url.clone(),
-                candidate.audio_fallback_urls.clone(),
+                MediaSource::from(&candidate),
                 output.to_string_lossy().into_owned(),
                 DownloadOptions {
                     concurrency: 4,
@@ -4829,11 +4839,11 @@ mod tests {
 
             download_media_with_context_core(
                 noop_progress_reporter(),
-                manifest.to_string(),
-                manifest.to_string(),
-                Vec::new(),
-                None,
-                Vec::new(),
+                MediaSource {
+                    page_url: manifest.to_string(),
+                    media_url: manifest.to_string(),
+                    ..MediaSource::default()
+                },
                 output.to_string_lossy().into_owned(),
                 DownloadOptions {
                     concurrency: 4,
@@ -4858,20 +4868,16 @@ mod tests {
         fn hls_live_download_round_trip() {
             let scratch = Scratch::new("hls");
             let output = scratch.file("hls.mp4");
-
-            // Apple's fMP4 advanced example: a master playlist with several
-            // variants and separate audio renditions, which exercises variant
-            // selection and the fMP4 assembly fast path.
             let manifest = "https://devstreaming-cdn.apple.com/videos/streaming/examples/\
                             img_bipbop_adv_example_fmp4/master.m3u8";
 
             download_media_with_context_core(
                 noop_progress_reporter(),
-                manifest.to_string(),
-                manifest.to_string(),
-                Vec::new(),
-                None,
-                Vec::new(),
+                MediaSource {
+                    page_url: manifest.to_string(),
+                    media_url: manifest.to_string(),
+                    ..MediaSource::default()
+                },
                 output.to_string_lossy().into_owned(),
                 DownloadOptions {
                     concurrency: 4,
@@ -4908,8 +4914,6 @@ mod tests {
         println!("scan url = {}", session.url);
         println!("device cookie = {:?}", session.cookie);
 
-        // Nobody has scanned this code, and the state machine must say so
-        // rather than reporting an error or (worse) a session.
         match api.poll(&session.key, &session.cookie) {
             Ok(QrLoginState::Waiting) => println!("poll ok: waiting for a scan"),
             Ok(other) => panic!("a fresh code must poll as waiting, got {other:?}"),
@@ -4959,9 +4963,6 @@ mod tests {
             ..RequestContext::default()
         };
 
-        // The signed API call and the CDN fetch both carry what the session
-        // actually needs: the API call is addressed by the entitlement, and
-        // the CDN URL is signed for this account's session.
         for url in [&api, &cdn] {
             let headers = request_headers(url, &context).expect("headers build");
             let cookie = headers
@@ -4970,10 +4971,6 @@ mod tests {
                 .map(|(_, value)| value.as_str());
             assert_eq!(cookie, Some("SESSDATA=secret; bili_jct=token"));
         }
-
-        // Without a session the request still looks like a browser's (risk
-        // control is stricter towards cookie-less clients), but it never
-        // invents credentials.
         let anonymous = request_headers(&api, &RequestContext::default()).expect("headers build");
         let cookie = anonymous
             .iter()
@@ -5597,13 +5594,6 @@ fn merge_media_streams(
                 )
             };
 
-            // Last-resort rescue: MediaMuxer cannot always package the
-            // original streams (a codec its MPEG4 writer does not support on
-            // this device, B-frames it cannot represent, …). Re-encode only
-            // the video track to AVC with the hardware encoder, then mux that
-            // AVC video with the untouched audio. Without this, Android
-            // would dead-end in "FFmpeg is required" on a platform that
-            // ships no FFmpeg.
             let rescue_encode = |target: &str, requested_video_bitrate: u32| -> Result<()> {
                 emit_progress(
                     &reporter,
