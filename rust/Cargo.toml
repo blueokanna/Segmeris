@@ -9,6 +9,11 @@ repository = "https://github.com/blueokanna/FerrisLoadDownloader"
 
 [workspace]
 members = ["core"]
+# The vendored TLS fork builds as a plain path dependency: keeping it out of
+# the workspace leaves its sources byte-identical to upstream except for the
+# documented hunks (see vendor/PATCHES.md) instead of exposing it to this
+# package's lints and `cargo fmt` settings.
+exclude = ["vendor/courierust"]
 resolver = "2"
 
 [lib]
@@ -52,3 +57,10 @@ api-server = []
 name = "m3u8_api_server"
 path = "src/bin/m3u8_api_server.rs"
 required-features = ["api-server"]
+
+# The vendored TLS fork replaces the published crate: it derives the RFC 7627
+# extended master secret and accepts the RFC 5077 NewSessionTicket that some
+# Bilibili CDN edges emit before their ChangeCipherSpec (OpenSSL, Go and rustls
+# all accept both). See rust/vendor/PATCHES.md.
+[patch.crates-io]
+courierust = { path = "vendor/courierust" }

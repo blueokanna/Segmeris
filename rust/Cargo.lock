@@ -245,8 +245,6 @@ dependencies = [
 [[package]]
 name = "courierust"
 version = "1.0.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a028ca438579e10e069b61b81e796ed8180b0c60a7c27026dc1ef32d62d47e9"
 
 [[package]]
 name = "crossbeam-utils"

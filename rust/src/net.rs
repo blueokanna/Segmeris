@@ -21,12 +21,15 @@
 
 use anyhow::{bail, Context, Result};
 use courierust::courierust_client::{Client, ClientConfig, TlsSettings as ClientTls};
-use courierust::courierust_fingerprint::profile::chrome_tls_profile;
+use courierust::courierust_fingerprint::profile::{chrome_tls_profile, TlsProfile};
 use courierust::courierust_http::header::{HeaderName, HeaderValue};
 use courierust::courierust_http::method::Method;
 use courierust::courierust_http::request::Request;
 use courierust::courierust_tls::x509::parse_certificate;
 use courierust::courierust_tls::{RootStore, TlsVersion};
+use log::warn;
+use std::collections::HashSet;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 /// Environment variable naming additional PEM/DER trust-anchor files.
@@ -62,9 +65,27 @@ type GetResult = (u16, Vec<(String, String)>, Vec<u8>);
 ///
 /// Requests use Courierust's TLS stack with Mozilla trust roots, per-request
 /// headers, Range support and bounded redirects and response bodies.
+///
+/// ## Non-compliant TLS 1.2 edges
+///
+/// Some media CDNs (Bilibili's `upos-sz-mirrorcos*.bilivideo.com` COS
+/// mirrors, for example) answer a TLS 1.3-capable ClientHello with a
+/// TLS 1.2 ServerHello but omit the RFC 8446 downgrade sentinel. The
+/// engine — like BoringSSL — rightly rejects that; OpenSSL and Schannel
+/// clients ignore it, which is why `curl`-based downloaders reach such
+/// hosts. To stay compatible without weakening anything else, a request
+/// that fails with *exactly* that condition is retried once with
+/// [`Self::tls12_fallback`], a client capped at TLS 1.2 (no downgrade
+/// detection applies below 1.3). The host is remembered process-wide so
+/// later Range requests skip the doomed attempt. Certificate chain,
+/// hostname and validity verification are identical on both clients.
 #[derive(Clone)]
 pub struct SyncHttpClient {
+    /// Primary client: offers TLS 1.2–1.3.
     inner: Client,
+    /// Compatibility client capped at TLS 1.2, used only for hosts that
+    /// proved non-compliant with the RFC 8446 downgrade sentinel.
+    tls12_fallback: Client,
 }
 
 impl SyncHttpClient {
@@ -95,47 +116,26 @@ impl SyncHttpClient {
         read_timeout: Duration,
         max_redirects: usize,
     ) -> Result<Self> {
-        let mut roots = default_roots();
-        for anchor in extra_trust_anchors()? {
-            roots.add_der(anchor);
-        }
-        if roots.is_empty() {
-            bail!("no TLS trust anchors could be loaded");
-        }
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
 
-        let config = ClientConfig {
-            http2: false,
-            http3: false,
-            max_connections_per_host: 4,
-            connect_timeout: Some(connect_timeout),
-            read_timeout: Some(read_timeout),
-            handshake_timeout: Some(Duration::from_secs(10)),
-            max_redirects,
-            user_agent: Some("Segmeris/1.0".to_string()),
-            max_header_list: 1 << 20,
-            max_body: MAX_MEMORY_BODY,
-            tls: Some(ClientTls {
-                roots,
-                verify: true,
-                alpn: vec![b"http/1.1".to_vec()],
-                min_version: TlsVersion::Tls12,
-                max_version: TlsVersion::Tls13,
-                now,
-                identity: None,
-                // Traffic-risk engines score the ClientHello: Bilibili
-                // answers the built-in, sparse shape with HTTP 412 and
-                // the Chrome parameter set resolves it.
-                profile: Some(chrome_tls_profile()),
-            }),
-            ..Default::default()
-        };
-
         Ok(Self {
-            inner: Client::with_config(config),
+            inner: make_client(
+                connect_timeout,
+                read_timeout,
+                max_redirects,
+                now,
+                TlsVersion::Tls13,
+            )?,
+            tls12_fallback: make_client(
+                connect_timeout,
+                read_timeout,
+                max_redirects,
+                now,
+                TlsVersion::Tls12,
+            )?,
         })
     }
 
@@ -172,49 +172,150 @@ impl SyncHttpClient {
         headers: &[(String, String)],
         range: Option<(u64, u64)>,
     ) -> Result<GetResult> {
-        let mut request = Request::new(Method::GET, "/");
-        for (name, value) in headers {
-            let Some(header_name) = parse_header_name(name) else {
-                continue;
-            };
-            let Some(header_value) = parse_header_value(value) else {
-                continue;
-            };
-            request = request.header(header_name, header_value);
+        let perform = |client: &Client| -> Result<GetResult> {
+            let mut request = Request::new(Method::GET, "/");
+            for (name, value) in headers {
+                let Some(header_name) = parse_header_name(name) else {
+                    continue;
+                };
+                let Some(header_value) = parse_header_value(value) else {
+                    continue;
+                };
+                request = request.header(header_name, header_value);
+            }
+            if let Some((start, end)) = range {
+                request = request.header(
+                    HeaderName::from_lowercase("range"),
+                    HeaderValue::from_bytes(format!("bytes={}-{}", start, end).as_bytes())?,
+                );
+            }
+            let response = client
+                .execute(url, request)
+                .with_context(|| format!("HTTP GET failed: {url}"))?;
+            let status = response.status.as_u16();
+            let response_headers = response
+                .headers
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        name.as_str().to_string(),
+                        String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                    )
+                })
+                .collect();
+            let body = response
+                .body
+                .collect_limited(MAX_MEMORY_BODY)
+                .context("failed to read HTTP response body")?
+                .to_vec();
+            Ok((status, response_headers, body))
+        };
+
+        let host = url::Url::parse(url)
+            .ok()
+            .and_then(|parsed| parsed.host_str().map(str::to_ascii_lowercase))
+            .unwrap_or_default();
+        // A host that already proved non-compliant skips the TLS 1.3
+        // attempt entirely: the failure is deterministic and every Range
+        // chunk would otherwise pay a wasted handshake.
+        if !host.is_empty() && host_needs_tls12(&host) {
+            return perform(&self.tls12_fallback);
         }
-        if let Some((start, end)) = range {
-            request = request.header(
-                HeaderName::from_lowercase("range"),
-                HeaderValue::from_bytes(format!("bytes={}-{}", start, end).as_bytes())?,
-            );
+
+        match perform(&self.inner) {
+            Ok(result) => Ok(result),
+            Err(error) => {
+                if !is_missing_downgrade_sentinel(&error) {
+                    return Err(error);
+                }
+                warn!(
+                    "TLS 1.2 server omitted the RFC 8446 downgrade sentinel for {}; retrying over a TLS 1.2-only connection",
+                    if host.is_empty() { url } else { host.as_str() }
+                );
+                remember_tls12_host(&host);
+                perform(&self.tls12_fallback)
+            }
         }
-        let response = self
-            .inner
-            .execute(url, request)
-            .with_context(|| format!("HTTP GET failed: {url}"))?;
-        let status = response.status.as_u16();
-        let response_headers = response
-            .headers
-            .iter()
-            .map(|(name, value)| {
-                (
-                    name.as_str().to_string(),
-                    String::from_utf8_lossy(value.as_bytes()).into_owned(),
-                )
-            })
-            .collect();
-        let body = response
-            .body
-            .collect_limited(MAX_MEMORY_BODY)
-            .context("failed to read HTTP response body")?
-            .to_vec();
-        Ok((status, response_headers, body))
     }
 
     /// Underlying Courierust client (for advanced uses).
     pub fn inner(&self) -> &Client {
         &self.inner
     }
+}
+
+/// The `ClientHello` profile for the TLS 1.2 compatibility client.
+///
+/// It keeps Chrome's cipher list, extension order and signature
+/// algorithms, but advertises only TLS 1.2 and only the P-256 group: the
+/// engine's TLS 1.2 handshake implements ECDHE on secp256r1 alone, so
+/// offering X25519 / P-384 (as the full Chrome profile does) lets a server
+/// choose a group the client cannot finish.
+///
+/// Both RFC 7627 (`extended_master_secret`) and RFC 5077
+/// (`session_ticket`) stay in the offer, since the vendored engine handles
+/// the server's echo and the pre-`ChangeCipherSpec` ticket — Bilibili's
+/// `upos-sz-mirrorcos*` edges exercise both.
+fn tls12_client_profile() -> TlsProfile {
+    let mut profile = chrome_tls_profile();
+    profile.supported_versions = vec![0x0303];
+    profile.groups = vec![23];
+    profile
+}
+
+/// Build one `courierust` client with the default trust set.
+///
+/// `max_tls` is the highest TLS version the client offers. Every other
+/// setting — including the Chrome ClientHello profile, ALPN, timeouts and
+/// the certificate verifier — is identical across clients, so the TLS 1.2
+/// fallback used for non-compliant CDNs never differs in authentication
+/// behaviour from the primary client.
+fn make_client(
+    connect_timeout: Duration,
+    read_timeout: Duration,
+    max_redirects: usize,
+    now: i64,
+    max_tls: TlsVersion,
+) -> Result<Client> {
+    let mut roots = default_roots();
+    for anchor in extra_trust_anchors()? {
+        roots.add_der(anchor);
+    }
+    if roots.is_empty() {
+        bail!("no TLS trust anchors could be loaded");
+    }
+
+    let config = ClientConfig {
+        http2: false,
+        http3: false,
+        max_connections_per_host: 4,
+        connect_timeout: Some(connect_timeout),
+        read_timeout: Some(read_timeout),
+        handshake_timeout: Some(Duration::from_secs(10)),
+        max_redirects,
+        user_agent: Some("Segmeris/1.0".to_string()),
+        max_header_list: 1 << 20,
+        max_body: MAX_MEMORY_BODY,
+        tls: Some(ClientTls {
+            roots,
+            verify: true,
+            alpn: vec![b"http/1.1".to_vec()],
+            min_version: TlsVersion::Tls12,
+            max_version: max_tls,
+            now,
+            identity: None,
+            // Traffic-risk engines score the ClientHello: Bilibili
+            // answers the built-in, sparse shape with HTTP 412 and
+            // the Chrome parameter set resolves it.
+            profile: Some(if max_tls >= TlsVersion::Tls13 {
+                chrome_tls_profile()
+            } else {
+                tls12_client_profile()
+            }),
+        }),
+        ..Default::default()
+    };
+    Ok(Client::with_config(config))
 }
 
 /// The default trust set: the bundled Mozilla roots plus the compiled-in
@@ -320,6 +421,40 @@ fn pem_certificates(data: &[u8]) -> Result<Vec<Vec<u8>>> {
         bail!("no -----BEGIN CERTIFICATE----- blocks found");
     }
     Ok(certificates)
+}
+
+/// Whether `error` is Courierust rejecting a TLS 1.2 ServerHello that came
+/// back without the RFC 8446 downgrade sentinel. Only this exact condition
+/// is retried over the TLS 1.2 client: a sentinel that is present but
+/// wrong (or any other protocol error) stays a hard failure.
+fn is_missing_downgrade_sentinel(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("missing downgrade sentinel"))
+}
+
+/// Hosts whose TLS handshake previously omitted the downgrade sentinel,
+/// remembered process-wide so later Range requests skip the TLS 1.3
+/// attempt that is known to fail.
+fn tls12_sentinel_hosts() -> &'static Mutex<HashSet<String>> {
+    static HOSTS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    HOSTS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn host_needs_tls12(host: &str) -> bool {
+    tls12_sentinel_hosts()
+        .lock()
+        .map(|hosts| hosts.contains(host))
+        .unwrap_or(false)
+}
+
+fn remember_tls12_host(host: &str) {
+    if host.is_empty() {
+        return;
+    }
+    if let Ok(mut hosts) = tls12_sentinel_hosts().lock() {
+        hosts.insert(host.to_string());
+    }
 }
 
 /// Reject any URL whose scheme is not http or https. This is the final
@@ -429,6 +564,48 @@ mod tests {
         assert!(ensure_http_url("ftp://example.com/a.ts").is_err());
         assert!(ensure_http_url("data:text/plain;base64,AAAA").is_err());
         assert!(ensure_http_url("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn detects_missing_downgrade_sentinel_errors() {
+        let sentinel = anyhow::anyhow!(
+            "Io: TLS protocol error: TLS 1.2 ServerHello missing downgrade sentinel"
+        );
+        assert!(is_missing_downgrade_sentinel(&sentinel));
+        // Unrelated protocol errors must not trigger the compatibility path.
+        let other = anyhow::anyhow!("Io: TLS protocol error: bad record mac");
+        assert!(!is_missing_downgrade_sentinel(&other));
+        // Contexts stack on top; the cause chain keeps the signal.
+        let wrapped = sentinel.context("HTTP GET failed: https://example.com/a.m4s");
+        assert!(is_missing_downgrade_sentinel(&wrapped));
+    }
+
+    #[test]
+    fn remembers_tls12_compatibility_hosts() {
+        assert!(!host_needs_tls12("cdn.example.invalid"));
+        remember_tls12_host("cdn.example.invalid");
+        assert!(host_needs_tls12("cdn.example.invalid"));
+        // Empty hosts are never remembered nor matched.
+        remember_tls12_host("");
+        assert!(!host_needs_tls12(""));
+    }
+
+    #[test]
+    fn tls12_compatibility_profile_stays_within_engine_capabilities() {
+        let profile = tls12_client_profile();
+        // The engine's TLS 1.2 client implements ECDHE on secp256r1 only and
+        // must not offer TLS 1.3, or a server can pick a handshake it cannot
+        // finish. The rest of the Chrome profile stays untouched.
+        assert_eq!(profile.supported_versions, vec![0x0303]);
+        assert_eq!(profile.groups, vec![23]);
+        let chrome = chrome_tls_profile();
+        assert_eq!(profile.ciphers, chrome.ciphers);
+        assert_eq!(profile.extensions, chrome.extensions);
+        // RFC 7627 (`extended_master_secret`) and RFC 5077 (`session_ticket`)
+        // both stay advertised: the vendored engine honours the server's echo
+        // and the pre-`ChangeCipherSpec` ticket (see rust/vendor/PATCHES.md).
+        assert!(profile.extensions.contains(&0x0017));
+        assert!(profile.extensions.contains(&0x0023));
     }
 
     #[test]
