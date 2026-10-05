@@ -165,6 +165,18 @@ cd rust && cargo test --lib -- --ignored --nocapture
 cd rust && cargo clippy --workspace --all-targets --features api-server --locked -- -D warnings
 ```
 
+Android-only code (the JNI bridge) is `cfg`-gated out of the desktop `cargo check`, so cross-check the target directly — that is what catches a `jni` 0.22 upgrade (`EnvUnowned` rewrite) breaking the bridge:
+
+```bash
+cd rust
+NDK=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/<host>/bin
+CC_aarch64_linux_android=$NDK/aarch64-linux-android24-clang \
+AR_aarch64_linux_android=$NDK/llvm-ar \
+cargo check --target aarch64-linux-android --locked
+```
+
+`flutter build apk` does not fail when the Rust compile fails: cargokit logs the errors, Gradle carries on and packages the `jniLibs` left by the previous build (reproduced locally with `jni = "0.22.4"` — the compile failed and an APK came out anyway). CI therefore greps the build log for `Cargokit BuildTool failed` / `could not compile` and asserts the APK really embeds `librust_lib_segmeris.so`.
+
 CI also builds the Web artifacts (JS + WASM) and scans Rust / Dart / container dependencies. The iOS job (arm64, unsigned) only runs for `v*` tags — a manual trigger skips it unless `skip_ios` is unchecked — and a skipped or failed iOS / Docker (`skip_docker`) job never blocks a release.
 
 Locally, running `flutter test` or a debug build and then a release build can fail with `package dev.flutter.plugins.integration_test does not exist`: `android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java` is a build artifact (git-ignored), the debug step wrote it for the dev dependency set, and the release step trusts its timestamp and keeps it. Delete that file and build again — it is regenerated for the release plugin set.

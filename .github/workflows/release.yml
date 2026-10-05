@@ -223,8 +223,20 @@ jobs:
           build_apk() {
             local target_platform="$1"
             local artifact_name="$2"
-            flutter build apk --release --target-platform="$target_platform"
-            cp build/app/outputs/flutter-apk/app-release.apk "dist/android/$artifact_name"
+            local log="build-$target_platform.log"
+            flutter build apk --release --target-platform="$target_platform" 2>&1 | tee "$log"
+            # cargokit logs Rust compile failures and lets Gradle finish anyway, which
+            # would ship an APK carrying the previous build's jniLibs.
+            if grep -q -E "Cargokit BuildTool failed|failed to run custom build command|could not compile" "$log"; then
+              echo "::error::Rust build failed while packaging $artifact_name"
+              exit 1
+            fi
+            local apk="build/app/outputs/flutter-apk/app-release.apk"
+            if ! unzip -l "$apk" | grep -q "librust_lib_segmeris.so"; then
+              echo "::error::$artifact_name does not embed librust_lib_segmeris.so"
+              exit 1
+            fi
+            cp "$apk" "dist/android/$artifact_name"
           }
           build_apk android-arm64 Segmeris-android-arm64-v8a.apk
           build_apk android-arm Segmeris-android-armeabi-v7a.apk

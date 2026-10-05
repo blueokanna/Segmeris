@@ -200,6 +200,18 @@ Docker 镜像里的 `m3u8_api_server` 是靠 `api-server` 特性编译的，改�
 cd rust && cargo clippy --workspace --all-targets --features api-server --locked -- -D warnings
 ```
 
+Android 专属代码（JNI 桥）在桌面 `cargo check` 里被 `cfg` 掉，要单独过一遍目标平台——`jni` 升到 0.22（`EnvUnowned` 重写）这种破坏就是它抓出来的：
+
+```bash
+cd rust
+NDK=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/<host>/bin
+CC_aarch64_linux_android=$NDK/aarch64-linux-android24-clang \
+AR_aarch64_linux_android=$NDK/llvm-ar \
+cargo check --target aarch64-linux-android --locked
+```
+
+`flutter build apk` 不会因为 Rust 编译失败而失败：cargokit 把错误打进日志后 Gradle 照跑，最后把上一次构建留下的 `jniLibs` 打进包里（本地复现过：`jni = "0.22.4"` 编译失败，APK 照样产出）。所以 CI 打包后会 grep `Cargokit BuildTool failed` / `could not compile`，并断言 APK 里真的有 `librust_lib_segmeris.so`。
+
 CI 还会构建 Web（JS + WASM）等跨平台产物，并对 Rust/Dart/容器依赖做安全扫描。iOS（arm64，未签名）只在推送 `v*` tag 发版时构建，手动触发默认跳过（取消勾选 `skip_ios` 可构建）；iOS 或 Docker（`skip_docker`）被跳过 / 失败时都不会阻塞 Release 发布。
 
 本地跑完 `flutter test` 或 debug 构建后再打 release 包，Gradle 可能报 `程序包 dev.flutter.plugins.integration_test 不存在`：`android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java` 是构建产物（已被 git 忽略），debug 那一步把它按「含 dev 依赖」写好了，release 那一步看时间戳以为它还新。删掉这个文件再构建即可，它会按 release 的插件集重新生成。

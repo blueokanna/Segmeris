@@ -5555,9 +5555,9 @@ fn merge_media_streams(
 ) -> Result<()> {
     let requires_reencode = video_bitrate > 0 || audio_bitrate > 0;
 
-    /// Failure note for the Android merge attempts, surfaced in the final
-    /// error when no backend (and no FFmpeg) could package the streams, so
-    /// the user sees what actually failed instead of a misleading hint.
+    // Failure note for the Android merge attempts, surfaced in the final
+    // error when no backend (and no FFmpeg) could package the streams, so
+    // the user sees what actually failed instead of a misleading hint.
     #[cfg(target_os = "android")]
     let mut android_merge_error: Option<String> = None;
 
@@ -5656,7 +5656,7 @@ fn merge_media_streams(
                 );
                 let mux_result = mux_with_fallback(mux_input.to_string_lossy().as_ref());
 
-                let mut preparation_error: Option<String> = None;
+                let preparation_error: Option<String>;
                 if let Err(error) = mux_result {
                     warn!("Android MediaMuxer preparation failed: {}", error);
                     preparation_error = Some(error.to_string());

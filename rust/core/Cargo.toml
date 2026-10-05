@@ -1,6 +1,6 @@
 ﻿[package]
 name = "segmeris-core"
-version = "0.1.3"
+version = "1.0.6"
 edition = "2021"
 authors = ["blueokanna"]
 description = "Portable no_std core types and wire format for Segmeris"
