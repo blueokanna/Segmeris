@@ -139,6 +139,16 @@ class RustBuilder {
   Future<String> build() async {
     final extraArgs = _buildOptions?.flags ?? [];
     final manifestPath = path.join(environment.manifestDir, 'Cargo.toml');
+    final buildEnvironment = await _buildEnvironment();
+    // Pin `rustc` to rustup's proxy when it exists: `rustup run` selects the
+    // toolchain, but cargo resolves `rustc` through `PATH`, where a
+    // standalone Rust installation can shadow the rustup shim and fail the
+    // build with confusing flag errors. The proxy follows the
+    // `RUSTUP_TOOLCHAIN` that `rustup run` propagates.
+    final rustcProxy = Rustup.rustcProxyPath();
+    if (rustcProxy != null) {
+      buildEnvironment['RUSTC'] = rustcProxy;
+    }
     runCommand(
       'rustup',
       [
@@ -157,7 +167,7 @@ class RustBuilder {
         '--target-dir',
         environment.targetTempDir,
       ],
-      environment: await _buildEnvironment(),
+      environment: buildEnvironment,
     );
     return path.join(
       environment.targetTempDir,

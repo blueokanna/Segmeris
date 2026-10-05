@@ -133,4 +133,26 @@ class Rustup {
     }
     return null;
   }
+
+  /// Path of the rustup `rustc` proxy in the default cargo home
+  /// (`$HOME/.cargo/bin/rustc`), or `null` when rustup is installed
+  /// elsewhere.
+  ///
+  /// The build tool hands this to cargo through `RUSTC`: `rustup run` picks
+  /// the toolchain, but cargo still resolves `rustc` through `PATH`, where a
+  /// standalone Rust installation (a stale "Rust 1.78" under Program Files,
+  /// a Homebrew rustc, …) can shadow the rustup shim and fail the build with
+  /// confusing flag errors. The proxy honours the `RUSTUP_TOOLCHAIN` that
+  /// `rustup run` propagates, so the compiler always matches the toolchain.
+  static String? rustcProxyPath() {
+    final home = Platform.isWindows
+        ? Platform.environment['USERPROFILE']
+        : Platform.environment['HOME'];
+    if (home == null) {
+      return null;
+    }
+    final rustc = Platform.isWindows ? 'rustc.exe' : 'rustc';
+    final candidate = path.join(home, '.cargo', 'bin', rustc);
+    return File(candidate).existsSync() ? candidate : null;
+  }
 }
