@@ -5,7 +5,7 @@ build/
 pubspec.lock
 
 # Rust构建文件
-rust/target/
+**/target/
 
 # IDE文件
 .vscode/

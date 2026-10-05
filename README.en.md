@@ -121,6 +121,10 @@ docker run --rm -p 3000:3000 -e DOWNLOAD_DIR=/app/downloads \
   -v $(pwd)/downloads:/app/downloads segmeris-api
 ```
 
+`api-builder` copies exactly what the Rust build needs: `rust/Cargo.toml`, `rust/Cargo.lock`, `rust/core` and `rust/vendor/courierust` first, to warm the dependency layer, then the whole `rust/` tree with the real sources. Both halves matter — `Cargo.toml` patches `courierust` onto `rust/vendor/courierust`, and `net.rs` compiles `rust/assets/GlobalSign-Root-CA-R1.der` into the binary with `include_bytes!`; without either file the image build fails outright. `.dockerignore` keeps `**/target/` out of the build context.
+
+CI (GitHub Actions) builds and pushes the three-architecture image (`linux/amd64`, `linux/arm64`, `linux/arm/v7`) to GHCR.
+
 ## Security & privacy
 
 - Only `http/https` targets; scheme allow-lists at both the network and parsing layers (SSRF / local-file protection).

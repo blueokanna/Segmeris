@@ -154,6 +154,8 @@ docker run --rm -p 3000:3000 -e DOWNLOAD_DIR=/app/downloads \
 
 CI（GitHub Actions）会构建并推送 `linux/amd64`、`linux/arm64`、`linux/arm/v7` 三架构镜像到 GHCR。
 
+`api-builder` 阶段只把自己要用的文件拷进镜像：先拷 `rust/Cargo.toml`、`rust/Cargo.lock`、`rust/core` 和 `rust/vendor/courierust` 把依赖层预热，再整目录 `COPY rust/` 放真实源码。两半都不能少——`Cargo.toml` 用 `[patch.crates-io]` 把 `courierust` 指到 `rust/vendor/courierust`，`net.rs` 又用 `include_bytes!` 把 `rust/assets/GlobalSign-Root-CA-R1.der` 编进二进制，少任何一个文件镜像都会在构建时直接失败。`rust/target` 由 `.dockerignore` 的 `**/target/` 挡在构建上下文外。
+
 ## 安全与隐私
 
 - 只允许 `http/https` 目标，网络层与解析层都有 scheme 白名单（防 SSRF / 本地文件读取）。
