@@ -25,6 +25,19 @@ const TS_PACKET_SIZE: usize = 188;
 const VIDEO_BUFFER_LIMIT: usize = 32 * 1024 * 1024;
 /// Upper bound on pictures held for display-order reordering (a few seconds).
 const GOP_PICTURE_LIMIT: usize = 600;
+/// Pictures that must be measured before the PES-derived cadence is trusted.
+const MIN_MEASURED_PICTURES: i64 = 25;
+/// Pictures buffered at most before the frame interval is decided even while no
+/// trustworthy measurement exists (keeps memory bounded on abnormal input).
+const FIRST_FLUSH_PICTURE_LIMIT: usize = 240;
+/// Fallback frame interval in 90 kHz ticks (30 fps) for streams that declare no
+/// frame rate and carry no usable decode timestamps.
+const DEFAULT_FRAME_INTERVAL: i64 = 3000;
+
+/// Plausible frame rate window (1 fps … 120 fps) expressed as a tick interval.
+fn plausible_frame_interval(interval: i64) -> bool {
+    (750..=90_000).contains(&interval)
+}
 
 /// H.264 decoder configuration extracted from SPS/PPS.
 #[derive(Debug, Clone)]
@@ -158,8 +171,15 @@ struct TsParser<'s> {
     video_pictures_seen: i64,
     video_pes_anchor: Option<(i64, i64)>,
     video_frame_interval: i64,
-    video_interval_from_vui: bool,
-    video_interval_estimated: bool,
+    /// Interval declared by the SPS VUI, when the stream declares one.
+    declared_frame_interval: Option<i64>,
+    /// Decode timestamps and the pictures they spanned, accumulated for the
+    /// current measurement era (reset whenever the stream's clock restarts).
+    measured_interval_ticks: i64,
+    measured_interval_pictures: i64,
+    interval_decided: bool,
+    frame_interval_source: &'static str,
+    interval_reported: bool,
 
     audio_buffer: Vec<u8>,
     audio_next_pts: Option<i64>,
@@ -238,9 +258,13 @@ impl<'s> TsParser<'s> {
             video_flushed: 0,
             video_pictures_seen: 0,
             video_pes_anchor: None,
-            video_frame_interval: 3000,
-            video_interval_from_vui: false,
-            video_interval_estimated: false,
+            video_frame_interval: DEFAULT_FRAME_INTERVAL,
+            declared_frame_interval: None,
+            measured_interval_ticks: 0,
+            measured_interval_pictures: 0,
+            interval_decided: false,
+            frame_interval_source: "default 30 fps",
+            interval_reported: false,
             audio_buffer: Vec::new(),
             audio_next_pts: None,
             audio_tb: Timebase::new(),
@@ -457,32 +481,76 @@ impl<'s> TsParser<'s> {
         self.process_video_buffer()
     }
 
-    /// Derive the frame interval from PES decode timestamps when the SPS VUI
-    /// does not carry timing information (some muxers omit it). PTS/DTS are
-    /// only used for this estimate; the output timeline itself is built from
-    /// the frame count, which keeps it continuous across segment resets.
+    /// Accumulate the cadence the stream's own decode timestamps carry.
+    ///
+    /// Only deltas spanned by whole pictures count, and a backward step (the
+    /// clock restart of a re-cut HLS segment) or an implausible jump starts a
+    /// new measurement era so unrelated clocks are never averaged together.
     fn calibrate_video_interval(&mut self, dts: i64) {
-        if !self.video_interval_from_vui {
-            if let Some((previous_dts, previous_count)) = self.video_pes_anchor {
-                let frames = self.video_pictures_seen - previous_count;
-                if frames > 0 {
-                    let delta = dts - previous_dts;
-                    if delta > 0 {
-                        let estimate = delta / frames;
-                        if (300..=20_000).contains(&estimate) {
-                            if self.video_interval_estimated {
-                                self.video_frame_interval =
-                                    (self.video_frame_interval + estimate) / 2;
-                            } else {
-                                self.video_frame_interval = estimate;
-                                self.video_interval_estimated = true;
-                            }
-                        }
-                    }
-                }
+        if let Some((previous_dts, previous_count)) = self.video_pes_anchor {
+            let pictures = self.video_pictures_seen - previous_count;
+            let delta = dts - previous_dts;
+            if pictures > 0 && delta > 0 && plausible_frame_interval(delta / pictures) {
+                self.measured_interval_ticks += delta;
+                self.measured_interval_pictures += pictures;
+            } else {
+                self.measured_interval_ticks = 0;
+                self.measured_interval_pictures = 0;
             }
         }
         self.video_pes_anchor = Some((dts, self.video_pictures_seen));
+    }
+
+    /// Frame interval in 90 kHz ticks measured from the PES decode timestamps,
+    /// or `None` while too little of the stream has been seen to trust it.
+    fn measured_frame_interval(&self) -> Option<i64> {
+        if self.measured_interval_pictures < MIN_MEASURED_PICTURES {
+            return None;
+        }
+        let interval = self.measured_interval_ticks / self.measured_interval_pictures;
+        plausible_frame_interval(interval).then_some(interval)
+    }
+
+    /// Fix the frame interval the output timeline is built on.
+    ///
+    /// The SPS VUI is used only while it agrees with the cadence the stream
+    /// actually delivers. A declared rate that is wrong (a VUI inherited from
+    /// whatever produced the source, for example) would stretch the video track
+    /// by that factor while the audio — counted in AAC frames — keeps the real
+    /// duration, which is how a 25 fps recording ends up reported as 16 fps and
+    /// drifts seconds out of sync. Returns `false` while neither the VUI nor a
+    /// trustworthy measurement can answer yet, so the caller keeps buffering
+    /// instead of guessing.
+    fn decide_frame_interval(&mut self, force: bool) -> bool {
+        if self.interval_decided {
+            return true;
+        }
+        let measured = self.measured_frame_interval();
+        if measured.is_none() && !force {
+            return false;
+        }
+        let (interval, source) = match (self.declared_frame_interval, measured) {
+            (Some(declared), Some(measured)) => {
+                let tolerance = (declared / 32).max(1); // ≈3 %
+                if (declared - measured).abs() > tolerance {
+                    warn!(
+                        "MPEG-TS: SPS VUI declares {declared} ticks ({:.2} fps) but the PES timestamps measure {measured} ticks ({:.2} fps); using the measured cadence",
+                        90_000.0 / declared as f64,
+                        90_000.0 / measured as f64
+                    );
+                    (measured, "measured from PES timestamps")
+                } else {
+                    (declared, "VUI")
+                }
+            }
+            (Some(declared), None) => (declared, "VUI"),
+            (None, Some(measured)) => (measured, "measured from PES timestamps"),
+            (None, None) => (DEFAULT_FRAME_INTERVAL, "default 30 fps"),
+        };
+        self.video_frame_interval = interval;
+        self.frame_interval_source = source;
+        self.interval_decided = true;
+        true
     }
 
     /// Parse the fixed PES header, returning `(payload, pts, dts)`.
@@ -597,7 +665,7 @@ impl<'s> TsParser<'s> {
         let key = self.video_picture_key;
         // Display-order reordering happens per GOP (IDR-delimited).
         if key && !self.gop.is_empty() {
-            self.flush_gop()?;
+            self.flush_gop(false)?;
         }
         self.gop.push(PendingPicture {
             nals,
@@ -605,8 +673,10 @@ impl<'s> TsParser<'s> {
             key,
         });
         self.video_pictures_seen += 1;
-        if self.gop.len() >= GOP_PICTURE_LIMIT {
-            self.flush_gop()?;
+        if self.gop.len() >= GOP_PICTURE_LIMIT
+            || (!self.interval_decided && self.gop.len() >= FIRST_FLUSH_PICTURE_LIMIT)
+        {
+            self.flush_gop(true)?;
         }
         Ok(())
     }
@@ -615,7 +685,7 @@ impl<'s> TsParser<'s> {
     /// uniform, the presentation timestamps come from the picture order
     /// count, and a constant is added so every `ctts` offset is non-negative
     /// (exactly what an `ffmpeg -c copy` MP4 contains).
-    fn flush_gop(&mut self) -> Result<()> {
+    fn flush_gop(&mut self, force: bool) -> Result<()> {
         if self.gop.is_empty() {
             return Ok(());
         }
@@ -624,29 +694,28 @@ impl<'s> TsParser<'s> {
                 bail!("H.264 SPS/PPS were not present before the first slice");
             };
             let config = parse_avc_config(sps, pps)?;
-            if let Some(interval_ticks) = config.frame_interval_ticks {
-                if interval_ticks > 0 {
-                    self.video_frame_interval = i64::from(interval_ticks);
-                    self.video_interval_from_vui = true;
-                }
-            }
+            self.declared_frame_interval = config
+                .frame_interval_ticks
+                .map(i64::from)
+                .filter(|ticks| plausible_frame_interval(*ticks));
             info!(
-                "MPEG-TS: AVC {}x{}, profile {}, level {}, frame interval {} ticks{}",
-                config.width,
-                config.height,
-                config.profile,
-                config.level,
-                self.video_frame_interval,
-                if self.video_interval_from_vui {
-                    " (VUI)"
-                } else if self.video_interval_estimated {
-                    " (measured from PES timestamps)"
-                } else {
-                    " (default 30fps)"
-                }
+                "MPEG-TS: AVC {}x{}, profile {}, level {}",
+                config.width, config.height, config.profile, config.level
             );
             self.sink.set_video_config(config)?;
             self.video_config_sent = true;
+        }
+        if !self.decide_frame_interval(force) {
+            return Ok(());
+        }
+        if !self.interval_reported {
+            info!(
+                "MPEG-TS: frame interval {} ticks ({:.3} fps, {})",
+                self.video_frame_interval,
+                90_000.0 / self.video_frame_interval as f64,
+                self.frame_interval_source
+            );
+            self.interval_reported = true;
         }
         let count = self.gop.len();
         let interval = self.video_frame_interval;
@@ -769,7 +838,7 @@ impl<'s> TsParser<'s> {
             self.process_nal(nal)?;
         }
         self.close_picture()?;
-        self.flush_gop()?;
+        self.flush_gop(true)?;
         if self.video_samples == 0 {
             if let Some(stream_type) = self.unsupported_video_type {
                 bail!("unsupported video codec (stream type 0x{stream_type:02X}) in MPEG-TS");

@@ -610,8 +610,8 @@ object MediaTranscoder {
      * Stream-copy remux of one stream across all segments into `muxer`'s `dstIdx` track. Every
      * segment is opened with its own extractor and the PTS timeline is re-based continuously across
      * segment boundaries, so a per-segment PTS reset can never make the output non-monotonic. A
-     * corrupt/unreadable segment is skipped rather than aborting the whole download (the duration
-     * check still catches severe truncation).
+     * corrupt or unreadable segment aborts this remux attempt. The caller can then use the
+     * transcoding fallback instead of returning a plausible-looking but incomplete file.
      *
      * When `preserveBframes` is true (video tracks that contain B-frames, API 25+), each sample is
      * fed with its REAL decode-order PTS (only whole segments whose PTS restarted are lifted).
@@ -637,15 +637,14 @@ object MediaTranscoder {
         val swinging = video && preserveBframes
         for (i in 0 until total) {
             val ext = MediaExtractor()
+            val samplesBeforeSegment = samples
             try {
                 ext.setDataSource(segmentPath(segmentDir, prefix, i))
                 val srcIdx = findTrackIdx(ext, video)
                 if (srcIdx < 0) {
-                    Log.w(
-                            TAG,
-                            "writeSegmentTrack: segment $i has no ${if (video) "video" else "audio"} track; skipping"
+                    throw IOException(
+                            "HLS segment $i has no ${if (video) "video" else "audio"} track"
                     )
-                    continue
                 }
                 ext.selectTrack(srcIdx)
                 val liftUs =
@@ -666,8 +665,13 @@ object MediaTranscoder {
                     if (measure) timeline.observe(mappedPts)
                     ext.advance()
                 }
+                if (samples == samplesBeforeSegment) {
+                    throw IOException(
+                            "HLS segment $i contains no ${if (video) "video" else "audio"} samples"
+                    )
+                }
             } catch (e: Exception) {
-                Log.w(TAG, "writeSegmentTrack: segment $i failed: ${e.message}")
+                throw IOException("Failed to remux HLS segment $i", e)
             } finally {
                 ext.release()
             }
@@ -1009,13 +1013,16 @@ object MediaTranscoder {
                                     val vIdx = findTrackIdx(next, true)
                                     if (vIdx < 0) {
                                         next.release()
-                                        continue // segment has no video: skip
+                                        throw IOException("HLS segment $segmentIndex has no video track")
                                     }
                                     next.selectTrack(vIdx)
                                     currentExtractor = next
                                 } catch (e: Exception) {
                                     runCatching { next.release() }
-                                    continue // corrupt segment: skip
+                                    throw IOException(
+                                            "Failed to read HLS video segment $segmentIndex",
+                                            e
+                                    )
                                 }
                             }
                             val ext = currentExtractor!!

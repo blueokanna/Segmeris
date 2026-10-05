@@ -100,6 +100,43 @@ pub fn remux_ts_to_mp4(input: &Path, output: &Path) -> Result<RemuxSummary> {
 mod tests {
     use super::*;
 
+    /// `(timescale, duration)` of every track of the produced MP4, read from
+    /// its `mdhd` boxes (the writer emits version 0 throughout).
+    fn track_media_durations(bytes: &[u8], moov: usize) -> Vec<(u32, u64)> {
+        fn children(bytes: &[u8], start: usize, end: usize, kind: &[u8; 4]) -> Vec<(usize, usize)> {
+            let mut found = Vec::new();
+            let mut position = start;
+            while position + 8 <= end {
+                let size =
+                    u32::from_be_bytes(bytes[position..position + 4].try_into().unwrap()) as usize;
+                if size < 8 || position + size > end {
+                    break;
+                }
+                if &bytes[position + 4..position + 8] == kind {
+                    found.push((position, position + size));
+                }
+                position += size;
+            }
+            found
+        }
+
+        // `moov` is the offset of the box *name*, so the box itself starts four
+        // bytes earlier.
+        let moov_start = moov - 4;
+        let moov_size =
+            u32::from_be_bytes(bytes[moov_start..moov_start + 4].try_into().unwrap()) as usize;
+        let moov_end = moov_start + moov_size;
+        let mut durations = Vec::new();
+        for (trak, trak_end) in children(bytes, moov_start + 8, moov_end, b"trak") {
+            let (mdia, mdia_end) = children(bytes, trak + 8, trak_end, b"mdia")[0];
+            let (mdhd, _) = children(bytes, mdia + 8, mdia_end, b"mdhd")[0];
+            let timescale = u32::from_be_bytes(bytes[mdhd + 20..mdhd + 24].try_into().unwrap());
+            let duration = u32::from_be_bytes(bytes[mdhd + 24..mdhd + 28].try_into().unwrap());
+            durations.push((timescale, u64::from(duration)));
+        }
+        durations
+    }
+
     /// End-to-end check against a real HLS segment. Skipped unless
     /// `FERRISLOAD_TS_SAMPLE` points at a TS file, so CI stays hermetic.
     #[test]
@@ -137,6 +174,22 @@ mod tests {
         );
         let moov_size = u32::from_be_bytes(bytes[moov - 4..moov].try_into().unwrap()) as usize;
         assert_eq!(moov - 4 + moov_size, bytes.len(), "moov must end the file");
+
+        // Both tracks of one clip must span the same wall-clock time. A frame
+        // interval that disagrees with the stream's real cadence stretches the
+        // video track away from the audio (the "16 fps, out of sync" symptom),
+        // and this is the regression guard for exactly that.
+        let durations = track_media_durations(&bytes, moov);
+        assert!(durations.len() >= 2, "sample must carry video and audio");
+        let seconds = |(scale, duration): (u32, u64)| duration as f64 / f64::from(scale.max(1));
+        let video_seconds = seconds(durations[0]);
+        let audio_seconds = seconds(durations[1]);
+        let slack = (video_seconds * 0.05).max(0.5);
+        assert!(
+            (video_seconds - audio_seconds).abs() <= slack,
+            "video track ({video_seconds:.2}s) and audio track ({audio_seconds:.2}s) diverged; \
+             the video timeline must follow the stream's real cadence"
+        );
         println!("remuxed sample written to {}", output.display());
     }
 }

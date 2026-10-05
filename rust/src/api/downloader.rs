@@ -7392,12 +7392,27 @@ fn convert_to_mp4(
         return Ok(());
     }
 
-    if !requires_reencode && is_mpeg_ts_file(Path::new(input_ts)) {
+    // Mobile HLS must keep the individual segment boundaries available to
+    // the platform muxer. The native TS remuxer rebuilds timing from frame
+    // counts and cannot faithfully preserve per-segment timestamp resets.
+    if !requires_reencode
+        && is_mpeg_ts_file(Path::new(input_ts))
+        && !cfg!(any(target_os = "android", target_os = "ios"))
+    {
         emit_progress(&reporter, "Remuxing TS → MP4 (stream copy)", 0.96);
         match crate::remux::remux_ts_to_mp4(Path::new(input_ts), Path::new(output_path)) {
             Ok(summary) => {
+                // Reject a truncated *and* a stretched timeline. The native
+                // remuxer builds the video track by counting pictures on one
+                // fixed interval, so a stream whose declared frame rate lies
+                // would otherwise pass with a video track far longer than the
+                // audio (and than the playlist), drifting seconds out of sync.
+                // A rejected file falls through to the platform transcoder.
                 let duration_ok = expected_duration.is_none_or(|expected| {
-                    summary.duration_seconds + 1.0 >= (expected * 0.85).max(expected - 5.0)
+                    let shortest = (expected * 0.85).max(expected - 5.0);
+                    let longest = expected + (expected * 0.03).max(5.0);
+                    summary.duration_seconds + 1.0 >= shortest
+                        && summary.duration_seconds <= longest
                 });
                 if duration_ok {
                     info!(
