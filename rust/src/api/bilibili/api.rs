@@ -83,6 +83,7 @@ pub(crate) struct SeasonEpisode {
     pub bvid: String,
     pub cid: i64,
     pub title: String,
+    /// Seconds.
     pub duration: f64,
 }
 
@@ -100,6 +101,7 @@ pub(crate) struct PgcEpisode {
     pub cid: i64,
     pub title: String,
     pub long_title: String,
+    /// Seconds, already converted from the endpoint's milliseconds.
     pub duration: f64,
     /// Membership / payment badge text from the API, shown as an
     /// informational marker (downloadability still depends on the
@@ -824,10 +826,17 @@ fn parse_pgc_season_payload(payload: &Value) -> Result<PgcSeason> {
                             .and_then(Value::as_str)
                             .unwrap_or_default()
                             .to_string(),
+                        // PGC publishes this one in milliseconds, unlike the
+                        // UGC view endpoint which publishes seconds: a live
+                        // fetch of `ep_id=1994063` reports 3120000 for a
+                        // 52-minute episode. Everything downstream is seconds,
+                        // so convert here — reading it as seconds is what put
+                        // `866:40:00` on the episode list.
                         duration: episode
                             .get("duration")
                             .and_then(Value::as_f64)
-                            .unwrap_or(0.0),
+                            .unwrap_or(0.0)
+                            / 1000.0,
                         badge: episode
                             .pointer("/badge_info/text")
                             .or_else(|| episode.get("badge"))
@@ -1602,7 +1611,7 @@ mod tests {
                             "cid": 111111,
                             "title": "第1话",
                             "long_title": "启程",
-                            "duration": 1440,
+                            "duration": 1440000,
                             "badge": ""
                         },
                         {
@@ -1611,7 +1620,7 @@ mod tests {
                             "cid": 111112,
                             "title": "第2话",
                             "long_title": "风暴",
-                            "duration": 1500,
+                            "duration": 3120000,
                             "badge_info": {"text": "会员"}
                         }
                     ]
@@ -1624,6 +1633,10 @@ mod tests {
         assert_eq!(season.episodes.len(), 2);
         assert_eq!(season.episodes[0].ep_id, 327577);
         assert_eq!(season.episodes[1].badge, "会员");
+        // Milliseconds in, seconds out: 3120000 is the value the live API
+        // returns for a 52-minute episode.
+        assert_eq!(season.episodes[0].duration, 1440.0);
+        assert_eq!(season.episodes[1].duration, 3120.0);
     }
 
     #[test]

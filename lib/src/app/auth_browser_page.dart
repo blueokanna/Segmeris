@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
 import 'package:segmeris/src/app/bilibili_qr_login.dart';
+import 'package:segmeris/src/app/external_link.dart';
 import 'package:segmeris/src/rust/api/downloader.dart';
 
 class AuthSessionBundle {
@@ -24,10 +25,20 @@ class AuthBrowserPage extends StatefulWidget {
   const AuthBrowserPage({
     super.key,
     required this.initialUrl,
+    required this.sourceUrl,
     required this.seedContext,
   });
 
+  /// Where the browser opens: the site's sign-in entry, because that is what
+  /// a session needs and because the media page can render blank inside a
+  /// WebView.
   final String initialUrl;
+
+  /// The page the collected session will be used on. It is the referer and
+  /// origin a real browser would have sent for that request, so the session
+  /// is filed against it rather than against the sign-in host.
+  final String sourceUrl;
+
   final RequestContext seedContext;
 
   @override
@@ -62,12 +73,13 @@ class _AuthBrowserPageState extends State<AuthBrowserPage> {
       return;
     }
     final page = _currentUrl.isNotEmpty ? _currentUrl : widget.initialUrl;
+    final reference = widget.sourceUrl.isNotEmpty ? widget.sourceUrl : page;
     Navigator.of(context).pop(
       AuthSessionBundle(
         url: page,
         userAgent: widget.seedContext.userAgent,
-        referer: page,
-        origin: _originFromUrl(page),
+        referer: reference,
+        origin: _originFromUrl(reference),
         cookie: cookie,
       ),
     );
@@ -112,6 +124,38 @@ class _AuthBrowserPageState extends State<AuthBrowserPage> {
     await controller.loadUrl(urlRequest: URLRequest(url: WebUri(normalized)));
   }
 
+  /// Current page, or what the user is about to navigate to.
+  String get _targetUrl =>
+      _currentUrl.isNotEmpty ? _currentUrl : _addressCtrl.text.trim();
+
+  Future<void> _openInSystemBrowser() async {
+    final l = AppLocalizations.of(context);
+    final target = _targetUrl;
+    if (target.isEmpty) {
+      return;
+    }
+    final launched = await openInSystemBrowser(target);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          launched
+              ? l.text('auth_browser_link_copied')
+              : '${l.text('auth_browser_copy_link')}: $target',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _copyCurrentUrl() async {
+    final l = AppLocalizations.of(context);
+    final copied = await copyLink(_targetUrl);
+    if (!mounted || !copied) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(l.text('auth_browser_link_copied'))),
+    );
+  }
+
   Future<void> _importSession() async {
     final l = AppLocalizations.of(context);
     final controller = _controller;
@@ -126,7 +170,9 @@ class _AuthBrowserPageState extends State<AuthBrowserPage> {
 
     final cookieManager = CookieManager.instance();
     final cookiesByName = <String, Cookie>{};
-    for (final candidateUrl in {widget.initialUrl, activeUrl}) {
+    // The sign-in host issues the session, the media host consumes it; both
+    // are asked so a cookie scoped to one of them is never missed.
+    for (final candidateUrl in {widget.initialUrl, activeUrl, widget.sourceUrl}) {
       if (candidateUrl.isEmpty) continue;
       final uri = Uri.tryParse(candidateUrl);
       if (uri == null || !uri.hasScheme) continue;
@@ -144,7 +190,8 @@ class _AuthBrowserPageState extends State<AuthBrowserPage> {
     );
     final userAgent = _normalizeJsValue(rawUserAgent);
     final refererUrl = (await controller.getUrl())?.toString() ?? activeUrl;
-    final origin = _originFromUrl(refererUrl);
+    final reference = widget.sourceUrl.isNotEmpty ? widget.sourceUrl : refererUrl;
+    final origin = _originFromUrl(reference);
 
     if (!mounted) return;
     if (cookieHeader.isEmpty && userAgent.isEmpty) {
@@ -158,7 +205,7 @@ class _AuthBrowserPageState extends State<AuthBrowserPage> {
       AuthSessionBundle(
         url: refererUrl,
         userAgent: userAgent,
-        referer: refererUrl,
+        referer: reference,
         origin: origin,
         cookie: cookieHeader,
       ),
@@ -271,6 +318,16 @@ class _AuthBrowserPageState extends State<AuthBrowserPage> {
                     ),
                   ),
                 ),
+                IconButton(
+                  tooltip: l.text('auth_browser_open_external'),
+                  onPressed: _openInSystemBrowser,
+                  icon: const Icon(Icons.open_in_new_rounded),
+                ),
+                IconButton(
+                  tooltip: l.text('auth_browser_copy_link'),
+                  onPressed: _copyCurrentUrl,
+                  icon: const Icon(Icons.link_rounded),
+                ),
               ],
             ),
           ),
@@ -312,6 +369,12 @@ class _AuthBrowserPageState extends State<AuthBrowserPage> {
                 javaScriptEnabled: true,
                 allowsBackForwardNavigationGestures: true,
                 thirdPartyCookiesEnabled: true,
+                // The default hybrid-composition surface is a platform view;
+                // on some Android devices it composites to a solid rectangle,
+                // which is the blank page with no error to report. The
+                // texture-based surface paints reliably, and the system
+                // browser action stays available either way.
+                useHybridComposition: false,
                 // Defense in depth: never let any page (or a redirect from a
                 // page) reach local files or content providers.
                 allowFileAccess: false,

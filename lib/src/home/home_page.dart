@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
 import 'package:segmeris/src/app/app_settings.dart';
+import 'package:segmeris/src/app/auth_context_store.dart';
+import 'package:segmeris/src/app/auth_entry.dart';
 import 'package:segmeris/src/app/bilibili_qr_login.dart';
 import 'package:segmeris/src/app/auth_browser_page.dart';
 import 'package:segmeris/src/app/download_engine.dart';
@@ -17,6 +21,7 @@ import 'package:segmeris/src/home/home_input_card.dart';
 import 'package:segmeris/src/home/home_series_card.dart';
 import 'package:segmeris/src/home/home_settings_sheet.dart';
 import 'package:segmeris/src/home/home_widgets.dart';
+import 'package:segmeris/src/home/quality_preference.dart';
 import 'package:segmeris/src/home/source_input.dart';
 import 'package:segmeris/src/home/subtitle_preference.dart';
 import 'package:segmeris/src/rust/api/downloader.dart';
@@ -34,6 +39,7 @@ class _DownloadTaskRequest {
     required this.requestContext,
     required this.fileName,
     required this.sourcePage,
+    this.preferredTier,
   });
 
   final String pageUrl;
@@ -51,6 +57,15 @@ class _DownloadTaskRequest {
   final String fileName;
   final String sourcePage;
 
+  /// The tier this task must re-resolve before every attempt.
+  ///
+  /// A queued episode stores its page URL and the picked tier instead of
+  /// stream URLs: signed CDN links belong to the episode they were resolved
+  /// for and expire, while a queue can run for hours and be retried after
+  /// that. When this is set, [mediaUrl]/[audioUrl] carry no meaning and are
+  /// replaced by the tier matching [pageUrl].
+  final MediaCandidate? preferredTier;
+
   _DownloadTaskRequest withRequestContext(RequestContext value) {
     return _DownloadTaskRequest(
       pageUrl: pageUrl,
@@ -62,6 +77,24 @@ class _DownloadTaskRequest {
       chosenDir: chosenDir,
       options: options,
       requestContext: value,
+      fileName: fileName,
+      sourcePage: sourcePage,
+      preferredTier: preferredTier,
+    );
+  }
+
+  /// The same task, bound to the tier resolved for this attempt.
+  _DownloadTaskRequest withResolvedSource(MediaCandidate source) {
+    return _DownloadTaskRequest(
+      pageUrl: pageUrl,
+      mediaUrl: source.mediaUrl,
+      mediaFallbackUrls: source.mediaFallbackUrls,
+      audioUrl: source.audioUrl,
+      audioFallbackUrls: source.audioFallbackUrls,
+      output: output,
+      chosenDir: chosenDir,
+      options: options,
+      requestContext: requestContext,
       fileName: fileName,
       sourcePage: sourcePage,
     );
@@ -126,6 +159,7 @@ class _HomePageState extends State<HomePage> {
       apiToken: widget.settings.apiToken,
     );
     _checkBattery();
+    unawaited(_restoreAuthContext());
   }
 
   @override
@@ -231,6 +265,34 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// Put the stored session back into the fields on startup.
+  ///
+  /// A signed-in session is meant to survive the app being closed; asking for
+  /// the login again on every launch is exactly the defect this repairs.
+  Future<void> _restoreAuthContext() async {
+    final stored = await AuthContextStore.load();
+    // Never overwrite something the user has already put on screen.
+    if (!mounted || stored == null || _hasAuthContextOverrides) {
+      return;
+    }
+    setState(() {
+      _userAgentCtrl.text = stored.userAgent;
+      _refererCtrl.text = stored.referer;
+      _originCtrl.text = stored.origin;
+      _cookieCtrl.text = stored.cookie;
+      _headersCtrl.text = _serializeHeaderEntries(stored.headers);
+    });
+  }
+
+  Future<void> _persistAuthContext() =>
+      AuthContextStore.save(_requestContext());
+
+  /// The inverse of [_parseHeaderEntries], so a restored session re-enters the
+  /// editor in the format it is edited in.
+  String _serializeHeaderEntries(List<HeaderEntry> headers) => [
+    for (final header in headers) '${header.name}: ${header.value}',
+  ].join('\n');
+
   List<HeaderEntry> _parseHeaderEntries(String text) {
     final entries = <HeaderEntry>[];
     for (final line in text.split('\n')) {
@@ -287,6 +349,7 @@ class _HomePageState extends State<HomePage> {
     _originCtrl.clear();
     _cookieCtrl.clear();
     _headersCtrl.clear();
+    unawaited(AuthContextStore.clear());
   }
 
   bool _looksLikeAuthChallenge(String message) {
@@ -340,6 +403,7 @@ class _HomePageState extends State<HomePage> {
     }
     _cookieCtrl.text = cookie;
     _pageController.importAuthSession(l.text('auth_session_imported'));
+    await _persistAuthContext();
     if (reanalyzeAfterImport) {
       await _analyze(skipAutoAuth: true);
     }
@@ -362,7 +426,8 @@ class _HomePageState extends State<HomePage> {
       final session = await Navigator.of(context).push<AuthSessionBundle>(
         MaterialPageRoute(
           builder: (context) => AuthBrowserPage(
-            initialUrl: targetUrl,
+            initialUrl: authEntryUrlFor(targetUrl),
+            sourceUrl: targetUrl,
             seedContext: _requestContext(),
           ),
           fullscreenDialog: true,
@@ -386,6 +451,7 @@ class _HomePageState extends State<HomePage> {
         _cookieCtrl.text = session.cookie;
       }
       _pageController.importAuthSession(l.text('auth_session_imported'));
+      await _persistAuthContext();
 
       if (reanalyzeAfterImport) {
         await _analyze(skipAutoAuth: true);
@@ -647,6 +713,21 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    // Scope is confirmed; the tier is the one thing the queue cannot decide
+    // for the user. It is asked once and matched per episode, because a
+    // season can drop a tier partway through.
+    final tier = await showDownloadOptionsDialog(
+      context,
+      inspection: vm.inspection!,
+      initial: vm.selectedCandidate,
+      hintKey: 'quality_dialog_series_hint',
+      onOpenAuthBrowser: () => _openAuthBrowser(reanalyzeAfterImport: true),
+      onQrLogin: () => _qrLogin(reanalyzeAfterImport: true),
+    );
+    if (!mounted || tier == null) {
+      return;
+    }
+
     final concurrency =
         int.parse(_concurrencyCtrl.text.trim()).clamp(1, 16).toInt();
     final retries = int.parse(_retriesCtrl.text.trim()).clamp(1, 10).toInt();
@@ -676,6 +757,8 @@ class _HomePageState extends State<HomePage> {
         );
         final request = _DownloadTaskRequest(
           pageUrl: entry.pageUrl,
+          // No stream URLs yet: the tier is resolved per attempt so the
+          // queue never carries an expired signature (see `preferredTier`).
           mediaUrl: entry.pageUrl,
           audioUrl: null,
           output: output,
@@ -692,6 +775,7 @@ class _HomePageState extends State<HomePage> {
           requestContext: requestContext,
           fileName: fileName,
           sourcePage: entry.pageUrl,
+          preferredTier: tier,
         );
         _retryRequests[taskId] = request;
         // Auto-opening the auth browser mid-queue would interrupt every
@@ -766,12 +850,60 @@ class _HomePageState extends State<HomePage> {
     return _normalizeOutputName(capped.isEmpty ? 'video' : capped);
   }
 
+  /// Resolve the tier a queued episode should download right now.
+  ///
+  /// Returns `null` — and fails the task with the reason — when the episode
+  /// has no stream this session may fetch. The queue keeps going: one gated
+  /// episode must not stall the rest.
+  Future<MediaCandidate?> _resolveQueuedSource(
+    String taskId,
+    _DownloadTaskRequest request,
+    AppLocalizations l,
+  ) async {
+    try {
+      final inspection = await _engine.inspect(
+        url: request.pageUrl,
+        requestContext: request.requestContext,
+      );
+      final source = candidateForTier(
+        inspection.candidates,
+        request.preferredTier,
+      );
+      if (source == null) {
+        _pageController.failDownloadTask(
+          taskId,
+          l.text('no_candidates'),
+          status: null,
+          progress: 0,
+        );
+        return null;
+      }
+      return source;
+    } catch (error) {
+      _pageController.failDownloadTask(
+        taskId,
+        '$error',
+        status: null,
+        progress: 0,
+      );
+      return null;
+    }
+  }
+
   Future<void> _runDownloadTask(
     String taskId,
     _DownloadTaskRequest request, {
     bool allowAutoAuth = true,
   }) async {
     final l = AppLocalizations.of(context);
+    var effective = request;
+    if (request.preferredTier != null) {
+      final resolved = await _resolveQueuedSource(taskId, request, l);
+      if (!mounted || resolved == null) {
+        return;
+      }
+      effective = request.withResolvedSource(resolved);
+    }
     var shouldAutoOpenAuthBrowser = false;
     var downloadStreamFailed = false;
     await MediaStoreBridge.startForegroundService();
@@ -780,14 +912,14 @@ class _HomePageState extends State<HomePage> {
 
     try {
       await for (final event in _engine.download(
-        pageUrl: request.pageUrl,
-        mediaUrl: request.mediaUrl,
-        mediaFallbackUrls: request.mediaFallbackUrls,
-        audioUrl: request.audioUrl,
-        audioFallbackUrls: request.audioFallbackUrls,
-        output: request.output,
-        options: request.options,
-        requestContext: request.requestContext,
+        pageUrl: effective.pageUrl,
+        mediaUrl: effective.mediaUrl,
+        mediaFallbackUrls: effective.mediaFallbackUrls,
+        audioUrl: effective.audioUrl,
+        audioFallbackUrls: effective.audioFallbackUrls,
+        output: effective.output,
+        options: effective.options,
+        requestContext: effective.requestContext,
       )) {
         if (!mounted) {
           return;
@@ -945,6 +1077,9 @@ class _HomePageState extends State<HomePage> {
         headersController: _headersCtrl,
       ),
     );
+    // The sheet is where the session is edited by hand; storing it once it
+    // closes keeps a hand-entered cookie as durable as a scanned one.
+    await _persistAuthContext();
   }
 
   void _replaceSourceText(String source) {

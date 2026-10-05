@@ -31,6 +31,7 @@ Future<MediaCandidate?> showDownloadOptionsDialog(
   BuildContext context, {
   required MediaInspectionResult inspection,
   MediaCandidate? initial,
+  String hintKey = 'quality_dialog_hint',
   VoidCallback? onOpenAuthBrowser,
   VoidCallback? onQrLogin,
 }) {
@@ -42,6 +43,7 @@ Future<MediaCandidate?> showDownloadOptionsDialog(
     builder: (context) => _DownloadOptionsDialog(
       inspection: inspection,
       initial: initial,
+      hintKey: hintKey,
       onOpenAuthBrowser: onOpenAuthBrowser,
       onQrLogin: onQrLogin,
     ),
@@ -52,12 +54,14 @@ class _DownloadOptionsDialog extends StatefulWidget {
   const _DownloadOptionsDialog({
     required this.inspection,
     required this.initial,
+    required this.hintKey,
     required this.onOpenAuthBrowser,
     required this.onQrLogin,
   });
 
   final MediaInspectionResult inspection;
   final MediaCandidate? initial;
+  final String hintKey;
   final VoidCallback? onOpenAuthBrowser;
   final VoidCallback? onQrLogin;
 
@@ -109,7 +113,7 @@ class _DownloadOptionsDialogState extends State<_DownloadOptionsDialog> {
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Text(
-                l.text('quality_dialog_hint'),
+                l.text(widget.hintKey),
                 style: t.textTheme.bodySmall?.copyWith(
                   color: cs.onSurfaceVariant,
                 ),

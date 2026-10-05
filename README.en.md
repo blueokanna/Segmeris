@@ -61,7 +61,10 @@ The codegen version must match `flutter_rust_bridge` in `rust/Cargo.toml` (curre
 4. Press **Download**. Analyze first if you want to pick from candidates.
 5. The saved path is shown and recorded in **History**.
 
-For login-gated sites: open the authorization browser in settings, sign in yourself, and import the session; analysis and downloads reuse that context.
+For login-gated sites there are two sign-in routes, and both keep the session on this device so it survives a restart ("Clear session" deletes the stored one):
+
+- **QR login** (Bilibili): the app asks the official passport endpoint for a QR code and you confirm it in the Bilibili app. **One phone is enough**: "Open in browser" in that dialog hands the authorization link to this phone's browser — the one already signed in to Bilibili — where you confirm it, and the app imports the session as soon as its two-second poll sees the confirmation. The link can also be copied elsewhere.
+- **Authorization browser**: it opens the site's **sign-in entry** (Bilibili's passport page) rather than the media page, because a media page can render as a blank document inside a WebView without reporting any error. The address bar accepts any address, and "Open in system browser" / "Copy link" are always available, so a WebView that paints nothing is never a dead end.
 
 ### Managed networks (private CAs / TLS inspection)
 
@@ -87,6 +90,8 @@ Paste a video / bangumi / collection link (a link to any single episode inside a
 - "Anonymous gets no 4K" is not this app's limit: for the same video the API honestly lists `4K 超高清` / `8K 超高清` in `accept_quality` / `support_formats`, while `dash.video` only contains the streams **that session may access** — measured on an anonymous session it is `480P 标清 / 360P 流畅`. Quality is a server-side policy; no client-side parameter changes it, and this project will not impersonate an app with a shared client secret or borrow someone else's credentials. The only legitimate route to high quality is importing your own signed-in Cookie (a membership account adds the `大会员` tiers).
 - Why a download can come out six minutes long: a membership/purchase-gated bangumi episode is served to a session **without that entitlement** as a single 试看 preview fragment (the API's own `is_preview` flag — measured on `ep1994063`: a 360-second progressive MP4 with no `dash` object at all). That is not a parsing or quality problem: the same episode returns its full DASH tier list for an entitled account. The fragment is labelled `试看片段 6:01`, the reason is named on the analysis card and in the quality picker, and "Open auth browser" sits next to it; nothing pretends the fragment is the episode, and no membership gate is bypassed.
 - Quality picker: pressing download lists every stream this analysis reached (`1080P 高码率` / `4K 超高清` / `HDR 真彩` / `8K 超高清` …, with codec and official badge). The tier list is issued per account entitlement — the same link shows a different list to an anonymous and a signed-in session, and the app reports exactly that list rather than padding or inventing entries. What comes out is still a standard MP4.
+- **Download all** opens the same tier picker first, and the picked tier travels to every episode: each one is resolved right before it starts and matched by tier name + codec + protocol, then by tier name, then by the same height, then by the nearest height, then by that episode's best stream. One episode lacking your tier never stalls the queue, and its task card shows the tier that episode **actually** used.
+- Episode durations: the bangumi endpoint reports `duration` in **milliseconds** (measured on `ep1994063`: `3120000`, i.e. 52 minutes) while the UGC endpoint reports seconds. The list converts before rendering, so a 52-minute episode is no longer printed as `866:40:00`.
 - Subtitles: after a download the engine writes the chosen track next to the video as `<video name>.srt`. The candidates card lets you pick `Auto` (the episode's own default), one concrete track, or `No subtitles`; the track that `Auto` resolves to is marked `Default`, and its priority order is "the account's own language → the first non-auto-generated track → the first track". A **single download** uses the exact URL of the track you picked; **Download all** carries that track's **language** to every episode instead, because an exact URL only belongs to the episode it came from — an episode without that language falls back to its own default track. The track list is entitlement-scoped like the streams (anonymous sessions get an empty list and a sign-in hint), so subtitles need a signed-in session too — there is no switch to bypass that. On Android the `.srt` is exported alongside the video.
 
 ## How Android transcoding works
@@ -118,7 +123,7 @@ docker run --rm -p 3000:3000 -e DOWNLOAD_DIR=/app/downloads \
 ## Security & privacy
 
 - Only `http/https` targets; scheme allow-lists at both the network and parsing layers (SSRF / local-file protection).
-- Custom request headers are validated against CR/LF injection; cookies and other credentials live in memory only, never on disk.
+- Custom request headers are validated against CR/LF injection; the session (Cookie / User-Agent / Referer / Origin / custom headers) is written to the app's private storage so a sign-in survives a restart. The Android manifest sets `allowBackup="false"`, keeping credentials out of cloud backup and device transfer, and "Clear session" deletes them.
 - HLS keys and DASH segment URLs are forced to `http/https` as well.
 - TLS verification is always on: the courierust stack validates the chain, host name and validity window, trusting the built-in Mozilla root set plus a GlobalSign Root CA R1 compatibility anchor (real chains served by sites like Bilibili reference it). Managed networks add their own root through `SEGMERIS_EXTRA_CA_FILE`; nothing else is relaxed.
 - Output file names are sanitized against path traversal.

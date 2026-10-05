@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
+import 'package:segmeris/src/app/external_link.dart';
 import 'package:segmeris/src/rust/api/downloader.dart';
 
 /// How often the login attempt is checked for a scan. Bilibili's own page
@@ -165,6 +166,30 @@ class _BilibiliQrLoginDialogState extends State<_BilibiliQrLoginDialog> {
   bool get _failed =>
       _phase == _QrPhase.failed || _phase == _QrPhase.expired;
 
+  Future<void> _openInBrowser() async {
+    final l = AppLocalizations.of(context);
+    final launched = await openInSystemBrowser(_scanUrl);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          launched
+              ? l.text('auth_browser_link_copied')
+              : '${l.text('auth_browser_copy_link')}: $_scanUrl',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _copyLink() async {
+    final l = AppLocalizations.of(context);
+    final copied = await copyLink(_scanUrl);
+    if (!mounted || !copied) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(l.text('auth_browser_link_copied'))),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
@@ -247,6 +272,37 @@ class _BilibiliQrLoginDialogState extends State<_BilibiliQrLoginDialog> {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: t.textTheme.bodySmall?.copyWith(color: cs.error),
+              ),
+            ],
+            if (_scanUrl.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              // A phone with nothing else to scan from still holds a browser,
+              // and the session belongs to that account: opening the link
+              // there and confirming it signs this app in on one device.
+              Text(
+                l.text('qr_login_browser_hint'),
+                textAlign: TextAlign.center,
+                style: t.textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: [
+                  FilledButton.tonalIcon(
+                    onPressed: _openInBrowser,
+                    icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                    label: Text(l.text('qr_login_open_browser')),
+                  ),
+                  TextButton.icon(
+                    onPressed: _copyLink,
+                    icon: const Icon(Icons.link_rounded, size: 18),
+                    label: Text(l.text('auth_browser_copy_link')),
+                  ),
+                ],
               ),
             ],
           ],
