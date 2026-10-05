@@ -136,6 +136,15 @@ class AppLocalizations {
       'choose_directory': 'Choose directory',
       'reset_default': 'Use default',
       'analyze': 'Analyze source',
+      'qr_login_title': 'Sign in with Bilibili',
+      'qr_login_hint':
+          'Scan the code with the Bilibili app, then confirm on your phone. This is the official Bilibili login: the session is yours, and your account decides what can be downloaded.',
+      'qr_login_preparing': 'Preparing the QR code...',
+      'qr_login_waiting': 'Waiting for a scan...',
+      'qr_login_scanned': 'Scanned - confirm on your phone',
+      'qr_login_expired': 'The QR code expired',
+      'qr_login_failed': 'Sign in failed',
+      'qr_login_retry': 'New QR code',
       'download': 'Download selected stream',
       'quality_dialog_title': 'Choose the quality',
       'quality_dialog_hint':
@@ -204,6 +213,9 @@ class AppLocalizations {
       'subtitle_off': 'No subtitles',
       'subtitle_default': 'Default',
       'auth_browser_open': 'Open auth browser',
+      'auth_browser_load_failed': 'The page could not be loaded',
+      'auth_browser_qr_fallback':
+          'If the embedded browser stays blank, use "Sign in with Bilibili" (the QR code) instead — it needs no browser.',
       'auth_browser_title': 'Authorized session browser',
       'auth_browser_hint':
           'Open the target site here, complete login or human verification yourself, then import the current session back into Segmeris.',
@@ -281,6 +293,15 @@ class AppLocalizations {
       'choose_directory': '选择目录',
       'reset_default': '恢复默认',
       'analyze': '分析资源',
+      'qr_login_title': '登录哔哩哔哩',
+      'qr_login_hint':
+          '用哔哩哔哩客户端扫描二维码，然后在手机上确认。这是 B 站自己的登录方式：会话属于你自己，能下什么由你账号的权益决定。',
+      'qr_login_preparing': '正在准备二维码…',
+      'qr_login_waiting': '等待扫码…',
+      'qr_login_scanned': '已扫码，请在手机上确认',
+      'qr_login_expired': '二维码已过期',
+      'qr_login_failed': '登录失败',
+      'qr_login_retry': '重新生成二维码',
       'download': '下载已选核心流',
       'quality_dialog_title': '选择清晰度',
       'quality_dialog_hint':
@@ -341,6 +362,9 @@ class AppLocalizations {
       'subtitle_off': '不下载字幕',
       'subtitle_default': '默认',
       'auth_browser_open': '打开授权浏览器',
+      'auth_browser_load_failed': '网页加载失败',
+      'auth_browser_qr_fallback':
+          '如果这里的网页一直空白，请改用「登录哔哩哔哩」扫码登录——它不依赖内置浏览器。',
       'auth_browser_title': '授权会话浏览器',
       'auth_browser_hint': '在这里打开目标站点，由你自己完成登录或真人验证，然后把当前会话导回 Segmeris。',
       'auth_browser_hint_inline':
@@ -408,6 +432,15 @@ class AppLocalizations {
       'choose_directory': '選擇目錄',
       'reset_default': '還原預設',
       'analyze': '分析資源',
+      'qr_login_title': '登入嗶哩嗶哩',
+      'qr_login_hint':
+          '用嗶哩嗶哩用戶端掃描 QR Code，然後在手機上確認。這是 B 站自己的登入方式：工作階段屬於你自己，能下載什麼由你帳號的權益決定。',
+      'qr_login_preparing': '正在準備 QR Code…',
+      'qr_login_waiting': '等待掃描…',
+      'qr_login_scanned': '已掃描，請在手機上確認',
+      'qr_login_expired': 'QR Code 已過期',
+      'qr_login_failed': '登入失敗',
+      'qr_login_retry': '重新產生 QR Code',
       'download': '下載已選核心流',
       'quality_dialog_title': '選擇畫質',
       'quality_dialog_hint':
@@ -465,6 +498,9 @@ class AppLocalizations {
       'subtitle_off': '不下載字幕',
       'subtitle_default': '預設',
       'auth_browser_open': '開啟授權瀏覽器',
+      'auth_browser_load_failed': '網頁載入失敗',
+      'auth_browser_qr_fallback':
+          '如果這裡的網頁一直空白，請改用「登入嗶哩嗶哩」掃碼登入——它不依賴內建瀏覽器。',
       'auth_browser_title': '授權會話瀏覽器',
       'auth_browser_hint': '在這裡打開目標站點，由你自行完成登入或真人驗證，然後把目前會話導回 Segmeris。',
       'auth_browser_hint_inline':
@@ -503,6 +539,15 @@ class AppLocalizations {
       'choose_directory': 'フォルダーを選択',
       'reset_default': '既定に戻す',
       'analyze': 'ソースを解析',
+      'qr_login_title': 'Bilibili にログイン',
+      'qr_login_hint':
+          'Bilibili アプリで QR コードを読み取り、スマートフォンで確認してください。公式のログイン方法なので、セッションはあなた自身のもので、ダウンロードできる範囲はアカウントの権利で決まります。',
+      'qr_login_preparing': 'QR コードを準備しています…',
+      'qr_login_waiting': '読み取りを待っています…',
+      'qr_login_scanned': '読み取り済み — スマートフォンで確認してください',
+      'qr_login_expired': 'QR コードの有効期限が切れました',
+      'qr_login_failed': 'ログインに失敗しました',
+      'qr_login_retry': 'QR コードを再生成',
       'download': '選択したストリームをダウンロード',
       'quality_dialog_title': '画質を選択',
       'quality_dialog_hint':
@@ -549,6 +594,9 @@ class AppLocalizations {
       'score': '評価',
       'segments': 'セグメント',
       'auth_browser_open': '認証ブラウザーを開く',
+      'auth_browser_load_failed': 'ページを読み込めませんでした',
+      'auth_browser_qr_fallback':
+          '埋め込みブラウザーが真っ白なままなら、「Bilibili にログイン」（QR コード）を使ってください。ブラウザー不要です。',
       'auth_browser_title': '認証済みセッションブラウザー',
       'auth_browser_hint':
           'ここで対象サイトを開き、自分でログインや本人確認を完了したあと、現在のセッションを Segmeris に取り込みます。',
@@ -597,6 +645,15 @@ class AppLocalizations {
       'choose_directory': 'اختر المجلد',
       'reset_default': 'استخدم الافتراضي',
       'analyze': 'حلّل المصدر',
+      'qr_login_title': 'تسجيل الدخول إلى Bilibili',
+      'qr_login_hint':
+          'امسح الرمز بتطبيق Bilibili ثم أكّد على هاتفك. هذا تسجيل الدخول الرسمي من Bilibili، لذا تبقى الجلسة لك وحدود التنزيل يحدّدها حسابك.',
+      'qr_login_preparing': 'جارٍ تحضير رمز QR…',
+      'qr_login_waiting': 'في انتظار المسح…',
+      'qr_login_scanned': 'تم المسح — أكّد على هاتفك',
+      'qr_login_expired': 'انتهت صلاحية رمز QR',
+      'qr_login_failed': 'فشل تسجيل الدخول',
+      'qr_login_retry': 'رمز QR جديد',
       'download': 'نزّل التدفّق المحدد',
       'quality_dialog_title': 'اختر الجودة',
       'quality_dialog_hint':
@@ -644,6 +701,9 @@ class AppLocalizations {
       'score': 'التقييم',
       'segments': 'مقاطع',
       'auth_browser_open': 'افتح متصفح التفويض',
+      'auth_browser_load_failed': 'تعذّر تحميل الصفحة',
+      'auth_browser_qr_fallback':
+          'إذا بقي المتصفح المدمج فارغًا، استخدم «تسجيل الدخول إلى Bilibili» عبر رمز QR — فهو لا يحتاج متصفحًا.',
       'auth_browser_title': 'متصفح الجلسة المصرّح بها',
       'auth_browser_hint':
           'افتح الموقع المستهدف هنا، وأكمل تسجيل الدخول أو التحقق البشري بنفسك، ثم استورد الجلسة الحالية مرة أخرى إلى Segmeris.',
@@ -695,6 +755,15 @@ class AppLocalizations {
       'choose_directory': 'انتخاب پوشه',
       'reset_default': 'استفاده از پیش‌فرض',
       'analyze': 'تحلیل منبع',
+      'qr_login_title': 'ورود به Bilibili',
+      'qr_login_hint':
+          'کد را با برنامه Bilibili اسکن کنید و روی گوشی تأیید کنید. این ورود رسمی خود Bilibili است؛ نشست متعلق به شماست و دسترسی‌ها را حساب شما تعیین می‌کند.',
+      'qr_login_preparing': 'در حال آماده‌سازی کد QR…',
+      'qr_login_waiting': 'در انتظار اسکن…',
+      'qr_login_scanned': 'اسکن شد — روی گوشی تأیید کنید',
+      'qr_login_expired': 'کد QR منقضی شد',
+      'qr_login_failed': 'ورود ناموفق بود',
+      'qr_login_retry': 'کد QR جدید',
       'download': 'دانلود جریان انتخاب‌شده',
       'quality_dialog_title': 'انتخاب کیفیت',
       'quality_dialog_hint':
@@ -742,6 +811,9 @@ class AppLocalizations {
       'score': 'امتیاز',
       'segments': 'بخش',
       'auth_browser_open': 'باز کردن مرورگر احراز هویت',
+      'auth_browser_load_failed': 'بارگذاری صفحه ناموفق بود',
+      'auth_browser_qr_fallback':
+          'اگر مرورگر داخلی خالی ماند، از «ورود به Bilibili» با کد QR استفاده کنید؛ به مرورگر نیازی ندارد.',
       'auth_browser_title': 'مرورگر نشست مجاز',
       'auth_browser_hint':
           'سایت هدف را اینجا باز کنید، ورود یا تأیید انسانی را خودتان انجام دهید، سپس نشست فعلی را دوباره به Segmeris وارد کنید.',
@@ -794,6 +866,15 @@ class AppLocalizations {
       'choose_directory': 'فولڈر منتخب کریں',
       'reset_default': 'ڈیفالٹ استعمال کریں',
       'analyze': 'ماخذ کا تجزیہ کریں',
+      'qr_login_title': 'Bilibili میں سائن اِن کریں',
+      'qr_login_hint':
+          'Bilibili ایپ سے کوڈ اسکین کریں پھر فون پر تصدیق کریں۔ یہ Bilibili کی اپنی لاگ اِن ہے؛ سیشن آپ کا ہے اور دسترس آپ کے اکاؤنٹ سے طے ہوتی ہے۔',
+      'qr_login_preparing': 'QR کوڈ تیار ہو رہا ہے…',
+      'qr_login_waiting': 'اسکین کا انتظار…',
+      'qr_login_scanned': 'اسکین ہو گیا — فون پر تصدیق کریں',
+      'qr_login_expired': 'QR کوڈ کی مدت ختم',
+      'qr_login_failed': 'سائن اِن ناکام',
+      'qr_login_retry': 'نیا QR کوڈ',
       'download': 'منتخب اسٹریم ڈاؤن لوڈ کریں',
       'quality_dialog_title': 'معیار منتخب کریں',
       'quality_dialog_hint':
@@ -841,6 +922,9 @@ class AppLocalizations {
       'score': 'اسکور',
       'segments': 'حصے',
       'auth_browser_open': 'تصدیقی براؤزر کھولیں',
+      'auth_browser_load_failed': 'صفحہ لوڈ نہیں ہو سکا',
+      'auth_browser_qr_fallback':
+          'اگر اندرونی براؤزر خالی رہے تو «Bilibili میں سائن اِن کریں» (QR کوڈ) استعمال کریں — اسے براؤزر کی ضرورت نہیں۔',
       'auth_browser_title': 'مجاز سیشن براؤزر',
       'auth_browser_hint':
           'ہدف سائٹ یہاں کھولیں، لاگ اِن یا انسانی تصدیق خود مکمل کریں، پھر موجودہ سیشن واپس Segmeris میں درآمد کریں۔',
@@ -890,6 +974,18 @@ class AppLocalizations {
       'choose_directory': 'Elegir carpeta',
       'reset_default': 'Usar predeterminado',
       'analyze': 'Analizar',
+      'auth_browser_load_failed': 'No se pudo cargar la página',
+      'auth_browser_qr_fallback':
+          'Si el navegador integrado se queda en blanco, usa «Iniciar sesión en Bilibili» (el código QR): no necesita navegador.',
+      'qr_login_title': 'Iniciar sesión en Bilibili',
+      'qr_login_hint':
+          'Escanea el código con la app de Bilibili y confirma en el teléfono. Es el inicio de sesión oficial de Bilibili: la sesión es tuya y tus permisos deciden qué se puede descargar.',
+      'qr_login_preparing': 'Preparando el código QR...',
+      'qr_login_waiting': 'Esperando el escaneo...',
+      'qr_login_scanned': 'Escaneado: confirma en tu teléfono',
+      'qr_login_expired': 'El código QR caducó',
+      'qr_login_failed': 'No se pudo iniciar sesión',
+      'qr_login_retry': 'Nuevo código QR',
       'download': 'Descargar flujo seleccionado',
       'quality_dialog_title': 'Elegir la calidad',
       'quality_dialog_hint':
@@ -951,6 +1047,18 @@ class AppLocalizations {
       'choose_directory': 'Выбрать папку',
       'reset_default': 'По умолчанию',
       'analyze': 'Анализировать',
+      'auth_browser_load_failed': 'Не удалось загрузить страницу',
+      'auth_browser_qr_fallback':
+          'Если встроенный браузер остаётся пустым, используйте «Вход в Bilibili» по QR-коду — браузер не нужен.',
+      'qr_login_title': 'Вход в Bilibili',
+      'qr_login_hint':
+          'Отсканируйте код в приложении Bilibili и подтвердите на телефоне. Это официальный вход Bilibili: сессия принадлежит вам, а доступ определяет ваш аккаунт.',
+      'qr_login_preparing': 'Подготовка QR-кода…',
+      'qr_login_waiting': 'Ожидание сканирования…',
+      'qr_login_scanned': 'Отсканировано — подтвердите на телефоне',
+      'qr_login_expired': 'Срок действия QR-кода истёк',
+      'qr_login_failed': 'Не удалось войти',
+      'qr_login_retry': 'Новый QR-код',
       'download': 'Скачать выбранный поток',
       'quality_dialog_title': 'Выбор качества',
       'quality_dialog_hint':
@@ -1011,6 +1119,18 @@ class AppLocalizations {
       'choose_directory': 'फ़ोल्डर चुनें',
       'reset_default': 'डिफ़ॉल्ट उपयोग करें',
       'analyze': 'विश्लेषण करें',
+      'auth_browser_load_failed': 'पेज लोड नहीं हो सका',
+      'auth_browser_qr_fallback':
+          'अगर अंदरूनी ब्राउज़र खाली रहे तो «Bilibili में साइन इन करें» (QR कोड) इस्तेमाल करें — इसे ब्राउज़र की ज़रूरत नहीं।',
+      'qr_login_title': 'Bilibili में साइन इन करें',
+      'qr_login_hint':
+          'Bilibili ऐप से कोड स्कैन करें, फिर फ़ोन पर पुष्टि करें। यह Bilibili का ही लॉगिन है: सत्र आपका है और क्या डाउनलोड होगा यह आपका खाता तय करता है।',
+      'qr_login_preparing': 'QR कोड तैयार हो रहा है…',
+      'qr_login_waiting': 'स्कैन की प्रतीक्षा…',
+      'qr_login_scanned': 'स्कैन हो गया — फ़ोन पर पुष्टि करें',
+      'qr_login_expired': 'QR कोड की अवधि समाप्त',
+      'qr_login_failed': 'साइन इन विफल',
+      'qr_login_retry': 'नया QR कोड',
       'download': 'चयनित स्ट्रीम डाउनलोड करें',
       'quality_dialog_title': 'गुणवत्ता चुनें',
       'quality_dialog_hint':
@@ -1072,6 +1192,15 @@ class AppLocalizations {
       'choose_directory': 'Choisir un dossier',
       'reset_default': 'Utiliser l’emplacement par défaut',
       'analyze': 'Analyser la source',
+      'qr_login_title': 'Se connecter à Bilibili',
+      'qr_login_hint':
+          'Scannez le code avec l\'application Bilibili, puis confirmez sur votre téléphone. C\'est la connexion officielle de Bilibili : la session est la vôtre et vos droits décident de ce qui peut être téléchargé.',
+      'qr_login_preparing': 'Préparation du QR code...',
+      'qr_login_waiting': 'En attente du scan...',
+      'qr_login_scanned': 'Scanné — confirmez sur votre téléphone',
+      'qr_login_expired': 'Le QR code a expiré',
+      'qr_login_failed': 'Échec de la connexion',
+      'qr_login_retry': 'Nouveau QR code',
       'download': 'Télécharger le flux sélectionné',
       'quality_dialog_title': 'Choisir la qualité',
       'quality_dialog_hint':
@@ -1119,6 +1248,9 @@ class AppLocalizations {
       'score': 'Score',
       'segments': 'segments',
       'auth_browser_open': 'Ouvrir le navigateur d’autorisation',
+      'auth_browser_load_failed': 'La page n\'a pas pu être chargée',
+      'auth_browser_qr_fallback':
+          'Si le navigateur intégré reste vide, utilisez « Se connecter à Bilibili » (le QR code) : aucun navigateur requis.',
       'auth_browser_title': 'Navigateur de session autorisée',
       'auth_browser_hint':
           'Ouvrez le site cible ici, terminez vous-même la connexion ou la vérification humaine, puis réimportez la session actuelle dans Segmeris.',
@@ -1172,6 +1304,15 @@ class AppLocalizations {
       'choose_directory': 'Ordner wählen',
       'reset_default': 'Standard verwenden',
       'analyze': 'Analysieren',
+      'qr_login_title': 'Bei Bilibili anmelden',
+      'qr_login_hint':
+          'Scanne den Code mit der Bilibili-App und bestätige ihn am Telefon. Das ist Bilibilis eigener Login: die Sitzung gehört dir, und was geladen werden kann, entscheidet dein Konto.',
+      'qr_login_preparing': 'QR-Code wird vorbereitet…',
+      'qr_login_waiting': 'Warte auf Scan…',
+      'qr_login_scanned': 'Gescannt – am Telefon bestätigen',
+      'qr_login_expired': 'Der QR-Code ist abgelaufen',
+      'qr_login_failed': 'Anmeldung fehlgeschlagen',
+      'qr_login_retry': 'Neuer QR-Code',
       'download': 'Ausgewählten Stream laden',
       'quality_dialog_title': 'Qualität wählen',
       'quality_dialog_hint':
@@ -1219,6 +1360,9 @@ class AppLocalizations {
       'score': 'Bewertung',
       'segments': 'Segmente',
       'auth_browser_open': 'Autorisierungsbrowser öffnen',
+      'auth_browser_load_failed': 'Die Seite konnte nicht geladen werden',
+      'auth_browser_qr_fallback':
+          'Bleibt der eingebettete Browser leer, nutze „Bei Bilibili anmelden“ per QR-Code – dafür ist kein Browser nötig.',
       'auth_browser_title': 'Browser für autorisierte Sitzungen',
       'auth_browser_hint':
           'Öffne die Zielseite hier, erledige Anmeldung oder menschliche Verifikation selbst und importiere danach die aktuelle Sitzung zurück in Segmeris.',
@@ -1271,6 +1415,18 @@ class AppLocalizations {
       'choose_directory': 'Escolher pasta',
       'reset_default': 'Usar padrão',
       'analyze': 'Analisar',
+      'auth_browser_load_failed': 'Não foi possível carregar a página',
+      'auth_browser_qr_fallback':
+          'Se o navegador integrado ficar em branco, use «Entrar no Bilibili» (o código QR): não precisa de navegador.',
+      'qr_login_title': 'Entrar no Bilibili',
+      'qr_login_hint':
+          'Escaneie o código com o app Bilibili e confirme no telefone. É o login oficial do Bilibili: a sessão é sua e o que pode ser baixado depende da sua conta.',
+      'qr_login_preparing': 'Preparando o código QR...',
+      'qr_login_waiting': 'Aguardando leitura...',
+      'qr_login_scanned': 'Lido — confirme no telefone',
+      'qr_login_expired': 'O código QR expirou',
+      'qr_login_failed': 'Falha ao entrar',
+      'qr_login_retry': 'Novo código QR',
       'download': 'Baixar fluxo selecionado',
       'quality_dialog_title': 'Escolher a qualidade',
       'quality_dialog_hint':
@@ -1332,6 +1488,18 @@ class AppLocalizations {
       'choose_directory': 'Klasör seç',
       'reset_default': 'Varsayılanı kullan',
       'analyze': 'Analiz et',
+      'auth_browser_load_failed': 'Sayfa yüklenemedi',
+      'auth_browser_qr_fallback':
+          'Gömülü tarayıcı boş kalırsa «Bilibili\'ye giriş yap» (QR kod) seçeneğini kullanın — tarayıcı gerektirmez.',
+      'qr_login_title': 'Bilibili\'ye giriş yap',
+      'qr_login_hint':
+          'Kodu Bilibili uygulamasıyla tarayın ve telefonda onaylayın. Bu Bilibili\'nin kendi girişidir: oturum size aittir ve neyin indirileceğini hesabınız belirler.',
+      'qr_login_preparing': 'QR kod hazırlanıyor…',
+      'qr_login_waiting': 'Tarama bekleniyor…',
+      'qr_login_scanned': 'Tarandı — telefonda onaylayın',
+      'qr_login_expired': 'QR kodun süresi doldu',
+      'qr_login_failed': 'Giriş başarısız',
+      'qr_login_retry': 'Yeni QR kod',
       'download': 'Seçili akışı indir',
       'quality_dialog_title': 'Kalite seç',
       'quality_dialog_hint':
@@ -1392,6 +1560,18 @@ class AppLocalizations {
       'choose_directory': 'Chọn thư mục',
       'reset_default': 'Dùng mặc định',
       'analyze': 'Phân tích',
+      'auth_browser_load_failed': 'Không tải được trang',
+      'auth_browser_qr_fallback':
+          'Nếu trình duyệt nhúng vẫn trắng, hãy dùng «Đăng nhập Bilibili» (mã QR) — không cần trình duyệt.',
+      'qr_login_title': 'Đăng nhập Bilibili',
+      'qr_login_hint':
+          'Quét mã bằng ứng dụng Bilibili rồi xác nhận trên điện thoại. Đây là cách đăng nhập chính thức của Bilibili: phiên thuộc về bạn và tài khoản quyết định nội dung tải được.',
+      'qr_login_preparing': 'Đang chuẩn bị mã QR…',
+      'qr_login_waiting': 'Đang chờ quét…',
+      'qr_login_scanned': 'Đã quét — xác nhận trên điện thoại',
+      'qr_login_expired': 'Mã QR đã hết hạn',
+      'qr_login_failed': 'Đăng nhập thất bại',
+      'qr_login_retry': 'Tạo mã QR mới',
       'download': 'Tải luồng đã chọn',
       'quality_dialog_title': 'Chọn chất lượng',
       'quality_dialog_hint':
@@ -1451,6 +1631,18 @@ class AppLocalizations {
       'choose_directory': 'Pilih folder',
       'reset_default': 'Pakai bawaan',
       'analyze': 'Analisis',
+      'auth_browser_load_failed': 'Halaman gagal dimuat',
+      'auth_browser_qr_fallback':
+          'Jika browser tertanam tetap kosong, gunakan «Masuk ke Bilibili» (kode QR) — tidak perlu browser.',
+      'qr_login_title': 'Masuk ke Bilibili',
+      'qr_login_hint':
+          'Pindai kode dengan aplikasi Bilibili lalu konfirmasi di ponsel. Ini login resmi Bilibili: sesinya milik Anda dan akun Anda yang menentukan apa yang bisa diunduh.',
+      'qr_login_preparing': 'Menyiapkan kode QR…',
+      'qr_login_waiting': 'Menunggu pemindaian…',
+      'qr_login_scanned': 'Terpindai — konfirmasi di ponsel',
+      'qr_login_expired': 'Kode QR kedaluwarsa',
+      'qr_login_failed': 'Gagal masuk',
+      'qr_login_retry': 'Kode QR baru',
       'download': 'Unduh aliran terpilih',
       'quality_dialog_title': 'Pilih kualitas',
       'quality_dialog_hint':

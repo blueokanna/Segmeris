@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `android_hardware_transcode`, `augment_youtube_candidates_with_ytdlp`, `base_urls_of`, `canonical_site_context`, `check_ffmpeg`, `checksum_for_release_asset`, `cleanup_segment_temp_files`, `cleanup_temp_files`, `clear_resumable_partial`, `command_with_timeout`, `command`, `concat_list_for_input`, `container_from_url`, `convert_to_mp4`, `create_http_client_for_context`, `create_resume_temp_dir`, `decrypt_hls_resource`, `deliver_pipeline_outcome`, `detect_acceleration`, `detect_access_challenge`, `direct_media_candidate`, `download_and_decrypt_segment`, `download_and_merge_once`, `download_and_merge`, `download_hls_resource`, `download_media_with_context_core`, `download_playlist_with_url`, `download_playlist`, `download_with_retries`, `emit_progress`, `emit_terminal_error`, `encoder`, `ensure_output_file_ready`, `external_command_works`, `failed_exit_status`, `ffmpeg_command_works`, `ffmpeg_transcode_timeout`, `find_ytdlp_output`, `finish`, `has_mp4_signature`, `has_resume_validator`, `hash_file`, `hash_hls_field`, `hash_hls_resource_request`, `hls2mp4_core`, `hls_response_bytes`, `hls_segment_cache_key`, `hls_segment_metadata_path`, `human_bytes`, `if_range_value`, `infer_title_from_url`, `init_runtime_logging`, `inspect_hls_metadata`, `inspect_media_with_context_sync`, `ios_hardware_merge_segments`, `ios_hardware_transcode`, `is_bilibili_domain`, `is_complete_unsatisfied_range`, `is_hls_like`, `is_mp4_file`, `is_mpeg_ts_file`, `is_safe_ytdlp_header_name`, `is_safe_ytdlp_header_value`, `is_supported_media_like`, `is_valid_header_value_byte`, `is_valid_hls_segment_cache`, `is_youtube_domain`, `join_manifest_url`, `label`, `looks_like_mpeg_ts`, `media`, `merge_media_streams`, `mime_from_extension`, `mime_from_urls`, `new`, `noop_progress_reporter`, `normalize_fallback_urls`, `normalize_source_url`, `official_ytdlp_asset_name`, `parse_content_range`, `parse_ffmpeg_duration`, `parse_ytdlp_progress`, `playlist_base_url`, `prepare_output_path`, `probe_ffmpeg_encoder`, `probe_media_duration`, `protocol_from_url`, `provision_ytdlp_command`, `push_accel_encode_args`, `push`, `range_response_has_safe_resume_identity`, `read_resumable_metadata`, `replace_download_output`, `report_hls_segment_completed`, `request_headers`, `resolve_dash_download_plan_from_manifest`, `resolve_dash_download_plan`, `resolve_dash_representation_url`, `resolve_ffmpeg_path`, `resolve_hls_byte_range`, `resolve_ytdlp_command`, `response_header`, `resumable_metadata_from_response`, `resumable_metadata_matches_response`, `resumable_metadata_path`, `resumable_partial_path`, `retry_backoff_delay`, `run_dash_pipeline`, `run_ffmpeg_conversion`, `run_ffmpeg_merge`, `run_ffmpeg`, `run_hls_pipeline`, `run_ytdlp_site_pipeline`, `score_candidate`, `score_candidates`, `select_best_hls_variant`, `select_hls_audio_rendition`, `select_transcoder_backend`, `should_auto_inspect_download_target`, `sink_progress_reporter`, `staged_progress_reporter`, `stream_media_response_to_file`, `to_choice`, `transcode_input_to_output`, `validate_header_value`, `validate_output_duration`, `write_hls_segment_cache`, `write_resumable_metadata`, `write_subtitle_sidecar`, `youtube_itag_from_media_url`, `ytdlp_cache_path`, `ytdlp_error_tail`
+// These functions are ignored because they are not marked as `pub`: `android_hardware_transcode`, `augment_youtube_candidates_with_ytdlp`, `base_urls_of`, `canonical_site_context`, `check_ffmpeg`, `checksum_for_release_asset`, `cleanup_segment_temp_files`, `cleanup_temp_files`, `clear_resumable_partial`, `command_with_timeout`, `command`, `concat_list_for_input`, `container_from_url`, `convert_to_mp4`, `create_http_client_for_context`, `create_resume_temp_dir`, `decrypt_hls_resource`, `deliver_pipeline_outcome`, `detect_acceleration`, `detect_access_challenge`, `direct_media_candidate`, `download_and_decrypt_segment`, `download_and_merge_once`, `download_and_merge`, `download_hls_resource`, `download_media_with_context_core`, `download_playlist_with_url`, `download_playlist`, `download_with_fallbacks`, `download_with_retries`, `emit_progress`, `emit_terminal_error`, `encoder`, `ensure_output_file_ready`, `external_command_works`, `failed_exit_status`, `ffmpeg_command_works`, `ffmpeg_transcode_timeout`, `find_ytdlp_output`, `finish`, `has_mp4_signature`, `has_resume_validator`, `hash_file`, `hash_hls_field`, `hash_hls_resource_request`, `hls2mp4_core`, `hls_response_bytes`, `hls_segment_cache_key`, `hls_segment_metadata_path`, `human_bytes`, `if_range_value`, `infer_title_from_url`, `init_runtime_logging`, `inspect_hls_metadata`, `inspect_media_with_context_sync`, `ios_hardware_merge_segments`, `ios_hardware_transcode`, `is_bilibili_domain`, `is_complete_unsatisfied_range`, `is_hls_like`, `is_mp4_file`, `is_mpeg_ts_file`, `is_safe_ytdlp_header_name`, `is_safe_ytdlp_header_value`, `is_supported_media_like`, `is_valid_header_value_byte`, `is_valid_hls_segment_cache`, `is_youtube_domain`, `join_manifest_url`, `label`, `looks_like_mpeg_ts`, `media`, `merge_media_streams`, `mime_from_extension`, `mime_from_urls`, `new`, `noop_progress_reporter`, `normalize_fallback_urls`, `normalize_source_url`, `official_ytdlp_asset_name`, `parse_content_range`, `parse_ffmpeg_duration`, `parse_ytdlp_progress`, `playlist_base_url`, `prepare_output_path`, `probe_ffmpeg_encoder`, `probe_media_duration`, `protocol_from_url`, `provision_ytdlp_command`, `push_accel_encode_args`, `push`, `range_response_has_safe_resume_identity`, `read_resumable_metadata`, `replace_download_output`, `report_hls_segment_completed`, `request_headers`, `resolve_dash_download_plan_from_manifest`, `resolve_dash_download_plan`, `resolve_dash_representation_url`, `resolve_ffmpeg_path`, `resolve_hls_byte_range`, `resolve_ytdlp_command`, `response_header`, `resumable_metadata_from_response`, `resumable_metadata_matches_response`, `resumable_metadata_path`, `resumable_partial_path`, `retry_backoff_delay`, `run_dash_pipeline`, `run_ffmpeg_conversion`, `run_ffmpeg_merge`, `run_ffmpeg`, `run_hls_pipeline`, `run_ytdlp_site_pipeline`, `safe_media_url_label`, `score_candidate`, `score_candidates`, `select_best_hls_variant`, `select_hls_audio_rendition`, `select_transcoder_backend`, `should_auto_inspect_download_target`, `sink_progress_reporter`, `staged_progress_reporter`, `stream_media_response_to_file`, `to_choice`, `transcode_input_to_output`, `validate_header_value`, `validate_output_duration`, `write_hls_segment_cache`, `write_resumable_metadata`, `write_subtitle_sidecar`, `youtube_itag_from_media_url`, `ytdlp_cache_path`, `ytdlp_error_tail`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AccelType`, `CandidateCollector`, `CandidateSpec`, `ContentRange`, `DashDownloadPlan`, `DashRepresentationCandidate`, `ExternalCommandSpec`, `HlsResourceRequest`, `ResumableMetadata`, `SegmentInput`, `SubtitleChoice`, `TranscoderKind`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from_str`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`, `default`
@@ -36,6 +36,23 @@ Future<MediaInspectionResult> inspectMediaWithContext(
     RustLib.instance.api.crateApiDownloaderInspectMediaWithContext(
         url: url, requestContext: requestContext);
 
+/// Start Bilibili's own web QR-code login.
+///
+/// The session this produces is the account holder's, obtained the same way
+/// the website obtains it — nothing is derived, shared or borrowed.
+Future<BilibiliQrLogin> bilibiliQrLoginStart(
+        {required RequestContext requestContext}) =>
+    RustLib.instance.api
+        .crateApiDownloaderBilibiliQrLoginStart(requestContext: requestContext);
+
+/// Poll one QR-code login attempt.
+Future<BilibiliQrLoginPoll> bilibiliQrLoginPoll(
+        {required String key,
+        required String cookie,
+        required RequestContext requestContext}) =>
+    RustLib.instance.api.crateApiDownloaderBilibiliQrLoginPoll(
+        key: key, cookie: cookie, requestContext: requestContext);
+
 Stream<ProgressUpdate> downloadMediaWithContext(
         {required String pageUrl,
         required String mediaUrl,
@@ -54,6 +71,64 @@ Stream<ProgressUpdate> downloadMediaWithContext(
         output: output,
         options: options,
         requestContext: requestContext);
+
+/// A QR-code login attempt the UI can render and poll.
+///
+/// `url` is what to draw as a QR code; `key` and `cookie` must be handed back
+/// to [`bilibili_qr_login_poll`] unchanged, so the endpoint sees one
+/// continuous client for the whole attempt.
+class BilibiliQrLogin {
+  final String url;
+  final String key;
+  final String cookie;
+
+  const BilibiliQrLogin({
+    required this.url,
+    required this.key,
+    required this.cookie,
+  });
+
+  @override
+  int get hashCode => url.hashCode ^ key.hashCode ^ cookie.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BilibiliQrLogin &&
+          runtimeType == other.runtimeType &&
+          url == other.url &&
+          key == other.key &&
+          cookie == other.cookie;
+}
+
+/// One poll of a QR-code login attempt.
+///
+/// `state` is one of `waiting`, `scanned`, `confirmed`, `expired`, `failed`;
+/// `cookie` carries the session on `confirmed` and is empty otherwise, and
+/// `message` is the endpoint's own wording, shown as-is when it has one.
+class BilibiliQrLoginPoll {
+  final String state;
+  final String cookie;
+  final String message;
+
+  const BilibiliQrLoginPoll({
+    required this.state,
+    required this.cookie,
+    required this.message,
+  });
+
+  @override
+  int get hashCode => state.hashCode ^ cookie.hashCode ^ message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BilibiliQrLoginPoll &&
+          runtimeType == other.runtimeType &&
+          state == other.state &&
+          cookie == other.cookie &&
+          message == other.message;
+}
 
 /// Transport options of one download: everything that is not part of the
 /// media identity, and therefore not part of the resume plan.

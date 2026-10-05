@@ -14,6 +14,7 @@ class HomeSettingsSheet extends StatefulWidget {
     required this.settings,
     required this.onSettingsChanged,
     required this.onOpenBrowser,
+    required this.onQrLogin,
     required this.onClearContext,
     required this.authContextListenable,
     required this.authContextBadges,
@@ -30,6 +31,7 @@ class HomeSettingsSheet extends StatefulWidget {
   final AppSettings settings;
   final ValueChanged<AppSettings> onSettingsChanged;
   final Future<void> Function() onOpenBrowser;
+  final Future<void> Function() onQrLogin;
   final VoidCallback onClearContext;
   final Listenable authContextListenable;
   final List<String> Function() authContextBadges;
@@ -328,6 +330,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                         )
                     : null,
                 onOpenBrowser: widget.onOpenBrowser,
+                onQrLogin: widget.onQrLogin,
                 onClearContext: widget.onClearContext,
                 authContextListenable: widget.authContextListenable,
                 authContextBadges: widget.authContextBadges,

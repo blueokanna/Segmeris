@@ -23,6 +23,7 @@ dependencies:
   http: ^1.2.0
   permission_handler: ^13.0.1
   shared_preferences: ^2.5.3
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:

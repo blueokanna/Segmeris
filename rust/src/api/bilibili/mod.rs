@@ -29,6 +29,7 @@
 //! instead of silently capping the download.
 
 mod api;
+pub(crate) mod login;
 mod stream;
 mod subtitle;
 mod url;

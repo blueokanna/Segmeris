@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
+import 'package:segmeris/src/app/bilibili_qr_login.dart';
 import 'package:segmeris/src/rust/api/downloader.dart';
 
 class AuthSessionBundle {
@@ -41,6 +42,36 @@ class _AuthBrowserPageState extends State<AuthBrowserPage> {
   bool _canGoBack = false;
   bool _canGoForward = false;
   double _progress = 0;
+
+  /// Why the page could not be shown, when the platform view reports one.
+  /// Without this a failed load and a blank WebView look identical, which is
+  /// exactly the state a user cannot act on.
+  String _loadError = '';
+
+  /// Sign in with Bilibili's own QR flow and hand the session straight back.
+  ///
+  /// Kept in this page as well as on the home screen because the embedded
+  /// browser is a platform view: where a device fails to render it, this is
+  /// the way out without leaving the dialog.
+  Future<void> _qrLogin() async {
+    final cookie = await showBilibiliQrLoginDialog(
+      context,
+      requestContext: widget.seedContext,
+    );
+    if (!mounted || cookie == null || cookie.isEmpty) {
+      return;
+    }
+    final page = _currentUrl.isNotEmpty ? _currentUrl : widget.initialUrl;
+    Navigator.of(context).pop(
+      AuthSessionBundle(
+        url: page,
+        userAgent: widget.seedContext.userAgent,
+        referer: page,
+        origin: _originFromUrl(page),
+        cookie: cookie,
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -158,6 +189,13 @@ class _AuthBrowserPageState extends State<AuthBrowserPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(l.text('auth_browser_title')),
+        actions: [
+          IconButton(
+            tooltip: l.text('qr_login_title'),
+            onPressed: _qrLogin,
+            icon: const Icon(Icons.qr_code_2_rounded),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(3),
           child: _loading
@@ -236,6 +274,37 @@ class _AuthBrowserPageState extends State<AuthBrowserPage> {
               ],
             ),
           ),
+          if (_loadError.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${l.text('auth_browser_load_failed')}: $_loadError',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onErrorContainer,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      l.text('auth_browser_qr_fallback'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onErrorContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           Expanded(
             child: InAppWebView(
               initialUrlRequest: URLRequest(url: WebUri(widget.initialUrl)),
@@ -286,8 +355,28 @@ class _AuthBrowserPageState extends State<AuthBrowserPage> {
                   _loading = false;
                   _currentUrl = url?.toString() ?? _currentUrl;
                   _progress = 1;
+                  _loadError = '';
                 });
                 await _syncNavigationState();
+              },
+              onReceivedError: (controller, request, error) {
+                if (!mounted) return;
+                // Only main-frame failures blank the page; sub-resource errors
+                // are the site's business, not the user's.
+                if (request.isForMainFrame != true) return;
+                setState(() {
+                  _loading = false;
+                  _loadError = '${error.description} (${request.url})';
+                });
+              },
+              onReceivedHttpError: (controller, request, response) {
+                if (!mounted || request.isForMainFrame != true) return;
+                final status = response.statusCode;
+                if (status == null || status < 400) return;
+                setState(() {
+                  _loading = false;
+                  _loadError = 'HTTP $status (${request.url})';
+                });
               },
               onProgressChanged: (controller, progress) {
                 if (!mounted) return;

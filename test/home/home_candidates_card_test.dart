@@ -104,6 +104,7 @@ void main() {
           },
           onSubtitlePreferenceChanged: (_) {},
           onOpenAuthBrowser: () {},
+          onQrLogin: () {},
         ),
       ),
     );
@@ -175,6 +176,7 @@ void main() {
           onCandidateSelected: (_) {},
           onSubtitlePreferenceChanged: (_) {},
           onOpenAuthBrowser: () {},
+          onQrLogin: () {},
         ),
       ),
     );
@@ -209,6 +211,7 @@ void main() {
             picked = preference;
           },
           onOpenAuthBrowser: () {},
+          onQrLogin: () {},
         ),
       ),
     );

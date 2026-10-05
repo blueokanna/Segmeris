@@ -32,6 +32,7 @@ Future<MediaCandidate?> showDownloadOptionsDialog(
   required MediaInspectionResult inspection,
   MediaCandidate? initial,
   VoidCallback? onOpenAuthBrowser,
+  VoidCallback? onQrLogin,
 }) {
   if (inspection.candidates.isEmpty) {
     return Future<MediaCandidate?>.value();
@@ -42,6 +43,7 @@ Future<MediaCandidate?> showDownloadOptionsDialog(
       inspection: inspection,
       initial: initial,
       onOpenAuthBrowser: onOpenAuthBrowser,
+      onQrLogin: onQrLogin,
     ),
   );
 }
@@ -51,11 +53,13 @@ class _DownloadOptionsDialog extends StatefulWidget {
     required this.inspection,
     required this.initial,
     required this.onOpenAuthBrowser,
+    required this.onQrLogin,
   });
 
   final MediaInspectionResult inspection;
   final MediaCandidate? initial;
   final VoidCallback? onOpenAuthBrowser;
+  final VoidCallback? onQrLogin;
 
   @override
   State<_DownloadOptionsDialog> createState() => _DownloadOptionsDialogState();
@@ -135,17 +139,33 @@ class _DownloadOptionsDialogState extends State<_DownloadOptionsDialog> {
                   (warning) => warning.contains(previewOnlyWarningCode),
                 ),
               ),
-              if (widget.onOpenAuthBrowser != null)
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: TextButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      widget.onOpenAuthBrowser!();
-                    },
-                    icon: const Icon(Icons.login_rounded, size: 18),
-                    label: Text(l.text('auth_browser_open')),
-                  ),
+              if (widget.onOpenAuthBrowser != null || widget.onQrLogin != null)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    // The QR route needs no embedded browser, so it is the
+                    // one offered first; the browser stays for sites whose
+                    // login is not Bilibili.
+                    if (widget.onQrLogin != null)
+                      FilledButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          widget.onQrLogin!();
+                        },
+                        icon: const Icon(Icons.qr_code_2_rounded, size: 18),
+                        label: Text(l.text('qr_login_title')),
+                      ),
+                    if (widget.onOpenAuthBrowser != null)
+                      TextButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          widget.onOpenAuthBrowser!();
+                        },
+                        icon: const Icon(Icons.open_in_browser_rounded, size: 18),
+                        label: Text(l.text('auth_browser_open')),
+                      ),
+                  ],
                 ),
             ],
           ],

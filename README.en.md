@@ -16,6 +16,7 @@ It focuses on HLS / M3U8: fetch the playlist, download segments concurrently, de
 - **Remux / transcode** — FFmpeg on desktop (auto-detects NVENC / AMF / Intel QSV / VAAPI / VideoToolbox); Android uses the system `MediaCodec` hardware codecs, no FFmpeg required. When the device's MP4 muxer cannot package a codec directly (AV1 / HEVC-only tiers, older systems), the video track is automatically re-encoded to AVC with the hardware encoder and muxed with the untouched audio instead of failing.
 - **Multiple concurrent tasks** — while a download runs you can edit the URL or file name and start another independent task.
 - **Authorized sessions** — for login-gated sites, provide Cookie / User-Agent / Referer / Origin / custom headers manually or via the built-in authorization browser. It does not bypass Cloudflare, CAPTCHAs, DRM, anti-leech signatures, or rate limits — those shouldn't be bypassed.
+- **Bilibili QR sign-in** — log in through Bilibili's own QR flow (`passport-login/web/qrcode`), with no embedded browser involved: scan, confirm on your phone, and the app holds your account's session. That is the legitimate route to full episodes and high tiers — afterwards the server issues the tier list your account is entitled to (a membership account adds the `大会员` tiers), and the output is still a standard MP4. Nothing is cracked and nobody else's credentials are used.
 
 ## Layout
 

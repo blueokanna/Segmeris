@@ -10,6 +10,7 @@ class AuthorizationSettingsPanel extends StatelessWidget {
     required this.autoOpenAuthBrowser,
     required this.onAutoOpenChanged,
     required this.onOpenBrowser,
+    required this.onQrLogin,
     required this.onClearContext,
     required this.authContextListenable,
     required this.authContextBadges,
@@ -25,6 +26,7 @@ class AuthorizationSettingsPanel extends StatelessWidget {
   final bool autoOpenAuthBrowser;
   final ValueChanged<bool>? onAutoOpenChanged;
   final Future<void> Function()? onOpenBrowser;
+  final Future<void> Function()? onQrLogin;
   final VoidCallback? onClearContext;
   final Listenable authContextListenable;
   final List<String> Function() authContextBadges;
@@ -154,6 +156,16 @@ class AuthorizationSettingsPanel extends StatelessWidget {
           LayoutBuilder(
             builder: (context, constraints) {
               final compact = constraints.maxWidth < 440;
+              // The QR flow is the one that always works: it needs no
+              // embedded browser, so it leads, and the browser stays next to
+              // it for sites whose login is not Bilibili.
+              final qrButton = FilledButton.icon(
+                onPressed: enabled && onQrLogin != null
+                    ? () async => onQrLogin!()
+                    : null,
+                icon: const Icon(Icons.qr_code_2_rounded),
+                label: Text(l.text('qr_login_title')),
+              );
               final browserButton = FilledButton.tonalIcon(
                 onPressed: enabled && onOpenBrowser != null
                     ? () async => onOpenBrowser!()
@@ -172,6 +184,8 @@ class AuthorizationSettingsPanel extends StatelessWidget {
               if (compact) {
                 return Column(
                   children: [
+                    SizedBox(width: double.infinity, child: qrButton),
+                    const SizedBox(height: 12),
                     SizedBox(width: double.infinity, child: browserButton),
                     const SizedBox(height: 12),
                     SizedBox(width: double.infinity, child: clearButton),
@@ -181,6 +195,8 @@ class AuthorizationSettingsPanel extends StatelessWidget {
 
               return Row(
                 children: [
+                  Expanded(child: qrButton),
+                  const SizedBox(width: 14),
                   Expanded(child: browserButton),
                   const SizedBox(width: 14),
                   Expanded(child: clearButton),

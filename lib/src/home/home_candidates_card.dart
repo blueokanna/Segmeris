@@ -17,6 +17,7 @@ class HomeCandidatesCard extends StatelessWidget {
     required this.onCandidateSelected,
     required this.onSubtitlePreferenceChanged,
     required this.onOpenAuthBrowser,
+    required this.onQrLogin,
   });
 
   final MediaInspectionResult? inspection;
@@ -28,6 +29,7 @@ class HomeCandidatesCard extends StatelessWidget {
   final ValueChanged<MediaCandidate> onCandidateSelected;
   final ValueChanged<SubtitlePreference> onSubtitlePreferenceChanged;
   final VoidCallback onOpenAuthBrowser;
+  final VoidCallback onQrLogin;
 
   @override
   Widget build(BuildContext context) {
@@ -169,11 +171,22 @@ class HomeCandidatesCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    FilledButton.tonalIcon(
-                      onPressed:
-                          running || analyzing ? null : onOpenAuthBrowser,
-                      icon: const Icon(Icons.open_in_browser_rounded),
-                      label: Text(l.text('auth_browser_open')),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: running || analyzing ? null : onQrLogin,
+                          icon: const Icon(Icons.qr_code_2_rounded),
+                          label: Text(l.text('qr_login_title')),
+                        ),
+                        FilledButton.tonalIcon(
+                          onPressed:
+                              running || analyzing ? null : onOpenAuthBrowser,
+                          icon: const Icon(Icons.open_in_browser_rounded),
+                          label: Text(l.text('auth_browser_open')),
+                        ),
+                      ],
                     ),
                   ],
                 ),

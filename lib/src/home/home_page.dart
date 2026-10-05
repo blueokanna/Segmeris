@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
 import 'package:segmeris/src/app/app_settings.dart';
+import 'package:segmeris/src/app/bilibili_qr_login.dart';
 import 'package:segmeris/src/app/auth_browser_page.dart';
 import 'package:segmeris/src/app/download_engine.dart';
 import 'package:segmeris/src/app/local_file_utils.dart';
@@ -321,6 +322,29 @@ class _HomePageState extends State<HomePage> {
     return errorText != null && _looksLikeAuthChallenge(errorText);
   }
 
+  /// Log in to Bilibili with the account holder's own phone, then hand the
+  /// resulting session to the request context.
+  ///
+  /// This is the dependable half of the two login routes: it needs no
+  /// embedded browser, so it works even where a WebView renders nothing, and
+  /// what it produces is the account's own session — the server still decides
+  /// what that account may download.
+  Future<void> _qrLogin({bool reanalyzeAfterImport = false}) async {
+    final l = AppLocalizations.of(context);
+    final cookie = await showBilibiliQrLoginDialog(
+      context,
+      requestContext: _requestContext(),
+    );
+    if (!mounted || cookie == null || cookie.isEmpty) {
+      return;
+    }
+    _cookieCtrl.text = cookie;
+    _pageController.importAuthSession(l.text('auth_session_imported'));
+    if (reanalyzeAfterImport) {
+      await _analyze(skipAutoAuth: true);
+    }
+  }
+
   Future<void> _openAuthBrowser({bool reanalyzeAfterImport = false}) async {
     if (_pageController.value.autoOpeningAuthBrowser) {
       return;
@@ -468,6 +492,7 @@ class _HomePageState extends State<HomePage> {
         inspection: inspection,
         initial: selection,
         onOpenAuthBrowser: () => _openAuthBrowser(reanalyzeAfterImport: true),
+        onQrLogin: () => _qrLogin(reanalyzeAfterImport: true),
       );
       if (!mounted || selection == null) {
         return;
@@ -905,6 +930,10 @@ class _HomePageState extends State<HomePage> {
           reanalyzeAfterImport:
               _pageController.value.inspection?.authRequired ?? false,
         ),
+        onQrLogin: () => _qrLogin(
+          reanalyzeAfterImport:
+              _pageController.value.inspection?.authRequired ?? false,
+        ),
         onClearContext: _clearAuthContext,
         authContextListenable: _authContextListenable,
         authContextBadges: _authContextBadges,
@@ -1109,6 +1138,7 @@ class _HomePageState extends State<HomePage> {
           setState(() => _subtitlePreference = preference);
         },
         onOpenAuthBrowser: () => _openAuthBrowser(reanalyzeAfterImport: true),
+        onQrLogin: () => _qrLogin(reanalyzeAfterImport: true),
       ),
     ];
 

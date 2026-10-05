@@ -2256,6 +2256,67 @@ impl Default for DownloadOptions {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// A QR-code login attempt the UI can render and poll.
+///
+/// `url` is what to draw as a QR code; `key` and `cookie` must be handed back
+/// to [`bilibili_qr_login_poll`] unchanged, so the endpoint sees one
+/// continuous client for the whole attempt.
+pub struct BilibiliQrLogin {
+    pub url: String,
+    pub key: String,
+    pub cookie: String,
+}
+
+/// One poll of a QR-code login attempt.
+///
+/// `state` is one of `waiting`, `scanned`, `confirmed`, `expired`, `failed`;
+/// `cookie` carries the session on `confirmed` and is empty otherwise, and
+/// `message` is the endpoint's own wording, shown as-is when it has one.
+pub struct BilibiliQrLoginPoll {
+    pub state: String,
+    pub cookie: String,
+    pub message: String,
+}
+
+/// Start Bilibili's own web QR-code login.
+///
+/// The session this produces is the account holder's, obtained the same way
+/// the website obtains it — nothing is derived, shared or borrowed.
+#[flutter_rust_bridge::frb()]
+pub fn bilibili_qr_login_start(request_context: RequestContext) -> Result<BilibiliQrLogin> {
+    let api = crate::api::bilibili::login::QrLoginApi::new(&request_context)?;
+    let session = api.start()?;
+    Ok(BilibiliQrLogin {
+        url: session.url,
+        key: session.key,
+        cookie: session.cookie,
+    })
+}
+
+/// Poll one QR-code login attempt.
+#[flutter_rust_bridge::frb()]
+pub fn bilibili_qr_login_poll(
+    key: String,
+    cookie: String,
+    request_context: RequestContext,
+) -> Result<BilibiliQrLoginPoll> {
+    use crate::api::bilibili::login::QrLoginState;
+
+    let api = crate::api::bilibili::login::QrLoginApi::new(&request_context)?;
+    let (state, session_cookie, message) = match api.poll(&key, &cookie)? {
+        QrLoginState::Waiting => ("waiting", String::new(), String::new()),
+        QrLoginState::Scanned => ("scanned", String::new(), String::new()),
+        QrLoginState::Confirmed { cookie } => ("confirmed", cookie, String::new()),
+        QrLoginState::Expired => ("expired", String::new(), String::new()),
+        QrLoginState::Failed(reason) => ("failed", String::new(), reason),
+    };
+    Ok(BilibiliQrLoginPoll {
+        state: state.to_string(),
+        cookie: session_cookie,
+        message,
+    })
+}
+
 #[flutter_rust_bridge::frb()]
 pub async fn download_media_with_context(
     sink: StreamSink<ProgressUpdate>,
@@ -4826,6 +4887,61 @@ mod tests {
                 "hls round trip ok: {} bytes",
                 std::fs::metadata(&output).expect("output metadata").len()
             );
+        }
+    }
+
+    #[test]
+    #[ignore = "hits the live Bilibili passport API"]
+    fn bilibili_qr_login_live_start_and_poll() {
+        use crate::api::bilibili::login::{QrLoginApi, QrLoginState};
+        use crate::api::downloader::RequestContext;
+
+        let context = RequestContext::default();
+        let api = QrLoginApi::new(&context).expect("HTTP client must build");
+        let session = api.start().expect("a QR login attempt must start");
+        assert!(
+            session.url.starts_with("https://"),
+            "the scan URL must be renderable: {}",
+            session.url
+        );
+        assert!(!session.key.is_empty(), "the attempt must expose its key");
+        println!("scan url = {}", session.url);
+        println!("device cookie = {:?}", session.cookie);
+
+        // Nobody has scanned this code, and the state machine must say so
+        // rather than reporting an error or (worse) a session.
+        match api.poll(&session.key, &session.cookie) {
+            Ok(QrLoginState::Waiting) => println!("poll ok: waiting for a scan"),
+            Ok(other) => panic!("a fresh code must poll as waiting, got {other:?}"),
+            Err(error) => panic!("poll must answer while waiting: {error:#}"),
+        }
+
+        // An empty key is a caller bug, not a server error.
+        assert!(api.poll("  ", "").is_err());
+    }
+
+    #[test]
+    #[ignore = "network probe: prints the response headers a session cookie arrives in"]
+    fn probe_set_cookie_headers() {
+        let client = crate::net::SyncHttpClient::new().expect("client builds");
+        let headers = vec![
+            (
+                "user-agent".to_string(),
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36".to_string(),
+            ),
+            ("referer".to_string(), "https://www.bilibili.com/".to_string()),
+        ];
+        for url in [
+            "https://www.bilibili.com/",
+            "https://passport.bilibili.com/x/passport-login/web/qrcode/generate",
+        ] {
+            let (status, response_headers, body) = client.get(url, &headers).expect("request");
+            eprintln!("--- {url}: HTTP {status}, {} bytes", body.len());
+            for (name, value) in &response_headers {
+                if name.eq_ignore_ascii_case("set-cookie") {
+                    eprintln!("set-cookie: {value}");
+                }
+            }
         }
     }
 

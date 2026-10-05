@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -460048549;
+  int get rustContentHash => 1053547929;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -82,6 +82,14 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  Future<BilibiliQrLoginPoll> crateApiDownloaderBilibiliQrLoginPoll(
+      {required String key,
+      required String cookie,
+      required RequestContext requestContext});
+
+  Future<BilibiliQrLogin> crateApiDownloaderBilibiliQrLoginStart(
+      {required RequestContext requestContext});
+
   Stream<ProgressUpdate> crateApiDownloaderDownloadMediaWithContext(
       {required String pageUrl,
       required String mediaUrl,
@@ -123,6 +131,62 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
+  Future<BilibiliQrLoginPoll> crateApiDownloaderBilibiliQrLoginPoll(
+      {required String key,
+      required String cookie,
+      required RequestContext requestContext}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(key, serializer);
+        sse_encode_String(cookie, serializer);
+        sse_encode_box_autoadd_request_context(requestContext, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 1, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bilibili_qr_login_poll,
+        decodeErrorData: sse_decode_AnyhowException,
+      ),
+      constMeta: kCrateApiDownloaderBilibiliQrLoginPollConstMeta,
+      argValues: [key, cookie, requestContext],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateApiDownloaderBilibiliQrLoginPollConstMeta =>
+      const TaskConstMeta(
+        debugName: "bilibili_qr_login_poll",
+        argNames: ["key", "cookie", "requestContext"],
+      );
+
+  @override
+  Future<BilibiliQrLogin> crateApiDownloaderBilibiliQrLoginStart(
+      {required RequestContext requestContext}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_box_autoadd_request_context(requestContext, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 2, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bilibili_qr_login,
+        decodeErrorData: sse_decode_AnyhowException,
+      ),
+      constMeta: kCrateApiDownloaderBilibiliQrLoginStartConstMeta,
+      argValues: [requestContext],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateApiDownloaderBilibiliQrLoginStartConstMeta =>
+      const TaskConstMeta(
+        debugName: "bilibili_qr_login_start",
+        argNames: ["requestContext"],
+      );
+
+  @override
   Stream<ProgressUpdate> crateApiDownloaderDownloadMediaWithContext(
       {required String pageUrl,
       required String mediaUrl,
@@ -146,7 +210,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_box_autoadd_download_options(options, serializer);
         sse_encode_box_autoadd_request_context(requestContext, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 1, port: port_);
+            funcId: 3, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_unit,
@@ -191,7 +255,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 2, port: port_);
+            funcId: 4, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_download_options,
@@ -231,7 +295,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(audioBitrate, serializer);
         sse_encode_bool(keepTemp, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 3, port: port_);
+            funcId: 5, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_unit,
@@ -274,7 +338,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 4, port: port_);
+            funcId: 6, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_unit,
@@ -299,7 +363,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(url, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 5, port: port_);
+            funcId: 7, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_media_inspection_result,
@@ -326,7 +390,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(url, serializer);
         sse_encode_box_autoadd_request_context(requestContext, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 6, port: port_);
+            funcId: 8, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_media_inspection_result,
@@ -350,7 +414,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 7, port: port_);
+            funcId: 9, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_request_context,
@@ -385,6 +449,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String dco_decode_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as String;
+  }
+
+  @protected
+  BilibiliQrLogin dco_decode_bilibili_qr_login(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return BilibiliQrLogin(
+      url: dco_decode_String(arr[0]),
+      key: dco_decode_String(arr[1]),
+      cookie: dco_decode_String(arr[2]),
+    );
+  }
+
+  @protected
+  BilibiliQrLoginPoll dco_decode_bilibili_qr_login_poll(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return BilibiliQrLoginPoll(
+      state: dco_decode_String(arr[0]),
+      cookie: dco_decode_String(arr[1]),
+      message: dco_decode_String(arr[2]),
+    );
   }
 
   @protected
@@ -664,6 +754,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_list_prim_u_8_strict(deserializer);
     return utf8.decoder.convert(inner);
+  }
+
+  @protected
+  BilibiliQrLogin sse_decode_bilibili_qr_login(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_url = sse_decode_String(deserializer);
+    var var_key = sse_decode_String(deserializer);
+    var var_cookie = sse_decode_String(deserializer);
+    return BilibiliQrLogin(url: var_url, key: var_key, cookie: var_cookie);
+  }
+
+  @protected
+  BilibiliQrLoginPoll sse_decode_bilibili_qr_login_poll(
+      SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_state = sse_decode_String(deserializer);
+    var var_cookie = sse_decode_String(deserializer);
+    var var_message = sse_decode_String(deserializer);
+    return BilibiliQrLoginPoll(
+        state: var_state, cookie: var_cookie, message: var_message);
   }
 
   @protected
@@ -1018,6 +1128,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_String(String self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_prim_u_8_strict(utf8.encoder.convert(self), serializer);
+  }
+
+  @protected
+  void sse_encode_bilibili_qr_login(
+      BilibiliQrLogin self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.url, serializer);
+    sse_encode_String(self.key, serializer);
+    sse_encode_String(self.cookie, serializer);
+  }
+
+  @protected
+  void sse_encode_bilibili_qr_login_poll(
+      BilibiliQrLoginPoll self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.state, serializer);
+    sse_encode_String(self.cookie, serializer);
+    sse_encode_String(self.message, serializer);
   }
 
   @protected
