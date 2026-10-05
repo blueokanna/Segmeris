@@ -175,6 +175,8 @@ cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets --locked 
 
 CI 还会构建 Web（JS + WASM）等跨平台产物，并对 Rust/Dart/容器依赖做安全扫描。iOS（arm64，未签名）只在推送 `v*` tag 发版时构建，手动触发默认跳过（取消勾选 `skip_ios` 可构建）；iOS 或 Docker（`skip_docker`）被跳过 / 失败时都不会阻塞 Release 发布。
 
+本地跑完 `flutter test` 或 debug 构建后再打 release 包，Gradle 可能报 `程序包 dev.flutter.plugins.integration_test 不存在`：`android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java` 是构建产物（已被 git 忽略），debug 那一步把它按「含 dev 依赖」写好了，release 那一步看时间戳以为它还新。删掉这个文件再构建即可，它会按 release 的插件集重新生成。
+
 ## License
 
 见 [LICENSE](LICENSE)。

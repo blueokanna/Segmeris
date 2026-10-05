@@ -132,9 +132,15 @@ docker run --rm -p 3000:3000 -e DOWNLOAD_DIR=/app/downloads \
 ## Validation
 
 ```bash
-flutter analyze lib
+flutter analyze
+flutter test
 cargo test --manifest-path rust/Cargo.toml
+cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets --locked -- -D warnings
 ```
+
+CI also builds the Web artifacts (JS + WASM) and scans Rust / Dart / container dependencies. The iOS job (arm64, unsigned) only runs for `v*` tags — a manual trigger skips it unless `skip_ios` is unchecked — and a skipped or failed iOS / Docker (`skip_docker`) job never blocks a release.
+
+Locally, running `flutter test` or a debug build and then a release build can fail with `package dev.flutter.plugins.integration_test does not exist`: `android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java` is a build artifact (git-ignored), the debug step wrote it for the dev dependency set, and the release step trusts its timestamp and keeps it. Delete that file and build again — it is regenerated for the release plugin set.
 
 ## License
 
