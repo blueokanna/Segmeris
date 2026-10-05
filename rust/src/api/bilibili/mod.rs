@@ -47,9 +47,10 @@ use crate::api::downloader::{
 use crate::api::site_adapters::SiteWarning;
 use crate::net::SyncHttpClient;
 
+pub(crate) use self::api::BilibiliApi;
 use self::api::{
-    BilibiliAccessError, BilibiliApi, CollectionArchive, CollectionMetadata, DashStreams,
-    PgcEpisode, PgcSeason, VideoPage, VideoView,
+    BilibiliAccessError, CollectionArchive, CollectionMetadata, DashStreams, PgcEpisode, PgcSeason,
+    VideoPage, VideoView,
 };
 use self::subtitle::{SubtitleList, SubtitleTrack};
 use self::url::{CollectionKind, Target};
@@ -643,6 +644,7 @@ fn ready_result(
     request_context: &RequestContext,
 ) -> MediaInspectionResult {
     push_quality_access_hint(&streams, request_context, &mut warnings);
+    push_preview_hint(&streams, &mut warnings);
 
     let mut collector = CandidateCollector::new(&page_url, &page_title, "bilibili");
     stream::collect_stream_candidates(&mut collector, &candidate_title, &streams, &mut warnings);
@@ -888,6 +890,26 @@ fn push_quality_access_hint(
     }
 }
 
+/// Say when the response is the 试看 preview fragment rather than the
+/// episode. The API flag decides, so the wording never guesses: without this
+/// the user gets a six-minute file that looks like a broken download.
+fn push_preview_hint(streams: &DashStreams, warnings: &mut Vec<SiteWarning>) {
+    if !streams.preview {
+        return;
+    }
+    let length = match streams.preview_seconds {
+        Some(seconds) => format!(" ({})", stream::format_duration(seconds)),
+        None => String::new(),
+    };
+    warnings.push(SiteWarning::auth(
+        "bilibili-preview-only",
+        format!(
+            "The playurl API returned the preview fragment{length}, not the whole episode: this session cannot reach the full stream (membership, purchase, region or entitlement gate). \
+             Sign in with an account that can watch it and analyze again for the complete episode; the preview download is still available as-is"
+        ),
+    ));
+}
+
 /// A view-level failure: access denials become the "authorize" flow,
 /// everything else (missing video, bad id) is a hard error.
 fn view_failure_outcome(
@@ -1048,14 +1070,23 @@ mod tests {
         assert_eq!(result.extractor, "bilibili");
         assert!(
             !result.candidates.is_empty(),
-            "the probe video should expose at least one stream"
+            "the probe page should expose at least one stream"
         );
-        assert!(
-            result
-                .candidates
-                .iter()
-                .any(|candidate| candidate.audio_url.is_some()),
-            "the probe video should expose a paired audio track"
+        // A paired DASH audio track is the norm for videos, but a preview
+        // fragment or a progressive-only episode legitimately arrives as one
+        // muxed file, so the probe reports which shape it saw instead of
+        // failing on the other one.
+        let paired_audio = result
+            .candidates
+            .iter()
+            .any(|candidate| candidate.audio_url.is_some());
+        eprintln!(
+            "stream shape  = {}",
+            if paired_audio {
+                "separate DASH video + audio"
+            } else {
+                "single muxed file (progressive/preview)"
+            }
         );
     }
 }

@@ -174,6 +174,14 @@ pub(crate) struct DashStreams {
     pub progressive: Vec<DashMedia>,
     /// Official naming per quality tier, straight from `support_formats`.
     pub formats: Vec<SupportFormat>,
+    /// `is_preview` on the response: the server answered with the 试看
+    /// preview fragment instead of the whole episode. The API's own flag is
+    /// surfaced so the UI can say what the user is actually getting, instead
+    /// of handing over a six-minute file labelled as the full episode.
+    pub preview: bool,
+    /// Length of that fragment, from `durl[*].length` (milliseconds in the
+    /// API), when the response reports one.
+    pub preview_seconds: Option<f64>,
 }
 
 impl DashStreams {
@@ -205,10 +213,6 @@ pub(crate) struct BilibiliApi {
 
 impl BilibiliApi {
     pub(crate) fn new(request_context: &RequestContext) -> Result<Self> {
-        // API calls are fast; downloads get their own client with longer
-        // timeouts. The Referer/UA fallbacks for bilibili.com hosts come
-        // from `request_headers`, so an authorized Cookie travels along
-        // automatically.
         let http = SyncHttpClient::with_timeouts(Duration::from_secs(10), Duration::from_secs(30))?;
         let redirect_probe = SyncHttpClient::without_redirects()?;
         let base = url::Url::parse("https://www.bilibili.com/")?;
@@ -244,8 +248,6 @@ impl BilibiliApi {
         }
 
         let payload = self.get_json(&format!("{API_BASE}/x/web-interface/nav"))?;
-        // Unauthenticated `nav` responses carry `code: -101` but still
-        // expose `data.wbi_img`; only the keys matter here.
         let wbi_img = payload
             .pointer("/data/wbi_img")
             .context("Bilibili nav response did not include wbi keys")?;
@@ -325,8 +327,6 @@ impl BilibiliApi {
             }
 
             if (200..300).contains(&status) {
-                // Some short links land on a tiny HTML hop page instead of
-                // a redirect; pull the first Bilibili page URL out of it.
                 let html = String::from_utf8_lossy(&body);
                 let target = extract_page_url_from_html(&html)
                     .context("Short link page did not expose a Bilibili URL")?;
@@ -832,10 +832,24 @@ fn parse_pgc_season_payload(payload: &Value) -> Result<PgcSeason> {
 fn parse_playurl_payload(payload: &Value, root: &str) -> Result<DashStreams> {
     ensure_api_ok(payload)?;
 
-    let stream_root = payload
-        .pointer(root)
+    let container = payload.pointer(root);
+    let stream_root = container
+        .map(|node| {
+            if node.get("dash").is_none() && node.get("durl").is_none() {
+                node.get("video_info").unwrap_or(node)
+            } else {
+                node
+            }
+        })
         .or_else(|| payload.pointer(&format!("{root}/video_info")))
         .context("Playurl response had no stream object")?;
+
+    let marker = |pointer: &str| {
+        [Some(stream_root), container]
+            .into_iter()
+            .flatten()
+            .find_map(|node| node.pointer(pointer))
+    };
 
     let mut streams = DashStreams::default();
 
@@ -849,6 +863,7 @@ fn parse_playurl_payload(payload: &Value, root: &str) -> Result<DashStreams> {
             .and_then(|audios| audios.iter().find_map(parse_dash_media));
     }
     streams.formats = parse_support_formats(stream_root.get("support_formats"));
+    streams.preview = marker("/is_preview").and_then(Value::as_i64).unwrap_or(0) != 0;
 
     // Progressive fallback (`durl`): one muxed file, no separate audio.
     if streams.video.is_empty() && streams.audio.is_empty() {
@@ -861,7 +876,30 @@ fn parse_playurl_payload(payload: &Value, root: &str) -> Result<DashStreams> {
         }
     }
 
+    if streams.preview {
+        // `durl[*].length` is milliseconds; the preview fragment is the first
+        // (and, in every response seen in the field, only) entry.
+        streams.preview_seconds = stream_root
+            .pointer("/durl/0/length")
+            .and_then(Value::as_i64)
+            .filter(|milliseconds| *milliseconds > 0)
+            .map(|milliseconds| milliseconds as f64 / 1000.0);
+    }
+
     if streams.video.is_empty() && streams.progressive.is_empty() {
+        // `code: 0` with the entitlement check spelled out but no stream at
+        // all is a real shape for gated episodes: name the gate instead of
+        // the generic "no streams".
+        let preview_gate = streams.preview
+            || marker("/play_check/play_detail")
+                .and_then(Value::as_str)
+                .is_some_and(|detail| detail.contains("PREVIEW"));
+        if preview_gate {
+            bail!(
+                "Bilibili answered with the 试看 (preview) entitlement and no downloadable fragment for this session; \
+                 the full stream needs the matching account entitlements (membership, purchase or region)"
+            );
+        }
         bail!("Playurl response did not contain any playable streams");
     }
 
@@ -1378,6 +1416,95 @@ mod tests {
 
         let streams = parse_playurl_payload(&payload, "/data").expect("durl must parse");
         assert_eq!(streams.progressive.len(), 2);
+    }
+
+    #[test]
+    fn reads_the_preview_flag_and_fragment_length() {
+        // The shape `ep1994063` answers with: `is_preview` plus a single
+        // `durl` part whose `length` is milliseconds.
+        let payload = parse_json(
+            r#"{
+                "code": 0,
+                "message": "success",
+                "result": {
+                    "is_preview": 1,
+                    "durl": [
+                        {"url": "https://upos.example/part.mp4", "backup_url": [], "length": 360680, "size": 15805817}
+                    ]
+                }
+            }"#,
+        );
+        let streams = parse_playurl_payload(&payload, "/result").expect("preview must parse");
+        assert!(streams.preview);
+        assert_eq!(streams.preview_seconds, Some(360.68));
+
+        // A normal episode is not a preview and carries no fragment length.
+        let payload = parse_json(
+            r#"{
+                "code": 0,
+                "message": "success",
+                "result": {
+                    "dash": {"video": [{"id": 32, "baseUrl": "https://upos.example/v.m4s"}]}
+                }
+            }"#,
+        );
+        let streams = parse_playurl_payload(&payload, "/result").expect("dash must parse");
+        assert!(!streams.preview);
+        assert_eq!(streams.preview_seconds, None);
+    }
+
+    #[test]
+    fn descends_into_the_pgc_v2_video_info_shape() {
+        // `/pgc/player/web/v2/playurl` nests the stream object under
+        // `video_info`; the parser must not mistake the wrapper for an empty
+        // response.
+        let payload = parse_json(
+            r#"{
+                "code": 0,
+                "message": "success",
+                "result": {
+                    "play_check": {"play_detail": "PLAY_PREVIEW"},
+                    "video_info": {
+                        "is_preview": 1,
+                        "durl": [
+                            {"url": "https://upos.example/v2.mp4", "backup_url": [], "length": 6000}
+                        ]
+                    }
+                }
+            }"#,
+        );
+        let streams = parse_playurl_payload(&payload, "/result").expect("v2 shape must parse");
+        assert_eq!(streams.progressive.len(), 1);
+        assert!(streams.preview);
+        assert_eq!(streams.preview_seconds, Some(6.0));
+    }
+
+    #[test]
+    fn names_the_preview_gate_when_no_stream_can_be_served() {
+        // A gated episode answers `code: 0` with the preview check spelled
+        // out and no stream at all; the error must name that gate.
+        let payload = parse_json(
+            r#"{
+                "code": 0,
+                "message": "success",
+                "result": {
+                    "play_check": {"play_detail": "PLAY_PREVIEW"},
+                    "video_info": {"accept_format": "mp4", "durl": []}
+                }
+            }"#,
+        );
+        let error = parse_playurl_payload(&payload, "/result")
+            .expect_err("an empty gated payload must not parse as a stream set");
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("试看"),
+            "the error must name the preview gate: {message}"
+        );
+
+        // Without any preview signal the generic message stays.
+        let payload = parse_json(r#"{"code": 0, "message": "success", "result": {"durl": []}}"#);
+        let error = parse_playurl_payload(&payload, "/result").expect_err("empty payload");
+        assert!(format!("{error:#}").contains("did not contain any playable streams"));
     }
 
     #[test]

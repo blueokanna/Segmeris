@@ -247,12 +247,6 @@ pub(crate) fn collect_stream_candidates(
         }
 
         let best = tiers.first().copied();
-
-        // Which audio extras can end up in the MP4 is decided by the muxer,
-        // not by the entitlement: FFmpeg (desktop / API server) carries FLAC
-        // and EC-3, the Android and iOS native muxers do not — offering them
-        // there would guarantee a failed merge, so they are reported instead
-        // of offered.
         let native_muxer_limits_audio = cfg!(any(target_os = "android", target_os = "ios"));
         if native_muxer_limits_audio {
             if streams.flac.is_some() || streams.dolby.is_some() {
@@ -295,13 +289,20 @@ pub(crate) fn collect_stream_candidates(
         return;
     }
 
-    // Progressive fallback: fully muxed files, one candidate each.
     for media in &streams.progressive {
+        let label = if streams.preview {
+            match streams.preview_seconds {
+                Some(seconds) => format!("试看片段 {}", format_duration(seconds)),
+                None => "试看片段".to_string(),
+            }
+        } else {
+            quality_label(streams, media)
+        };
         collector.push(CandidateSpec {
             media_url: media.url.clone(),
             media_fallback_urls: media.backup_urls.clone(),
             title: Some(title.to_string()),
-            quality_label: Some(quality_label(streams, media)),
+            quality_label: Some(label),
             codec: codec_name_for(media).map(str::to_string),
             mime_type: Some("video/mp4".to_string()),
             extractor: Some("bilibili"),
@@ -310,9 +311,22 @@ pub(crate) fn collect_stream_candidates(
     }
 }
 
+/// `m:ss` (`h:mm:ss` past the hour) for a fragment length in seconds.
+pub(super) fn format_duration(seconds: f64) -> String {
+    let total = seconds.round().max(0.0) as u64;
+    let (hours, minutes, seconds) = (total / 3600, (total % 3600) / 60, total % 60);
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{collect_stream_candidates, fallback_quality_name, locked_quality_tiers};
+    use super::{
+        collect_stream_candidates, fallback_quality_name, format_duration, locked_quality_tiers,
+    };
     use crate::api::bilibili::api::{DashMedia, DashStreams, SupportFormat};
     use crate::api::downloader::{CandidateCollector, MediaCandidate};
     use crate::api::site_adapters::SiteWarning;
@@ -576,5 +590,43 @@ mod tests {
         assert!(candidates
             .iter()
             .all(|candidate| candidate.audio_url.is_none()));
+    }
+
+    #[test]
+    fn names_a_preview_fragment_instead_of_the_episode() {
+        let streams = DashStreams {
+            progressive: vec![media(0, 7, 0, 351_240, "https://upos.example/part.mp4")],
+            preview: true,
+            preview_seconds: Some(360.68),
+            ..DashStreams::default()
+        };
+        let (candidates, _) = collect(&streams);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].quality_label, "试看片段 6:01");
+
+        // Without a reported length the label still says what it is.
+        let streams = DashStreams {
+            progressive: vec![media(0, 7, 0, 351_240, "https://upos.example/part.mp4")],
+            preview: true,
+            ..DashStreams::default()
+        };
+        let (candidates, _) = collect(&streams);
+        assert_eq!(candidates[0].quality_label, "试看片段");
+
+        // A full progressive download keeps its quality naming.
+        let streams = DashStreams {
+            progressive: vec![media(32, 7, 480, 900_000, "https://upos.example/full.mp4")],
+            ..DashStreams::default()
+        };
+        let (candidates, _) = collect(&streams);
+        assert_eq!(candidates[0].quality_label, "480P 标清");
+    }
+
+    #[test]
+    fn formats_fragment_lengths_for_labels() {
+        assert_eq!(format_duration(360.68), "6:01");
+        assert_eq!(format_duration(59.4), "0:59");
+        assert_eq!(format_duration(3661.0), "1:01:01");
+        assert_eq!(format_duration(-5.0), "0:00");
     }
 }

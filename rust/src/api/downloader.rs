@@ -2904,15 +2904,8 @@ pub(crate) fn run_hls_pipeline(
     info!("Temporary primary stream: {}", temp_primary_str);
 
     let mut external_audio_plan: Option<(MediaPlaylist, Url, String)> = None;
-    // Per-stream segment metadata handed to the Android segment-based
-    // transcoder (see `SegmentInput`). Filled in below from the playlists;
-    // ignored on desktop where ffmpeg consumes the merged TS / concat list.
     let mut video_segments: Option<SegmentInput> = None;
     let mut audio_segments: Option<SegmentInput> = None;
-    // Sum of the media playlist's EXTINF durations. Used after conversion to
-    // detect silent truncation (e.g. only the first few seconds surviving),
-    // which previously wasted all the download traffic on a broken output.
-    // Both match arms below assign this before use.
     let expected_duration: Option<f64>;
 
     match playlist {
@@ -4585,6 +4578,256 @@ mod tests {
     };
     use crate::hls::parse_playlist;
     use url::Url;
+
+    /// Full-pipeline checks against the public internet: they resolve a real
+    /// Bilibili video (or HLS manifest), download every byte and mux the
+    /// result, so they cover exactly what a user's download button does.
+    /// They are `#[ignore]`d because they need network access; run them with
+    /// `cargo test --lib -- --ignored --nocapture` after touching the
+    /// transport, the download core or the muxing path.
+    mod live {
+        use super::super::{
+            download_media_with_context_core, noop_progress_reporter, DownloadOptions,
+            RequestContext,
+        };
+        use crate::api::bilibili::BilibiliApi;
+        use std::path::PathBuf;
+
+        /// A scratch directory unique to one run, removed on drop.
+        struct Scratch {
+            path: PathBuf,
+        }
+
+        impl Scratch {
+            fn new(name: &str) -> Self {
+                let path = std::env::temp_dir()
+                    .join(format!("segmeris-live-{name}-{}", std::process::id()));
+                let _ = std::fs::remove_dir_all(&path);
+                std::fs::create_dir_all(&path).expect("scratch directory must be creatable");
+                Self { path }
+            }
+
+            fn file(&self, name: &str) -> PathBuf {
+                self.path.join(name)
+            }
+        }
+
+        impl Drop for Scratch {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.path);
+            }
+        }
+
+        fn assert_playable_mp4(path: &PathBuf, minimum_bytes: u64) {
+            let metadata = std::fs::metadata(path)
+                .unwrap_or_else(|error| panic!("output {} must exist: {error}", path.display()));
+            assert!(
+                metadata.len() >= minimum_bytes,
+                "output {} is only {} bytes, expected at least {minimum_bytes}",
+                path.display(),
+                metadata.len()
+            );
+            let mut prefix = vec![0u8; 32];
+            let read = std::io::Read::read(
+                &mut std::fs::File::open(path).expect("output must open"),
+                &mut prefix,
+            )
+            .expect("output prefix must read");
+            prefix.truncate(read);
+            assert!(
+                super::super::has_mp4_signature(&prefix),
+                "output {} has no MP4 ftyp/styp signature: {:?}",
+                path.display(),
+                prefix
+            );
+        }
+
+        /// Downloads one public Bilibili video through the real pipeline:
+        /// view -> playurl -> DASH video + audio -> mux. This is the exact
+        /// code path the Android app runs when the user taps download.
+        #[test]
+        #[ignore = "downloads real media from the public internet"]
+        fn bilibili_live_download_round_trip() {
+            let scratch = Scratch::new("bilibili");
+            let context = RequestContext::default();
+            let api = BilibiliApi::new(&context).expect("HTTP client must build");
+            let view = api
+                .view(Some("BV1GJ411x7h7"), None)
+                .expect("public view must resolve");
+            let cid = view.pages.first().map(|page| page.cid).unwrap_or(view.cid);
+            let streams = api.playurl(&view.bvid, cid).expect("playurl must resolve");
+            let video = streams
+                .video
+                .iter()
+                .min_by_key(|media| media.bandwidth)
+                .expect("playurl returned no video stream");
+            let audio = streams
+                .audio
+                .iter()
+                .min_by_key(|media| media.bandwidth)
+                .expect("playurl returned no audio stream");
+            println!(
+                "downloading {} ({}x{} @ {} bps) + audio ({} bps)",
+                view.bvid, video.width, video.height, video.bandwidth, audio.bandwidth
+            );
+
+            let output = scratch.file("bilibili.mp4");
+            download_media_with_context_core(
+                noop_progress_reporter(),
+                format!("https://www.bilibili.com/video/{}", view.bvid),
+                video.url.clone(),
+                video.backup_urls.clone(),
+                Some(audio.url.clone()),
+                audio.backup_urls.clone(),
+                output.to_string_lossy().into_owned(),
+                DownloadOptions {
+                    concurrency: 4,
+                    retries: 3,
+                    ..DownloadOptions::default()
+                },
+                context,
+            )
+            .expect("Bilibili download must complete");
+
+            assert_playable_mp4(&output, 100_000);
+            println!(
+                "bilibili round trip ok: {} bytes",
+                std::fs::metadata(&output).expect("output metadata").len()
+            );
+        }
+
+        /// Downloads a PGC (bangumi) episode through the real user path:
+        /// `inspect_bilibili` (view -> playurl -> candidates) followed by the
+        /// download core with the candidate the UI would hand over. This is
+        /// the field report's URL, live, end to end.
+        #[test]
+        #[ignore = "downloads real media from the public internet"]
+        fn bilibili_live_pgc_download_round_trip() {
+            let scratch = Scratch::new("pgc");
+            let context = RequestContext::default();
+            let page = "https://www.bilibili.com/bangumi/play/ep1994063";
+
+            let inspection = crate::api::bilibili::inspect_bilibili(page, &context)
+                .expect("inspection must resolve");
+            println!(
+                "page={} candidates={}",
+                inspection.page_title,
+                inspection.candidates.len()
+            );
+            for candidate in &inspection.candidates {
+                println!(
+                    "  - [{}] codec={:?} ({}x{}) audio={} fallbacks={}",
+                    candidate.quality_label,
+                    candidate.codec,
+                    candidate.width,
+                    candidate.height,
+                    candidate.audio_url.is_some(),
+                    candidate.media_fallback_urls.len()
+                );
+            }
+            let candidate = inspection
+                .candidates
+                .first()
+                .expect("inspection must expose at least one candidate")
+                .clone();
+
+            let output = scratch.file("pgc.mp4");
+            download_media_with_context_core(
+                noop_progress_reporter(),
+                candidate.page_url.clone(),
+                candidate.media_url.clone(),
+                candidate.media_fallback_urls.clone(),
+                candidate.audio_url.clone(),
+                candidate.audio_fallback_urls.clone(),
+                output.to_string_lossy().into_owned(),
+                DownloadOptions {
+                    concurrency: 4,
+                    retries: 3,
+                    ..DownloadOptions::default()
+                },
+                context,
+            )
+            .expect("PGC episode download must complete");
+
+            assert_playable_mp4(&output, 100_000);
+            println!(
+                "pgc round trip ok: {} bytes",
+                std::fs::metadata(&output).expect("output metadata").len()
+            );
+        }
+
+        /// Downloads a public HLS (m3u8) stream through the real pipeline:
+        /// manifest -> variant selection -> segments -> remux.
+        #[test]
+        #[ignore = "downloads real media from the public internet"]
+        fn hls_live_ts_download_round_trip() {
+            let scratch = Scratch::new("hls-ts");
+            let output = scratch.file("hls-ts.mp4");
+            let manifest =
+                "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_4x3/bipbop_4x3_variant.m3u8";
+
+            download_media_with_context_core(
+                noop_progress_reporter(),
+                manifest.to_string(),
+                manifest.to_string(),
+                Vec::new(),
+                None,
+                Vec::new(),
+                output.to_string_lossy().into_owned(),
+                DownloadOptions {
+                    concurrency: 4,
+                    retries: 3,
+                    ..DownloadOptions::default()
+                },
+                RequestContext::default(),
+            )
+            .expect("TS-based HLS download must complete");
+
+            assert_playable_mp4(&output, 100_000);
+            println!(
+                "hls (ts) round trip ok: {} bytes",
+                std::fs::metadata(&output).expect("output metadata").len()
+            );
+        }
+
+        /// Downloads a public HLS (m3u8) stream through the real pipeline:
+        /// manifest -> variant selection -> segments -> remux.
+        #[test]
+        #[ignore = "downloads real media from the public internet"]
+        fn hls_live_download_round_trip() {
+            let scratch = Scratch::new("hls");
+            let output = scratch.file("hls.mp4");
+
+            // Apple's fMP4 advanced example: a master playlist with several
+            // variants and separate audio renditions, which exercises variant
+            // selection and the fMP4 assembly fast path.
+            let manifest = "https://devstreaming-cdn.apple.com/videos/streaming/examples/\
+                            img_bipbop_adv_example_fmp4/master.m3u8";
+
+            download_media_with_context_core(
+                noop_progress_reporter(),
+                manifest.to_string(),
+                manifest.to_string(),
+                Vec::new(),
+                None,
+                Vec::new(),
+                output.to_string_lossy().into_owned(),
+                DownloadOptions {
+                    concurrency: 4,
+                    retries: 3,
+                    ..DownloadOptions::default()
+                },
+                RequestContext::default(),
+            )
+            .expect("HLS download must complete");
+
+            assert_playable_mp4(&output, 100_000);
+            println!(
+                "hls round trip ok: {} bytes",
+                std::fs::metadata(&output).expect("output metadata").len()
+            );
+        }
+    }
 
     #[test]
     fn extracts_url_from_shared_text() {
@@ -6986,14 +7229,6 @@ fn convert_to_mp4(
         return Ok(());
     }
 
-    // ── Native lossless TS → MP4 stream copy: a self-contained equivalent of
-    // `ffmpeg -c copy`. The H.264 access units and AAC frames are copied
-    // bit-for-bit (no decoder, no encoder, no MediaCodec/VideoToolbox), and
-    // the per-segment HLS PTS resets are re-based onto one continuous
-    // timeline. This is the fast path for ordinary H.264/AAC TS feeds: disk
-    // speed, zero heat, platform independent. Any error (unsupported codec,
-    // odd structure…) falls through to the platform transcoder below, so this
-    // can never regress an existing download.
     if !requires_reencode && is_mpeg_ts_file(Path::new(input_ts)) {
         emit_progress(&reporter, "Remuxing TS → MP4 (stream copy)", 0.96);
         match crate::remux::remux_ts_to_mp4(Path::new(input_ts), Path::new(output_path)) {
@@ -7186,19 +7421,6 @@ fn convert_to_mp4(
             Ok(())
         }
         TranscoderKind::IosVideoToolbox => {
-            // Split the "no re-encode requested" (bitrate 0) flow from the
-            // "user explicitly wants re-encoding" flow:
-            //  * bitrate 0 + per-segment files → per-segment continuous
-            //    pipeline (each HLS segment is internally PTS-consistent, so
-            //    building the MP4 from independent inputs avoids the PTS
-            //    resets of a naively concatenated TS, which used to make
-            //    AVFoundation drop everything after the first segment and
-            //    fail the duration check). This is still a hardware encode on
-            //    iOS (AVFoundation has no TS→MP4 remux), but it is reliable.
-            //  * bitrate > 0 → single-file VideoToolbox pipeline that honors
-            //    the requested bitrate.
-            // Any per-segment failure falls back to the single-file path so a
-            // download can never regress.
             let requires_reencode = video_bitrate > 0 || audio_bitrate > 0;
             let mut per_segment_done = false;
             if !requires_reencode {
@@ -7428,8 +7650,6 @@ fn android_hardware_transcode(
             ) {
                 Ok(()) => return Ok(()),
                 Err(error) => {
-                    // The segment pipeline is the preferred path but never a
-                    // hard requirement: degrade to the merged-TS pipeline.
                     warn!(
                         "Android segment-based transcode failed ({}); falling back to merged stream",
                         error
