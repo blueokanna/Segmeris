@@ -4830,6 +4830,63 @@ mod tests {
     }
 
     #[test]
+    fn sends_the_session_cookie_where_it_matters() {
+        use super::{request_headers, HeaderEntry, RequestContext};
+        use url::Url;
+
+        let page = Url::parse("https://www.bilibili.com/bangumi/play/ep1994063").expect("parses");
+        let api = Url::parse("https://api.bilibili.com/x/player/wbi/playurl").expect("parses");
+        let cdn = Url::parse("https://upos-sz-mirrorcos.bilivideo.com/upgcxcode/1/2/3.m4s")
+            .expect("parses");
+        let context = RequestContext {
+            cookie: "SESSDATA=secret; bili_jct=token".to_string(),
+            ..RequestContext::default()
+        };
+
+        // The signed API call and the CDN fetch both carry what the session
+        // actually needs: the API call is addressed by the entitlement, and
+        // the CDN URL is signed for this account's session.
+        for url in [&api, &cdn] {
+            let headers = request_headers(url, &context).expect("headers build");
+            let cookie = headers
+                .iter()
+                .find(|(name, _)| name == "cookie")
+                .map(|(_, value)| value.as_str());
+            assert_eq!(cookie, Some("SESSDATA=secret; bili_jct=token"));
+        }
+
+        // Without a session the request still looks like a browser's (risk
+        // control is stricter towards cookie-less clients), but it never
+        // invents credentials.
+        let anonymous = request_headers(&api, &RequestContext::default()).expect("headers build");
+        let cookie = anonymous
+            .iter()
+            .find(|(name, _)| name == "cookie")
+            .map(|(_, value)| value.as_str());
+        assert_eq!(cookie, Some("SESSDATA="));
+        assert!(!anonymous.iter().any(|(_, value)| value.contains("secret")));
+
+        // A caller-supplied header cannot smuggle a second cookie line past
+        // the session's own one, and CR/LF stays rejected.
+        let context = RequestContext {
+            cookie: "SESSDATA=secret".to_string(),
+            headers: vec![HeaderEntry {
+                name: "X-Test".to_string(),
+                value: "ok".to_string(),
+            }],
+            ..RequestContext::default()
+        };
+        let headers = request_headers(&api, &context).expect("headers build");
+        assert_eq!(
+            headers.iter().filter(|(name, _)| name == "cookie").count(),
+            1
+        );
+        assert!(headers
+            .iter()
+            .any(|(name, value)| name == "x-test" && value == "ok"));
+    }
+
+    #[test]
     fn extracts_url_from_shared_text() {
         let source = "【视频分享】看看这个 https://b23.tv/AbC123 复制后打开";
         assert_eq!(

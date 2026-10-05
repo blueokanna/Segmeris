@@ -8,6 +8,7 @@ import 'package:segmeris/src/app/local_file_utils.dart';
 import 'package:segmeris/src/app/platform_bridge.dart';
 import 'package:segmeris/src/app/platform_utils.dart';
 import 'package:segmeris/src/home/home_candidates_card.dart';
+import 'package:segmeris/src/home/download_options_dialog.dart';
 import 'package:segmeris/src/home/home_download_tasks_card.dart';
 import 'package:segmeris/src/home/home_page_controller.dart';
 import 'package:segmeris/src/home/home_history_card.dart';
@@ -451,7 +452,32 @@ class _HomePageState extends State<HomePage> {
     var vm = _pageController.value;
     final enteredUrl = extractSourceUrl(_urlCtrl.text)!;
     _replaceSourceText(enteredUrl);
-    final selectedCandidate = vm.selectedCandidate;
+
+    // Starting a download from an analyzed page asks which stream to take:
+    // the analysis lists everything the server is willing to hand this
+    // session, and when the only offer is a 试看 preview fragment the user
+    // must see that before the file lands, not after.
+    final inspection = vm.inspection;
+    var selection = vm.selectedCandidate;
+    final candidates = inspection?.candidates ?? const <MediaCandidate>[];
+    if (candidates.isNotEmpty &&
+        (inspection!.pageUrl == enteredUrl ||
+            selection?.mediaUrl == enteredUrl)) {
+      selection = await showDownloadOptionsDialog(
+        context,
+        inspection: inspection,
+        initial: selection,
+        onOpenAuthBrowser: () => _openAuthBrowser(reanalyzeAfterImport: true),
+      );
+      if (!mounted || selection == null) {
+        return;
+      }
+      _pageController.selectCandidate(selection);
+      _fileNameCtrl.text = _suggestFileName(selection);
+      vm = _pageController.value;
+    }
+
+    final selectedCandidate = selection ?? vm.selectedCandidate;
     final candidateMatchesInput = selectedCandidate != null &&
         (selectedCandidate.pageUrl == enteredUrl ||
             selectedCandidate.mediaUrl == enteredUrl);
