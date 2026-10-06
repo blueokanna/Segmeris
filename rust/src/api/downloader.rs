@@ -2121,6 +2121,7 @@ fn run_ytdlp_site_pipeline(
             video_bitrate.max(0) as u32,
             audio_bitrate.max(0) as u32,
             reporter.clone(),
+            None,
         )?;
         cleanup_temp_files(keep_temp, [&downloaded_path]);
     } else if downloaded_path != output_path
@@ -2648,6 +2649,7 @@ pub(crate) fn download_media_with_context_core(
                     video_bitrate.max(0) as u32,
                     audio_bitrate.max(0) as u32,
                     reporter.clone(),
+                    None,
                 )?;
                 cleanup_temp_files(keep_temp, [&temp_input]);
             }
@@ -2798,13 +2800,19 @@ fn run_dash_pipeline(
                 video_bitrate.max(0) as u32,
                 audio_bitrate.max(0) as u32,
                 reporter.clone(),
-                None,
+                plan.duration_seconds,
             )?;
 
             cleanup_temp_files(keep_temp, [&video_temp, &audio_temp]);
         }
         None => {
-            if video_extension == "mp4" && video_bitrate <= 0 && audio_bitrate <= 0 {
+            // A video-only DASH representation is a fragmented MP4 (its `mvhd`
+            // carries no duration), so it may only be delivered by copying when
+            // it is a plain MP4 the platform's own stack reads correctly.
+            let plain = plain_mp4_duration_seconds(&video_temp).is_some_and(|seconds| {
+                copied_mp4_duration_is_plausible(seconds, plan.duration_seconds)
+            });
+            if video_extension == "mp4" && plain && video_bitrate <= 0 && audio_bitrate <= 0 {
                 if std::fs::rename(&video_temp, &output_path).is_err() {
                     std::fs::copy(&video_temp, &output_path).with_context(|| {
                         format!("Failed to copy DASH output to {}", output_path.display())
@@ -2818,6 +2826,7 @@ fn run_dash_pipeline(
                     video_bitrate.max(0) as u32,
                     audio_bitrate.max(0) as u32,
                     reporter.clone(),
+                    plan.duration_seconds,
                 )?;
                 cleanup_temp_files(keep_temp, [&video_temp]);
             }
@@ -3063,6 +3072,8 @@ pub(crate) fn run_hls_pipeline(
             } else {
                 reporter.clone()
             };
+            let video_segments_input =
+                segment_input_for(&media_playlist.segments, &temp_dir, "v", video_total);
             download_and_merge(
                 media_playlist,
                 Some(playlist_base_url(&effective_media_url)),
@@ -3075,11 +3086,7 @@ pub(crate) fn run_hls_pipeline(
                 video_reporter,
                 request_context.clone(),
             )?;
-            video_segments = Some(SegmentInput {
-                dir: temp_dir.clone(),
-                prefix: "v".to_string(),
-                total: video_total,
-            });
+            video_segments = video_segments_input;
         }
         Playlist::MediaPlaylist(mp) => {
             info!("Media Playlist found, {} segments", mp.segments.len());
@@ -3090,6 +3097,7 @@ pub(crate) fn run_hls_pipeline(
                     .map(|segment| segment.duration as f64)
                     .sum(),
             );
+            let video_segments_input = segment_input_for(&mp.segments, &temp_dir, "v", video_total);
             download_and_merge(
                 mp,
                 base_url,
@@ -3102,16 +3110,13 @@ pub(crate) fn run_hls_pipeline(
                 reporter.clone(),
                 request_context.clone(),
             )?;
-            video_segments = Some(SegmentInput {
-                dir: temp_dir.clone(),
-                prefix: "v".to_string(),
-                total: video_total,
-            });
+            video_segments = video_segments_input;
         }
     }
 
     if let Some((audio_playlist, audio_base_url, rendition_name)) = external_audio_plan {
         let audio_total = audio_playlist.segments.len();
+        let audio_segments_source = audio_playlist.segments.clone();
         emit_progress(
             reporter,
             format!("Downloading HLS audio rendition: {}", rendition_name),
@@ -3129,11 +3134,7 @@ pub(crate) fn run_hls_pipeline(
             staged_progress_reporter(reporter.clone(), "Audio", 0.48, 0.92),
             request_context.clone(),
         )?;
-        audio_segments = Some(SegmentInput {
-            dir: temp_dir.clone(),
-            prefix: "a".to_string(),
-            total: audio_total,
-        });
+        audio_segments = segment_input_for(&audio_segments_source, &temp_dir, "a", audio_total);
         merge_media_streams(
             &temp_primary,
             &temp_audio,
@@ -3638,6 +3639,7 @@ fn transcode_input_to_output(
     video_bitrate: u32,
     audio_bitrate: u32,
     reporter: ProgressReporter,
+    expected_duration: Option<f64>,
 ) -> Result<()> {
     convert_to_mp4(
         input_path.to_string_lossy().as_ref(),
@@ -3648,7 +3650,7 @@ fn transcode_input_to_output(
         &MultiProgress::new(),
         select_transcoder_backend()?,
         reporter,
-        None,
+        expected_duration,
     )
 }
 
@@ -3674,6 +3676,219 @@ fn is_mp4_file(path: &Path) -> bool {
         return false;
     };
     has_mp4_signature(&prefix[..bytes_read])
+}
+
+/// What the top-level box chain of an MP4 file says about the file as a whole.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Mp4Layout {
+    /// One leading `ftyp`, exactly one `moov`, no `moof`/`styp`, and an `mvhd`
+    /// that declares a real duration: everything needed for the movie header
+    /// to describe the entire file.
+    plain: bool,
+    /// Duration the first `moov`'s `mvhd` declares, in seconds.
+    duration_seconds: Option<f64>,
+}
+
+/// Walks the top-level boxes of `path` without reading the payloads (a few
+/// seeks, whatever the file's size) and reports whether it is a plain,
+/// self-describing MP4 plus the duration its movie header declares.
+///
+/// Both shapes that start with `ftyp` but are not plain must be rebuilt by a
+/// real muxer instead of being copied:
+///
+/// * a fragmented MP4 (an `EXT-X-MAP` HLS download assembled byte-for-byte:
+///   `ftyp` + `moov` + `moof`/`mdat` fragments) — its `mvhd` carries `0`, so
+///   the system gallery lists a finished two-hour download as `00:00` (or as
+///   whatever the first fragment covers) while a player still plays it end to
+///   end;
+/// * byte-concatenated MP4 segments (an HLS playlist whose segment URIs are
+///   `.mp4`, i.e. several `moov`/`mdat` pairs) — the first `moov` describes
+///   only the first segment, the exact "system says 00:06, playback says
+///   1:02:44" report.
+fn mp4_layout(path: &Path) -> Option<Mp4Layout> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    /// Guards against absurd box chains; real files have a handful of boxes.
+    const MAX_BOXES: u64 = 8192;
+
+    let mut file = std::fs::File::open(path).ok()?;
+    let file_len = file.metadata().ok()?.len();
+    let mut position = 0u64;
+    let mut boxes = 0u64;
+    let mut ftyp_boxes = 0u32;
+    let mut moov_boxes = 0u32;
+    let mut moof_boxes = 0u32;
+    let mut styp_boxes = 0u32;
+    let mut ftyp_first = false;
+    let mut content_started = false;
+    let mut duration_seconds: Option<f64> = None;
+
+    loop {
+        if position == file_len {
+            break;
+        }
+        boxes += 1;
+        if boxes > MAX_BOXES {
+            return Some(Mp4Layout::default());
+        }
+        let remaining = file_len.checked_sub(position)?;
+        if remaining < 8 {
+            return Some(Mp4Layout::default());
+        }
+        file.seek(SeekFrom::Start(position)).ok()?;
+        let mut header = [0u8; 8];
+        file.read_exact(&mut header).ok()?;
+        let short_size = u32::from_be_bytes(header[0..4].try_into().ok()?);
+        let kind = [header[4], header[5], header[6], header[7]];
+        let (header_len, payload_len) = match short_size {
+            // Extends to the end of the file. Legal for the last box, which is
+            // how most writers store `mdat`; anything else is malformed.
+            0 => (8u64, remaining - 8),
+            1 => {
+                if remaining < 16 {
+                    return Some(Mp4Layout::default());
+                }
+                let mut large = [0u8; 8];
+                file.read_exact(&mut large).ok()?;
+                let large_size = u64::from_be_bytes(large);
+                if large_size < 16 {
+                    return Some(Mp4Layout::default());
+                }
+                (16u64, large_size - 16)
+            }
+            value => {
+                if u64::from(value) < 8 {
+                    return Some(Mp4Layout::default());
+                }
+                (8u64, u64::from(value) - 8)
+            }
+        };
+        if payload_len > remaining - header_len {
+            // The box claims more bytes than the file holds: truncated file.
+            return Some(Mp4Layout::default());
+        }
+
+        // The recording time base lives in the moov; read it from the first one
+        // while the box chain already tells us whether it is the only one.
+        if kind == *b"moov" {
+            moov_boxes += 1;
+            if moov_boxes == 1 {
+                duration_seconds = read_mvhd_seconds(&mut file, position + header_len, payload_len);
+            }
+        } else if kind == *b"ftyp" {
+            ftyp_boxes += 1;
+            if !content_started {
+                ftyp_first = true;
+            }
+        } else if kind == *b"moof" {
+            moof_boxes += 1;
+        } else if kind == *b"styp" {
+            styp_boxes += 1;
+        }
+        // `free`/`wide`/`skip` are padding and may precede the ftyp; every other
+        // box means the leading ftyp (if any) is no longer at the front.
+        if kind != *b"free" && kind != *b"wide" && kind != *b"skip" && kind != *b"ftyp" {
+            content_started = true;
+        }
+        position += header_len + payload_len;
+    }
+
+    let plain = position == file_len
+        && ftyp_first
+        && ftyp_boxes == 1
+        && moov_boxes == 1
+        && moof_boxes == 0
+        && styp_boxes == 0
+        && duration_seconds.is_some_and(|seconds| seconds > 0.0);
+    Some(Mp4Layout {
+        plain,
+        duration_seconds,
+    })
+}
+
+/// Seconds declared by the `mvhd` found among the direct children of a `moov`.
+fn read_mvhd_seconds(file: &mut std::fs::File, start: u64, payload_len: u64) -> Option<f64> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let end = start.checked_add(payload_len)?;
+    let mut position = start;
+    let mut children = 0u32;
+
+    while position + 8 <= end {
+        children += 1;
+        if children > 4096 {
+            return None;
+        }
+        file.seek(SeekFrom::Start(position)).ok()?;
+        let mut header = [0u8; 8];
+        file.read_exact(&mut header).ok()?;
+        let short_size = u32::from_be_bytes(header[0..4].try_into().ok()?);
+        let kind = [header[4], header[5], header[6], header[7]];
+        let (header_len, payload_len) = match short_size {
+            0 => (8u64, end - position - 8),
+            1 => {
+                if end - position < 16 {
+                    return None;
+                }
+                let mut large = [0u8; 8];
+                file.read_exact(&mut large).ok()?;
+                let large_size = u64::from_be_bytes(large);
+                if large_size < 16 {
+                    return None;
+                }
+                (16u64, large_size - 16)
+            }
+            value => {
+                if u64::from(value) < 8 {
+                    return None;
+                }
+                (8u64, u64::from(value) - 8)
+            }
+        };
+        if kind == *b"mvhd" {
+            let mut body = [0u8; 32];
+            file.read_exact(&mut body).ok()?;
+            let version = body[0];
+            let (timescale, duration) = if version == 1 {
+                (
+                    u32::from_be_bytes(body[20..24].try_into().ok()?),
+                    u64::from_be_bytes(body[24..32].try_into().ok()?),
+                )
+            } else {
+                (
+                    u32::from_be_bytes(body[12..16].try_into().ok()?),
+                    u64::from(u32::from_be_bytes(body[16..20].try_into().ok()?)),
+                )
+            };
+            if timescale == 0 {
+                return None;
+            }
+            return Some(duration as f64 / f64::from(timescale));
+        }
+        position = position.checked_add(header_len + payload_len)?;
+    }
+    None
+}
+
+/// Duration of `path` when the file is a plain MP4 the platform's own media
+/// stack will read correctly, `None` when it must be rebuilt instead.
+fn plain_mp4_duration_seconds(path: &Path) -> Option<f64> {
+    let layout = mp4_layout(path)?;
+    layout.plain.then_some(layout.duration_seconds).flatten()
+}
+
+/// Whether a container duration is a plausible match for the playlist's
+/// expected duration. The expected value is the sum of the EXTINF tags, which
+/// are rounded up per segment, so the real media is routinely a few percent
+/// shorter; only a significant shortfall (truncation) or an inflated timeline
+/// is rejected.
+fn copied_mp4_duration_is_plausible(seconds: f64, expected: Option<f64>) -> bool {
+    let Some(expected) = expected.filter(|value| *value > 0.0) else {
+        return true;
+    };
+    let shortest = (expected * 0.85).max(expected - 5.0);
+    let longest = expected + (expected * 0.05).max(30.0);
+    seconds + 1.0 >= shortest && seconds <= longest
 }
 
 /// True when `path` starts with the MPEG-TS sync pattern (0x47 every 188
@@ -4474,6 +4689,11 @@ fn safe_media_url_label(raw_url: &str) -> String {
 struct DashDownloadPlan {
     video_url: String,
     audio_url: Option<String>,
+    /// `mediaPresentationDuration` of the MPD, when it declares one. It is the
+    /// only duration reference a DASH download has, and passing it on lets the
+    /// platform muxer reject a truncated or stretched output instead of
+    /// delivering it.
+    duration_seconds: Option<f64>,
 }
 
 #[derive(Clone)]
@@ -4582,7 +4802,64 @@ fn resolve_dash_download_plan_from_manifest(
     Ok(DashDownloadPlan {
         video_url,
         audio_url: best_audio.map(|candidate| candidate.url),
+        duration_seconds: root
+            .attr("mediaPresentationDuration")
+            .and_then(parse_iso_duration_seconds),
     })
+}
+
+/// Seconds from an ISO-8601 duration such as `PT1H2M3.5S` — the format
+/// `MPD@mediaPresentationDuration` (and a `Period`'s `duration`) uses. Anything
+/// outside the small subset media manifests emit returns `None`.
+fn parse_iso_duration_seconds(value: &str) -> Option<f64> {
+    let mut seconds = 0.0f64;
+    let mut number = String::new();
+    let mut in_time_part = false;
+    let mut saw_unit = false;
+    let mut chars = value.trim().chars().peekable();
+    if chars.next() != Some('P') {
+        return None;
+    }
+    for ch in chars {
+        match ch {
+            'T' if number.is_empty() => in_time_part = true,
+            'W' | 'D' if !in_time_part => {
+                let amount = take_duration_number(&mut number)?;
+                seconds += if ch == 'W' {
+                    amount * 604_800.0
+                } else {
+                    amount * 86_400.0
+                };
+                saw_unit = true;
+            }
+            'H' | 'M' | 'S' if in_time_part => {
+                let amount = take_duration_number(&mut number)?;
+                seconds += match ch {
+                    'H' => amount * 3_600.0,
+                    'M' => amount * 60.0,
+                    _ => amount,
+                };
+                saw_unit = true;
+            }
+            digit if digit.is_ascii_digit() || digit == '.' || digit == ',' => {
+                number.push(if digit == ',' { '.' } else { digit });
+            }
+            _ => return None,
+        }
+    }
+    if !number.is_empty() || !saw_unit || seconds <= 0.0 {
+        return None;
+    }
+    Some(seconds)
+}
+
+fn take_duration_number(number: &mut String) -> Option<f64> {
+    if number.is_empty() {
+        return None;
+    }
+    let parsed = number.parse::<f64>().ok();
+    number.clear();
+    parsed
 }
 
 /// Collect the text of every direct `<BaseURL>` child of `element`.
@@ -4638,16 +4915,17 @@ fn join_manifest_url(
 mod tests {
     use super::{
         canonical_site_context, checksum_for_release_asset, clear_resumable_partial,
-        has_mp4_signature, hls_response_bytes, hls_segment_cache_key,
-        is_complete_unsatisfied_range, is_valid_header_value_byte, is_valid_hls_segment_cache,
-        normalize_fallback_urls, normalize_source_url, parse_content_range, parse_ytdlp_progress,
-        playlist_base_url, range_response_has_safe_resume_identity, read_resumable_metadata,
-        resolve_dash_download_plan_from_manifest, resolve_hls_byte_range,
+        copied_mp4_duration_is_plausible, has_mp4_signature, hls_response_bytes,
+        hls_segment_cache_key, is_complete_unsatisfied_range, is_valid_header_value_byte,
+        is_valid_hls_segment_cache, mp4_layout, normalize_fallback_urls, normalize_source_url,
+        parse_content_range, parse_iso_duration_seconds, parse_ytdlp_progress,
+        plain_mp4_duration_seconds, playlist_base_url, range_response_has_safe_resume_identity,
+        read_resumable_metadata, resolve_dash_download_plan_from_manifest, resolve_hls_byte_range,
         resumable_metadata_from_response, resumable_metadata_matches_response,
-        resumable_partial_path, select_best_hls_variant, select_hls_audio_rendition,
-        should_auto_inspect_download_target, write_hls_segment_cache, write_resumable_metadata,
-        youtube_itag_from_media_url, ByteRange, ContentRange, HlsResourceRequest, Playlist,
-        ResumableMetadata, SubtitleChoice, SubtitleMode, Uuid,
+        resumable_partial_path, segment_input_for, select_best_hls_variant,
+        select_hls_audio_rendition, should_auto_inspect_download_target, write_hls_segment_cache,
+        write_resumable_metadata, youtube_itag_from_media_url, ByteRange, ContentRange,
+        HlsResourceRequest, Playlist, ResumableMetadata, SubtitleChoice, SubtitleMode, Uuid,
     };
     use crate::hls::parse_playlist;
     use url::Url;
@@ -5391,7 +5669,7 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *yt-dlp.exe\n";
     #[test]
     fn resolves_dash_download_plan_from_youtube_style_manifest() {
         let manifest = r#"
-<MPD>
+<MPD mediaPresentationDuration="PT1H2M3.5S">
   <Period>
     <AdaptationSet mimeType="video/mp4">
       <Representation id="135" bandwidth="800000" width="854" height="480">
@@ -5424,6 +5702,154 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *yt-dlp.exe\n";
             plan.audio_url.as_deref(),
             Some("https://audio.example/256.m4a")
         );
+        // The MPD's own duration travels with the plan so the mux/transcode
+        // stages can reject a truncated or stretched output.
+        assert_eq!(plan.duration_seconds, Some(3723.5));
+    }
+
+    #[test]
+    fn parses_iso_duration_values() {
+        assert_eq!(parse_iso_duration_seconds("PT1H2M3.5S"), Some(3723.5));
+        assert_eq!(parse_iso_duration_seconds("PT45,6S"), Some(45.6));
+        assert_eq!(parse_iso_duration_seconds("PT30M"), Some(1800.0));
+        assert_eq!(parse_iso_duration_seconds("P1DT2H"), Some(93_600.0));
+        assert_eq!(parse_iso_duration_seconds("PT0S"), None);
+        assert_eq!(parse_iso_duration_seconds("PT"), None);
+        assert_eq!(parse_iso_duration_seconds("1H2M"), None);
+        assert_eq!(parse_iso_duration_seconds(""), None);
+    }
+
+    /// `(size, type, payload)` boxes are all the layout scanner needs; the
+    /// payload contents are irrelevant apart from `mvhd`.
+    fn box_bytes(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(8 + payload.len());
+        out.extend_from_slice(&u32::try_from(8 + payload.len()).unwrap().to_be_bytes());
+        out.extend_from_slice(kind);
+        out.extend_from_slice(payload);
+        out
+    }
+
+    fn mvhd_box(timescale: u32, duration_ms: u64) -> Vec<u8> {
+        let mut payload = vec![0u8, 0, 0, 0];
+        payload.extend_from_slice(&0u32.to_be_bytes()); // creation time
+        payload.extend_from_slice(&0u32.to_be_bytes()); // modification time
+        payload.extend_from_slice(&timescale.to_be_bytes());
+        payload.extend_from_slice(&u32::try_from(duration_ms).unwrap().to_be_bytes());
+        payload.resize(100, 0); // the mvhd's fixed 100-byte body
+        box_bytes(b"mvhd", &payload)
+    }
+
+    fn write_temp_mp4(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("segmeris-mp4-layout-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    #[test]
+    fn accepts_only_plain_mp4_layouts_for_byte_copy() {
+        let ftyp = box_bytes(b"ftyp", b"mp42\0\0\0\0isommp42");
+
+        // A normal MP4: one moov with a real duration, then the media data.
+        let mut plain = ftyp.clone();
+        let mut moov_payload = mvhd_box(1000, 120_000);
+        moov_payload.extend_from_slice(&box_bytes(b"trak", b"\0\0\0\0"));
+        plain.extend_from_slice(&box_bytes(b"moov", &moov_payload));
+        plain.extend_from_slice(&box_bytes(b"mdat", &[0u8; 32]));
+        let plain_path = write_temp_mp4("plain.mp4", &plain);
+        let layout = mp4_layout(&plain_path).expect("layout");
+        assert!(layout.plain);
+        assert_eq!(layout.duration_seconds, Some(120.0));
+        assert_eq!(plain_mp4_duration_seconds(&plain_path), Some(120.0));
+
+        // A fragmented MP4 (EXT-X-MAP HLS download): the mvhd of the init
+        // section declares no duration, so the container cannot be trusted.
+        let mut fragmented = ftyp.clone();
+        fragmented.extend_from_slice(&box_bytes(b"moov", &mvhd_box(1000, 0)));
+        fragmented.extend_from_slice(&box_bytes(b"moof", &[0u8; 16]));
+        fragmented.extend_from_slice(&box_bytes(b"mdat", &[0u8; 32]));
+        let fragmented_path = write_temp_mp4("fragmented.mp4", &fragmented);
+        assert!(!mp4_layout(&fragmented_path).unwrap().plain);
+        assert_eq!(plain_mp4_duration_seconds(&fragmented_path), None);
+
+        // Byte-concatenated MP4 segments: the first moov covers one segment.
+        let mut concatenated = ftyp.clone();
+        concatenated.extend_from_slice(&box_bytes(b"moov", &mvhd_box(1000, 6_000)));
+        concatenated.extend_from_slice(&box_bytes(b"mdat", &[0u8; 32]));
+        concatenated.extend_from_slice(&ftyp);
+        concatenated.extend_from_slice(&box_bytes(b"moov", &mvhd_box(1000, 6_000)));
+        concatenated.extend_from_slice(&box_bytes(b"mdat", &[0u8; 32]));
+        let concatenated_path = write_temp_mp4("concatenated.mp4", &concatenated);
+        let layout = mp4_layout(&concatenated_path).expect("layout");
+        assert!(!layout.plain);
+        assert_eq!(plain_mp4_duration_seconds(&concatenated_path), None);
+
+        // A truncated file (a box claiming more bytes than exist) must never be
+        // handed over as a finished download.
+        let mut truncated = ftyp;
+        truncated.extend_from_slice(&box_bytes(b"moov", &mvhd_box(1000, 120_000)));
+        truncated.extend_from_slice(&(1_000_000u32).to_be_bytes());
+        truncated.extend_from_slice(b"mdat");
+        let truncated_path = write_temp_mp4("truncated.mp4", &truncated);
+        assert!(!mp4_layout(&truncated_path).unwrap().plain);
+
+        let _ = std::fs::remove_dir_all(plain_path.parent().unwrap());
+    }
+
+    #[test]
+    fn rejects_copied_durations_that_contradict_the_playlist() {
+        assert!(copied_mp4_duration_is_plausible(3720.0, Some(3723.5)));
+        assert!(copied_mp4_duration_is_plausible(5000.0, None));
+        // The "system says 00:06" case: a first-segment-only duration.
+        assert!(!copied_mp4_duration_is_plausible(6.0, Some(3723.5)));
+        // An inflated timeline is just as wrong as a truncated one.
+        assert!(!copied_mp4_duration_is_plausible(7400.0, Some(3723.5)));
+    }
+
+    #[test]
+    fn skips_per_segment_inputs_for_fragmented_mp4_playlists() {
+        // `EXT-X-MAP` means init + fragment: only the first downloaded segment
+        // carries the init, so no later `.part` file can be opened on its own.
+        let fragmented = br#"#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:6.0,
+seg0.m4s
+#EXTINF:6.0,
+seg1.m4s
+"#;
+        let (_, playlist) = parse_playlist(fragmented).expect("playlist should parse");
+        let Playlist::MediaPlaylist(fragmented_playlist) = playlist else {
+            panic!("expected a media playlist");
+        };
+        assert!(segment_input_for(
+            &fragmented_playlist.segments,
+            std::path::Path::new("/tmp/segmeris"),
+            "v",
+            2
+        )
+        .is_none());
+
+        let transport_stream = br#"#EXTM3U
+#EXTINF:6.0,
+seg0.ts
+#EXTINF:6.0,
+seg1.ts
+"#;
+        let (_, playlist) = parse_playlist(transport_stream).expect("playlist should parse");
+        let Playlist::MediaPlaylist(ts_playlist) = playlist else {
+            panic!("expected a media playlist");
+        };
+        let input = segment_input_for(
+            &ts_playlist.segments,
+            std::path::Path::new("/tmp/segmeris"),
+            "v",
+            2,
+        )
+        .expect("TS segments stay addressable");
+        assert_eq!(input.prefix, "v");
+        assert_eq!(input.total, 2);
     }
 
     #[test]
@@ -6307,6 +6733,35 @@ struct SegmentInput {
     dir: PathBuf,
     prefix: String,
     total: usize,
+}
+
+/// The per-segment input for the platform transcoders, or `None` when the
+/// segments cannot be opened one by one.
+///
+/// A fragmented MP4 (CMAF) playlist marks its fragments with `EXT-X-MAP`, and
+/// only the first downloaded segment carries that init section: every later
+/// `.part` file is a bare `moof`/`mdat` fragment that no extractor can open on
+/// its own. The merged file (init + all fragments) is a valid fMP4 and is
+/// rebuilt by the platform muxer instead, so advertising the segments would
+/// only make the transcoder start a pass that is guaranteed to fail.
+fn segment_input_for(
+    segments: &[crate::hls::MediaSegment],
+    dir: &Path,
+    prefix: &str,
+    total: usize,
+) -> Option<SegmentInput> {
+    let fragmented = segments.iter().any(|segment| segment.map.is_some());
+    if fragmented {
+        info!(
+            "Playlist declares EXT-X-MAP (fragmented MP4): using the merged stream for conversion"
+        );
+        return None;
+    }
+    Some(SegmentInput {
+        dir: dir.to_path_buf(),
+        prefix: prefix.to_string(),
+        total,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -7375,21 +7830,49 @@ fn convert_to_mp4(
 
     let requires_reencode = video_bitrate > 0 || audio_bitrate > 0;
     if !requires_reencode && is_mp4_file(Path::new(input_ts)) {
-        info!(
-            "Input is already an MP4; copying without re-encoding: {}",
-            input_ts
-        );
-        emit_progress(&reporter, "Already MP4 — copying (no re-encoding)", 0.96);
-        std::fs::copy(input_ts, output_path).with_context(|| {
-            format!(
-                "Failed to copy already-MP4 input {} to {}",
-                input_ts, output_path
-            )
-        })?;
-        ensure_output_file_ready(Path::new(output_path))?;
-        convert_pb.finish_with_message("MP4 ready (copied, no re-encoding)");
-        info!("Output file: {}", output_path);
-        return Ok(());
+        // Only a plain, self-describing MP4 may be delivered by copying it.
+        // Two shapes that also start with `ftyp` must not be copied:
+        //
+        // * fragmented MP4 (init + `moof` fragments, i.e. every EXT-X-MAP HLS
+        //   download) whose `mvhd` carries no real duration, so the system
+        //   gallery shows a few seconds (or 0:00) while players still play the
+        //   whole stream;
+        // * byte-concatenated MP4 segments (several `moov`/`mdat` pairs), where
+        //   the first `moov` describes only the first segment — the exact
+        //   "system says 00:06, playback says 1:02:44" report.
+        //
+        // Both are rebuilt into a single-moov MP4 by the platform muxer below
+        // (a lossless stream copy, no re-encode), which writes a correct
+        // duration. See `mp4_layout`.
+        let copy_safe = plain_mp4_duration_seconds(Path::new(input_ts))
+            .is_some_and(|seconds| copied_mp4_duration_is_plausible(seconds, expected_duration));
+        if copy_safe {
+            info!(
+                "Input is already a plain MP4; copying without re-encoding: {}",
+                input_ts
+            );
+            emit_progress(&reporter, "Already MP4 — copying (no re-encoding)", 0.96);
+            std::fs::copy(input_ts, output_path).with_context(|| {
+                format!(
+                    "Failed to copy already-MP4 input {} to {}",
+                    input_ts, output_path
+                )
+            })?;
+            ensure_output_file_ready(Path::new(output_path))?;
+            convert_pb.finish_with_message("MP4 ready (copied, no re-encoding)");
+            info!("Output file: {}", output_path);
+            return Ok(());
+        } else {
+            info!(
+                "Input starts like an MP4 but is fragmented or concatenated (or its duration is unknown); rebuilding it with the platform muxer: {}",
+                input_ts
+            );
+            emit_progress(
+                &reporter,
+                "Rebuilding MP4 container (stream copy, no re-encoding)",
+                0.96,
+            );
+        }
     }
 
     // Mobile HLS must keep the individual segment boundaries available to

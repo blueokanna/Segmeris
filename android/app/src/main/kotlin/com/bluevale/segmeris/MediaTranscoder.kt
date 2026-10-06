@@ -466,13 +466,30 @@ object MediaTranscoder {
         private var offsetUs = 0L
         private var maxFedUs = Long.MIN_VALUE
 
+        /** Smallest positive step between two fed samples (the real frame interval). */
+        private var minStepUs = 0L
+
         fun next(rawUs: Long): Long {
             val raw = if (rawUs < 0) 0L else rawUs
-            if (maxFedUs != Long.MIN_VALUE && raw + offsetUs < maxFedUs - SEGMENT_RESET_US) {
-                offsetUs = maxFedUs - raw
+            // A restarted segment jumps back by roughly a whole segment (seconds); a
+            // legitimate B-frame swing never exceeds the stream's reorder depth, which
+            // is a handful of frame intervals. Scaling the threshold with the measured
+            // interval keeps even long-GOP reordering out of the reset detection.
+            val resetThresholdUs = maxOf(SEGMENT_RESET_US, 20L * minStepUs)
+            if (maxFedUs != Long.MIN_VALUE && raw + offsetUs < maxFedUs - resetThresholdUs) {
+                // Land exactly one sample interval after the previous segment's last
+                // sample: glueing to the sample's own timestamp (offset = maxFedUs)
+                // instead would hand the codec two frames with one timestamp.
+                offsetUs = maxFedUs + minStepUs - raw
             }
             val fed = raw + offsetUs
-            if (fed > maxFedUs) maxFedUs = fed
+            if (fed > maxFedUs) {
+                if (maxFedUs != Long.MIN_VALUE) {
+                    val step = fed - maxFedUs
+                    if (minStepUs == 0L || step < minStepUs) minStepUs = step
+                }
+                maxFedUs = fed
+            }
             return fed
         }
 
@@ -494,9 +511,11 @@ object MediaTranscoder {
      *    sit a frame apart instead of moving together.
      *
      * Here the origin is measured once, from the head of every stream that goes into the file, and the
-     * lift of segment `i` is measured once — by the pass that writes the first track — then reused
-     * verbatim by the other track's pass, exactly like a concat demuxer handing both streams the same
-     * global offset.
+     * lift of segment `i` is measured once — by the pass that writes the first track of the same
+     * segments — then reused verbatim by the other track's pass, exactly like a concat demuxer
+     * handing both streams the same global offset. (Paths that mux *separate* streams — where an
+     * audio rendition's segment `i` need not cover the same time range as the video's segment `i` —
+     * give each track its own timeline instead; see [writeSegmentTrack]'s callers.)
      */
     private class SharedTimeline(
             /** Earliest first sample among the tracks, in source time. */
@@ -504,30 +523,49 @@ object MediaTranscoder {
     ) {
         private val segmentLifts = ArrayList<Long>()
         private var measuredEndUs = Long.MIN_VALUE
+        private var minStepUs = 0L
 
         /**
          * Lift that puts segment [index] right after the previous one when the source restarted its
          * clock there (naively re-cut HLS segments do that at every boundary), or `0` when the
          * timestamps already continue. [measure] must be true for exactly one pass — the first one —
          * so both tracks always move by the same amount.
+         *
+         * The lift targets the previous segment's *end* (last written sample plus one sample
+         * interval), not the last sample's own timestamp: landing a sample 1 us after the previous
+         * one's timestamp collapses that sample's duration to 1 us, and every sample of the new
+         * segment that would then overlap the previous one gets clamped to +1 us as well — audible
+         * as a skip/clamp at every segment boundary.
          */
         fun beginSegment(index: Int, headUs: Long, measure: Boolean): Long {
             if (index < segmentLifts.size) return segmentLifts[index]
-            if (!measure) {
-                return segmentLifts.lastOrNull() ?: 0L
-            }
             val head = headUs - originUs
-            val lift =
-                    if (segmentLifts.isEmpty() || head >= measuredEndUs) 0L
-                    else measuredEndUs - head + 1L
+            val endUs =
+                    if (measuredEndUs == Long.MIN_VALUE) Long.MIN_VALUE
+                    else measuredEndUs + minStepUs
+            val lift = if (endUs == Long.MIN_VALUE || head >= endUs) 0L else endUs - head
+            if (!measure) {
+                // The measuring pass never reached this segment (it does not exist
+                // there): glue it to the shared timeline from its own head without
+                // disturbing the measured track's state. Reusing the last measured
+                // lift instead would drop a segment that belongs much later onto
+                // that earlier timestamp.
+                return lift
+            }
             measuredEndUs = head + lift
+            minStepUs = 0L
             segmentLifts.add(lift)
             return lift
         }
 
         /** Records the highest timestamp written for the segment in progress. */
         fun observe(ptsUs: Long) {
-            if (ptsUs > measuredEndUs) measuredEndUs = ptsUs
+            if (ptsUs <= measuredEndUs) return
+            if (measuredEndUs != Long.MIN_VALUE) {
+                val step = ptsUs - measuredEndUs
+                if (minStepUs == 0L || step < minStepUs) minStepUs = step
+            }
+            measuredEndUs = ptsUs
         }
     }
 
@@ -618,6 +656,12 @@ object MediaTranscoder {
      * MediaMuxer then writes a proper ctts table and the B-frames stay lossless — this is the
      * disk-speed path that avoids re-encoding entirely. Audio tracks are always flattened (their
      * PTS must be strictly monotonic for the MP4 writer).
+     *
+     * `timeline` must be shared between the two tracks that come from the SAME segments (a muxed
+     * TS file), where segment `i` means the same time range for both. Streams muxed from separate
+     * segment sets (an HLS audio rendition) get one timeline per track — their cutting grids are
+     * independent, so sharing the measured lifts by index would move whole segments to the wrong
+     * timestamp.
      */
     private fun writeSegmentTrack(
             segmentDir: String,
@@ -808,13 +852,20 @@ object MediaTranscoder {
                 val aOutIdx = muxer.addTrack(aSetup.getTrackFormat(audioIdx))
                 aSetup.release()
 
-                val timeline =
-                        SharedTimeline(
-                                sharedOriginUs(
-                                        firstSamplePts(vFirst, videoIdx),
-                                        firstSamplePts(aFirst, audioIdx)
-                                )
+                // Both streams start from one shared origin (so the source's own
+                // A/V offset survives), but each track measures its own per-segment
+                // lifts: an audio rendition's segment i is cut independently of the
+                // video's segment i, so reusing the video's lift by index used to
+                // shift a whole audio segment by the difference between the two
+                // cutting grids — squeezing or delaying seconds of sound whenever
+                // the boundaries disagreed.
+                val originUs =
+                        sharedOriginUs(
+                                firstSamplePts(vFirst, videoIdx),
+                                firstSamplePts(aFirst, audioIdx)
                         )
+                val videoTimeline = SharedTimeline(originUs)
+                val audioTimeline = SharedTimeline(originUs)
 
                 muxer.start()
                 val videoSamples =
@@ -825,7 +876,7 @@ object MediaTranscoder {
                                 true,
                                 vOutIdx,
                                 muxer,
-                                timeline,
+                                videoTimeline,
                                 preserveBframes = allowBframes
                         )
                 val audioSamples =
@@ -836,7 +887,8 @@ object MediaTranscoder {
                                 false,
                                 aOutIdx,
                                 muxer,
-                                timeline
+                                audioTimeline,
+                                measure = true
                         )
                 muxer.stop()
                 Log.i(TAG, "remuxDirs video=$videoSamples audio=$audioSamples")
@@ -1165,6 +1217,14 @@ object MediaTranscoder {
         }
     }
 
+    /**
+     * Cheap structural check of a finished output: it must contain a video track and — because the
+     * muxer writes one clock per track — every track it does contain must span roughly the same
+     * media. A truncated or time-squeezed audio track (the failure mode where every sample after a
+     * bad segment boundary is clamped forward, so the sound stutters and then stops seconds in)
+     * leaves the video at full length while the audio's declared duration collapses; comparing the
+     * tracks catches that before the file is handed to the user.
+     */
     private fun verifyOutput(path: String): Boolean {
         val f = File(path)
         if (!f.exists() || f.length() <= 1024) return false
@@ -1176,12 +1236,45 @@ object MediaTranscoder {
                                 val extractor = MediaExtractor()
                                 try {
                                     extractor.setDataSource(path)
-                                    (0 until extractor.trackCount).any { index ->
-                                        extractor
-                                                .getTrackFormat(index)
-                                                .getString(MediaFormat.KEY_MIME)
-                                                ?.startsWith("video/") == true
+                                    var hasVideo = false
+                                    var longestUs = 0L
+                                    var shortestUs = Long.MAX_VALUE
+                                    var measuredTracks = 0
+                                    for (index in 0 until extractor.trackCount) {
+                                        val format = extractor.getTrackFormat(index)
+                                        val mime =
+                                                format.getString(MediaFormat.KEY_MIME) ?: ""
+                                        if (mime.startsWith("video/")) hasVideo = true
+                                        else if (!mime.startsWith("audio/")) continue
+                                        val durationUs =
+                                                runCatching {
+                                                            format.getLong(
+                                                                    MediaFormat.KEY_DURATION
+                                                            )
+                                                        }
+                                                        .getOrDefault(-1L)
+                                        if (durationUs > 0) {
+                                            measuredTracks++
+                                            if (durationUs > longestUs) longestUs = durationUs
+                                            if (durationUs < shortestUs) shortestUs = durationUs
+                                        }
                                     }
+                                    if (!hasVideo) return@Callable false
+                                    if (measuredTracks >= 2) {
+                                        val slackUs =
+                                                maxOf(
+                                                        5_000_000L,
+                                                        longestUs * 5L / 100L
+                                                )
+                                        if (shortestUs + slackUs < longestUs) {
+                                            Log.e(
+                                                    TAG,
+                                                    "verifyOutput: track durations diverge (${shortestUs / 1000}ms vs ${longestUs / 1000}ms)"
+                                            )
+                                            return@Callable false
+                                        }
+                                    }
+                                    true
                                 } catch (error: Exception) {
                                     Log.e(
                                             TAG,
@@ -1422,6 +1515,12 @@ object MediaTranscoder {
             val bframeTimeline = DecoderPtsTimeline()
             var lastPts = Long.MIN_VALUE
             var ptsOffset = 0L
+            // Smallest positive step between two written samples: the real frame
+            // interval. A restarted timeline is glued one interval after the
+            // previous sample instead of 1 us after its timestamp, which used to
+            // collapse that sample's duration and clamp the first samples of
+            // every new segment.
+            var minStepUs = 0L
             val mapPts: (Long) -> Long =
                     if (video && preserveBframes) {
                         { raw -> bframeTimeline.next(raw) }
@@ -1429,8 +1528,11 @@ object MediaTranscoder {
                         { raw ->
                             var adjusted = raw + ptsOffset
                             if (adjusted <= lastPts) {
-                                ptsOffset += (lastPts - adjusted) + 1L
+                                ptsOffset += lastPts + minStepUs - adjusted
                                 adjusted = raw + ptsOffset
+                            } else if (lastPts != Long.MIN_VALUE) {
+                                val step = adjusted - lastPts
+                                if (minStepUs == 0L || step < minStepUs) minStepUs = step
                             }
                             lastPts = adjusted
                             adjusted
@@ -1983,6 +2085,7 @@ object MediaTranscoder {
             // source's own start offset).
             var lastPts = Long.MIN_VALUE
             var ptsOffset = 0L
+            var minStepUs = 0L
             while (true) {
                 val sz = ext.readSampleData(buf, 0)
                 if (sz < 0) break
@@ -1990,10 +2093,17 @@ object MediaTranscoder {
                 info.size = sz
                 val rawPts = ext.sampleTime
                 var adjustedPts = rawPts + ptsOffset
-                // MediaMuxer REQUIRES per-track monotonic PTS.
+                // MediaMuxer REQUIRES per-track monotonic PTS. A restarted
+                // timeline is glued one real sample interval after the previous
+                // sample instead of 1 us after its timestamp: the 1 us glue
+                // collapsed that sample's duration and then clamped every
+                // sample that still overlapped the previous segment.
                 if (adjustedPts <= lastPts) {
-                    ptsOffset += (lastPts - adjustedPts) + 1L
+                    ptsOffset += lastPts + minStepUs - adjustedPts
                     adjustedPts = rawPts + ptsOffset
+                } else if (lastPts != Long.MIN_VALUE) {
+                    val step = adjustedPts - lastPts
+                    if (minStepUs == 0L || step < minStepUs) minStepUs = step
                 }
                 lastPts = adjustedPts
                 info.presentationTimeUs = (adjustedPts - timeline.originUs).coerceAtLeast(0L)
