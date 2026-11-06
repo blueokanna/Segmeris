@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_theme.dart';
+import 'credential_store.dart';
 import 'download_engine.dart';
 
 class AppSettings {
@@ -18,13 +19,7 @@ class AppSettings {
   final ThemeMode themeMode;
   final String localeTag;
   final bool autoOpenAuthBrowser;
-
-  /// Base URL of the Segmeris HTTP API. Only used by the web build (and
-  /// overridable there); native platforms always use the embedded Rust engine.
   final String apiBaseUrl;
-
-  /// Optional bearer token for the Segmeris HTTP API (matches the server's
-  /// `FERRISLOAD_API_TOKEN`). Only used by the web build.
   final String apiToken;
 
   Locale get locale => parseLocaleTag(localeTag);
@@ -99,7 +94,7 @@ class AppSettings {
     final localeTag = prefs.getString('localeTag') ?? 'zh';
     final autoOpenAuthBrowser = prefs.getBool('autoOpenAuthBrowser') ?? true;
     final apiBaseUrl = prefs.getString('apiBaseUrl') ?? defaultApiBaseUrl;
-    final apiToken = prefs.getString('apiToken') ?? '';
+    final apiToken = await CredentialStore.read('apiToken') ?? '';
     return AppSettings(
       themeProfileId: themeProfileId,
       themeMode: ThemeMode.values.firstWhere(
@@ -120,6 +115,6 @@ class AppSettings {
     await prefs.setString('localeTag', localeTag);
     await prefs.setBool('autoOpenAuthBrowser', autoOpenAuthBrowser);
     await prefs.setString('apiBaseUrl', apiBaseUrl);
-    await prefs.setString('apiToken', apiToken);
+    await CredentialStore.write('apiToken', apiToken);
   }
 }

@@ -38,8 +38,6 @@ impl TaskStore {
             .iter()
             .map(|entry| entry.value().clone())
             .collect::<Vec<_>>();
-        // Zoned is not Ord; sort by the underlying instant (nanoseconds
-        // since the Unix epoch) descending so newest tasks come first.
         tasks.sort_by(|left, right| {
             let left_ns = left.created_at.ticks().as_unix_nanos();
             let right_ns = right.created_at.ticks().as_unix_nanos();
@@ -57,8 +55,10 @@ impl TaskStore {
         output_path: Option<String>,
     ) {
         update_task!(self, task_id, task => {
-            task.status = status.to_string();
-            task.message = message.to_string();
+            if task.status != "paused" || status != "running" {
+                task.status = if status == "resuming" { "running" } else { status }.to_string();
+                task.message = message.to_string();
+            }
             task.progress_percent = progress_percent;
             if let Some(output_path) = output_path {
                 task.output_path = Some(output_path);

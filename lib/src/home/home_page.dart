@@ -290,8 +290,8 @@ class _HomePageState extends State<HomePage> {
   /// The inverse of [_parseHeaderEntries], so a restored session re-enters the
   /// editor in the format it is edited in.
   String _serializeHeaderEntries(List<HeaderEntry> headers) => [
-    for (final header in headers) '${header.name}: ${header.value}',
-  ].join('\n');
+        for (final header in headers) '${header.name}: ${header.value}',
+      ].join('\n');
 
   List<HeaderEntry> _parseHeaderEntries(String text) {
     final entries = <HeaderEntry>[];
@@ -343,13 +343,22 @@ class _HomePageState extends State<HomePage> {
     return badges;
   }
 
-  void _clearAuthContext() {
+  Future<void> _clearAuthContext() async {
+    try {
+      await AuthContextStore.clear();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+      return;
+    }
+    if (!mounted) return;
     _userAgentCtrl.clear();
     _refererCtrl.clear();
     _originCtrl.clear();
     _cookieCtrl.clear();
     _headersCtrl.clear();
-    unawaited(AuthContextStore.clear());
   }
 
   bool _looksLikeAuthChallenge(String message) {
@@ -890,6 +899,35 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _toggleDownloadPause(String taskId) async {
+    final engine = _engine;
+    if (engine is! PausableDownloadEngine) return;
+    final tasks =
+        _pageController.value.downloadTasks.where((task) => task.id == taskId);
+    final request = _retryRequests[taskId];
+    if (tasks.isEmpty || request == null) return;
+    final task = tasks.first;
+    if (!task.canPause || task.controlBusy) return;
+    _pageController.setTaskControl(taskId, busy: true);
+    try {
+      final accepted = await (engine as PausableDownloadEngine)
+          .setPaused(output: request.output, paused: !task.paused);
+      if (mounted && accepted) {
+        _pageController.setTaskControl(taskId, paused: !task.paused);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(
+                  '${AppLocalizations.of(context).text("download_control_failed")}: $error')),
+        );
+      }
+    } finally {
+      if (mounted) _pageController.setTaskControl(taskId, busy: false);
+    }
+  }
+
   Future<void> _runDownloadTask(
     String taskId,
     _DownloadTaskRequest request, {
@@ -904,6 +942,10 @@ class _HomePageState extends State<HomePage> {
       }
       effective = request.withResolvedSource(resolved);
     }
+    _pageController.setTaskControl(taskId, paused: false, urls: [
+      effective.mediaUrl,
+      if (effective.audioUrl != null) effective.audioUrl!
+    ]);
     var shouldAutoOpenAuthBrowser = false;
     var downloadStreamFailed = false;
     await MediaStoreBridge.startForegroundService();
@@ -1306,6 +1348,8 @@ class _HomePageState extends State<HomePage> {
       HomeDownloadTasksCard(
         tasks: vm.downloadTasks,
         onRetry: (taskId) => _retryDownloadTask(taskId),
+        onTogglePause:
+            _engine is PausableDownloadEngine ? _toggleDownloadPause : null,
       ),
       const SizedBox(height: 12),
       HomeHistoryCard(history: vm.history),

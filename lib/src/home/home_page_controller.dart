@@ -163,6 +163,9 @@ class HomeDownloadTask {
     this.error,
     this.resultPath,
     this.backend,
+    this.paused = false,
+    this.controlBusy = false,
+    this.downloadUrls = const [],
   });
 
   final String id;
@@ -176,6 +179,17 @@ class HomeDownloadTask {
   final String? error;
   final String? resultPath;
   final String? backend;
+  final bool paused;
+  final bool controlBusy;
+  final List<String> downloadUrls;
+
+  bool get canPause =>
+      running &&
+      backend != 'yt-dlp' &&
+      (paused ||
+          stage == HomeWorkflowStage.transfer ||
+          stage == HomeWorkflowStage.segments ||
+          stage == HomeWorkflowStage.playlist);
 
   HomeDownloadTask copyWith({
     String? status,
@@ -185,9 +199,15 @@ class HomeDownloadTask {
     Object? error = HomePageViewModel._sentinel,
     Object? resultPath = HomePageViewModel._sentinel,
     Object? backend = HomePageViewModel._sentinel,
+    bool? paused,
+    bool? controlBusy,
+    List<String>? downloadUrls,
   }) {
     return HomeDownloadTask(
       id: id,
+      paused: paused ?? this.paused,
+      controlBusy: controlBusy ?? this.controlBusy,
+      downloadUrls: downloadUrls ?? this.downloadUrls,
       fileName: fileName,
       sourcePage: sourcePage,
       status: status ?? this.status,
@@ -486,7 +506,11 @@ class HomePageController extends ChangeNotifier {
           progress: 0.02,
           status: status,
           retryAction: HomeRetryAction.download,
-          downloadTasks: [task, ..._value.downloadTasks].take(8).toList(),
+          downloadTasks: [
+            task,
+            ..._value.downloadTasks.where((task) => task.running),
+            ..._value.downloadTasks.where((task) => !task.running).take(7)
+          ],
         ),
       ),
       stage: HomeWorkflowStage.preparing,
@@ -499,6 +523,18 @@ class HomePageController extends ChangeNotifier {
       _value.copyWith(status: status, progress: progress.clamp(0.0, 1.0)),
       stage: _classifyProgressStage(status),
     );
+  }
+
+  void setTaskControl(String id,
+      {bool? paused, bool? busy, List<String>? urls}) {
+    _apply(_value.copyWith(
+        downloadTasks: _replaceTask(
+            id,
+            (task) => task.copyWith(
+                  paused: task.running ? paused : false,
+                  controlBusy: task.running ? busy : false,
+                  downloadUrls: urls,
+                ))));
   }
 
   void updateDownloadTask(String id, String status, double progress) {
@@ -564,6 +600,8 @@ class HomePageController extends ChangeNotifier {
         progress: 1,
         stage: HomeWorkflowStage.completed,
         running: false,
+        paused: false,
+        controlBusy: false,
         error: null,
         resultPath: finalPath,
       ),
@@ -605,6 +643,8 @@ class HomePageController extends ChangeNotifier {
         progress: progress,
         stage: HomeWorkflowStage.failed,
         running: false,
+        paused: false,
+        controlBusy: false,
         error: error,
       ),
     );

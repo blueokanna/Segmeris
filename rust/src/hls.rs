@@ -195,6 +195,8 @@ pub struct Key {
 /// `#EXT-X-MAP` attributes.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Map {
+    /// Encryption in effect when the initialization section was declared.
+    pub key: Option<Key>,
     /// `URI`
     pub uri: String,
     /// `BYTERANGE`
@@ -455,7 +457,9 @@ fn parse_media(text: &str) -> Result<MediaPlaylist, PlaylistError> {
         }
         if let Some(rest) = line.content.strip_prefix("EXT-X-MAP:") {
             let attrs = parse_attributes(rest)?;
-            current_map = Some(parse_map(&attrs, line.number)?);
+            let mut map = parse_map(&attrs, line.number)?;
+            map.key = current_key.clone();
+            current_map = Some(map);
             if let Some(segment) = pending_segment.as_mut() {
                 segment.map = current_map.clone();
             }
@@ -597,7 +601,11 @@ fn parse_map(attrs: &BTreeMap<String, String>, line: usize) -> Result<Map, Playl
         Some(raw) => Some(parse_byte_range(raw, line)?),
         None => None,
     };
-    Ok(Map { uri, byte_range })
+    Ok(Map {
+        uri,
+        byte_range,
+        key: None,
+    })
 }
 
 fn parse_alternative_media(
@@ -898,5 +906,52 @@ seg2.ts
     #[test]
     fn rejects_non_utf8() {
         assert!(parse_playlist(&[0xff, 0xfe, 0x00, 0x01]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod adversarial_tests {
+    use super::*;
+    #[test]
+    fn map_keeps_its_declaration_key_when_media_key_rotates() {
+        let (_, playlist) = parse_playlist(b"#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"init-key\",IV=0x1\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXT-X-KEY:METHOD=AES-128,URI=\"media-key\",IV=0x2\n#EXTINF:6,\nseg.m4s\n#EXT-X-ENDLIST\n").unwrap();
+        let Playlist::MediaPlaylist(media) = playlist else {
+            panic!()
+        };
+        assert_eq!(
+            media.segments[0]
+                .map
+                .as_ref()
+                .unwrap()
+                .key
+                .as_ref()
+                .unwrap()
+                .uri
+                .as_deref(),
+            Some("init-key")
+        );
+        assert_eq!(
+            media.segments[0].key.as_ref().unwrap().uri.as_deref(),
+            Some("media-key")
+        );
+    }
+    #[test]
+    fn deterministic_parser_mutations_do_not_panic() {
+        let seed = include_bytes!("../fuzz/corpus/hls/encrypted-map.m3u8");
+        let mut state = 0x12345678u32;
+        for length in 0..=seed.len() {
+            let _ = parse_playlist(&seed[..length]);
+        }
+        for _ in 0..10000 {
+            let mut data = seed.to_vec();
+            for _ in 0..8 {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                let index = state as usize % data.len();
+                data[index] = (state >> 8) as u8;
+            }
+            let _ = parse_playlist(&data);
+        }
     }
 }

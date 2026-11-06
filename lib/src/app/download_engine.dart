@@ -35,20 +35,21 @@ abstract class DownloadEngine {
     required RequestContext requestContext,
   });
 
-  /// Whether the engine writes its output into the local filesystem that the
-  /// UI can verify and (on Android) export via MediaStore. The web backend
-  /// delegates output handling to the API server, so this is `false` there.
   bool get writesLocalFiles;
-
-  /// Absolute path of the finished output, when the engine knows it. Native
-  /// engines leave this `null` because the UI already owns the local path;
-  /// the web backend fills it with the API server's output path.
   String? get lastResultPath => null;
 }
 
+abstract interface class PausableDownloadEngine {
+  Future<bool> setPaused({required String output, required bool paused});
+}
+
 /// Native engine backed by the Rust library (`flutter_rust_bridge`).
-class FrbDownloadEngine implements DownloadEngine {
+class FrbDownloadEngine implements DownloadEngine, PausableDownloadEngine {
   const FrbDownloadEngine();
+
+  @override
+  Future<bool> setPaused({required String output, required bool paused}) async =>
+      setDownloadPaused(output: output, paused: paused);
 
   @override
   Future<void> init() async {}

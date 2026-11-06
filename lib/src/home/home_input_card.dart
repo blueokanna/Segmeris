@@ -385,10 +385,8 @@ class HomeInputCard extends StatelessWidget {
                     type: MaterialType.transparency,
                     child: SwitchListTile.adaptive(
                       value: keepTemp,
-                      // Labelled fields inset their text by 12; a
-                      // zero-padding tile would sit hard against the card
-                      // edge and read as a different component.
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 12),
                       title: Text(l.text('keep_temp')),
                       subtitle: Text(l.text('keep_temp_hint')),
                       onChanged: analyzing ? null : onKeepTempChanged,

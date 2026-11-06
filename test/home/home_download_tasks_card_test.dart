@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segmeris/src/app/app_theme.dart';
 import 'package:segmeris/src/home/home_download_tasks_card.dart';
@@ -66,5 +67,54 @@ void main() {
     expect(find.byTooltip('Retry'), findsOneWidget);
     await tester.tap(find.byTooltip('Retry'));
     expect(retriedTaskId, 'task-3');
+  });
+  testWidgets('transfer controls pause, resume and copy both stream URLs',
+      (tester) async {
+    String? toggled;
+    String? copied;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied = (call.arguments as Map)['text'] as String;
+      }
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null));
+    final task = HomeDownloadTask(
+        id: 'task',
+        fileName: 'video.mp4',
+        sourcePage: 'https://example.com/page',
+        status: 'Downloading media',
+        progress: .4,
+        stage: HomeWorkflowStage.transfer,
+        startedAt: DateTime.now(),
+        running: true,
+        downloadUrls: const [
+          'https://cdn.example/video',
+          'https://cdn.example/audio'
+        ]);
+    await tester.pumpWidget(buildTestHarness(
+        profile: appThemeProfiles.first,
+        child: HomeDownloadTasksCard(
+            tasks: [task],
+            onRetry: (_) {},
+            onTogglePause: (id) => toggled = id)));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Pause'));
+    expect(toggled, 'task');
+    await tester.tap(find.text('Copy download links'));
+    await tester.pump();
+    expect(copied, 'https://cdn.example/video\nhttps://cdn.example/audio');
+    await tester.pumpWidget(buildTestHarness(
+        profile: appThemeProfiles.first,
+        child: HomeDownloadTasksCard(
+            tasks: [task.copyWith(paused: true)],
+            onRetry: (_) {},
+            onTogglePause: (_) {})));
+    await tester.pumpAndSettle();
+    expect(find.text('Resume'), findsOneWidget);
+    expect(find.text('Download paused'), findsOneWidget);
   });
 }

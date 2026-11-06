@@ -57,7 +57,7 @@ jobs:
           cache: true
 
       - name: Setup Rust MSRV toolchain
-        uses: dtolnay/rust-toolchain@1.88.0
+        uses: dtolnay/rust-toolchain@1.89.0
 
       - name: Validate Rust MSRV and no_std core
         working-directory: rust
@@ -77,8 +77,8 @@ jobs:
         working-directory: rust
         run: |
           cargo fmt --all --check
-          cargo clippy --workspace --all-targets --locked -- -D warnings
-          cargo test --workspace --locked
+          cargo clippy --workspace --all-targets --features api-server --locked -- -D warnings
+          cargo test --workspace --features api-server --locked
           cargo package -p segmeris-core --locked --allow-dirty
 
       - name: Validate Flutter application

@@ -88,8 +88,7 @@ void main() {
 
   test('header entries without a name or value are dropped', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{
-      'authContext':
-          '{"v": 1, "cookie": "SESSDATA=abc", "ua": "", "referer": "", '
+      'authContext': '{"v": 1, "cookie": "SESSDATA=abc", "ua": "", "referer": "", '
           '"origin": "", "headers": [{"name": "", "value": "x"}, '
           '{"name": "X-Trace", "value": ""}, {"name": "Ok", "value": "1"}, 7]}',
     });

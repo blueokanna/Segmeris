@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM rust:1.88-bookworm AS api-builder
+FROM rust:1.89-bookworm AS api-builder
 
 WORKDIR /app
 
@@ -12,9 +12,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY rust/Cargo.toml rust/Cargo.lock ./rust/
 COPY rust/core ./rust/core
-# rust/Cargo.toml patches courierust onto this path, so resolution needs the
-# crate present before the warm-up build runs.
-COPY rust/vendor/courierust ./rust/vendor/courierust
 
 RUN mkdir -p rust/src/bin rust/src/api \
     && echo "pub mod api; mod frb_generated; pub mod download_service; pub use segmeris_core as core;" > rust/src/lib.rs \
@@ -27,7 +24,7 @@ RUN mkdir -p rust/src/bin rust/src/api \
     && rm -rf rust/src
 
 # Everything the real build reads: sources, the assets net.rs compiles in with
-# include_bytes!, the vendored fork again, plus the crate's own tests/fixtures.
+# include_bytes!, plus the crate's own tests/fixtures.
 # Copying the whole tree keeps this layer honest when new build-time files are
 # added; `rust/target` stays out via .dockerignore.
 COPY rust/ ./rust/

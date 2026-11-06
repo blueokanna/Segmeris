@@ -46,6 +46,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
     }
 
@@ -82,6 +83,12 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    // Flutter integration_test also resolves these on the debug runtime classpath.
+    debugImplementation("androidx.test.ext:junit:1.2.1")
+    debugImplementation("androidx.test:runner:1.6.2")
     implementation("androidx.core:core-ktx:1.15.0")
 }
 

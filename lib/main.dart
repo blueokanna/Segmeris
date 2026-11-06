@@ -77,12 +77,22 @@ class _SegmerisAppState extends State<SegmerisApp> {
           theme: buildAppTheme(
             _settings.themeProfile,
             Brightness.light,
-            dynamicScheme: lightDynamic,
+            dynamicScheme: lightDynamic == null
+                ? null
+                : ColorScheme.fromSeed(
+                    seedColor: lightDynamic.primary,
+                    brightness: Brightness.light,
+                  ),
           ),
           darkTheme: buildAppTheme(
             _settings.themeProfile,
             Brightness.dark,
-            dynamicScheme: darkDynamic,
+            dynamicScheme: darkDynamic == null
+                ? null
+                : ColorScheme.fromSeed(
+                    seedColor: darkDynamic.primary,
+                    brightness: Brightness.dark,
+                  ),
           ),
           builder: (context, child) {
             final activeLocale = Localizations.maybeLocaleOf(context) ?? locale;

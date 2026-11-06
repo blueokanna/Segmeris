@@ -1,0 +1,21 @@
+[package]
+name = "segmeris-parser-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "hls"
+path = "fuzz_targets/hls.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

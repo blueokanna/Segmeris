@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 781274510;
+  int get rustContentHash => -1842040305;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -118,6 +118,9 @@ abstract class RustLibApi extends BaseApi {
   Future<MediaSource> crateApiDownloaderMediaSourceDefault();
 
   Future<RequestContext> crateApiDownloaderRequestContextDefault();
+
+  bool crateApiDownloaderSetDownloadPaused(
+      {required String output, required bool paused});
 }
 
 class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
@@ -424,6 +427,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "request_context_default",
         argNames: [],
+      );
+
+  @override
+  bool crateApiDownloaderSetDownloadPaused(
+      {required String output, required bool paused}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(output, serializer);
+        sse_encode_bool(paused, serializer);
+        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_bool,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateApiDownloaderSetDownloadPausedConstMeta,
+      argValues: [output, paused],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateApiDownloaderSetDownloadPausedConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_download_paused",
+        argNames: ["output", "paused"],
       );
 
   @protected

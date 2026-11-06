@@ -50,8 +50,8 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'authContext':
           '{"v":1,"ua":"SegmerisTest/1","referer":"https://www.bilibili.com/",'
-          '"origin":"https://www.bilibili.com","cookie":"SESSDATA=stored",'
-          '"headers":[{"name":"X-Trace","value":"1"}]}',
+              '"origin":"https://www.bilibili.com","cookie":"SESSDATA=stored",'
+              '"headers":[{"name":"X-Trace","value":"1"}]}',
     });
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(420, 900);

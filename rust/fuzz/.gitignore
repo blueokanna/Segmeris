@@ -1,0 +1,6 @@
+/target/
+/artifacts/
+/coverage/
+
+/corpus/hls/*
+!/corpus/hls/encrypted-map.m3u8

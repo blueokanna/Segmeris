@@ -20,17 +20,18 @@
 //! keeps the default trust set exactly.
 
 use anyhow::{bail, Context, Result};
-use courierust::courierust_client::{Client, ClientConfig, TlsSettings as ClientTls};
+mod transport;
+use courierust::courierust_client::{ClientConfig, TlsSettings as ClientTls};
 use courierust::courierust_fingerprint::profile::{chrome_tls_profile, TlsProfile};
 use courierust::courierust_http::header::{HeaderName, HeaderValue};
 use courierust::courierust_http::method::Method;
 use courierust::courierust_http::request::Request;
 use courierust::courierust_tls::x509::parse_certificate;
 use courierust::courierust_tls::{RootStore, TlsVersion};
-use log::warn;
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
+use transport::Client;
 
 /// Environment variable naming additional PEM/DER trust-anchor files.
 pub const EXTRA_CA_ENV: &str = "SEGMERIS_EXTRA_CA_FILE";
@@ -60,6 +61,13 @@ const MAX_REDIRECTS: usize = 10;
 /// A GET response: `(status, headers, body)`.
 type GetResult = (u16, Vec<(String, String)>, Vec<u8>);
 
+pub(crate) struct HttpResponse {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: transport::ResponseBody,
+    pub url: url::Url,
+}
+
 /// A synchronous HTTP client backed by `courierust` with Mozilla trust
 /// roots, per-request headers, Range support and sane timeouts.
 ///
@@ -81,15 +89,12 @@ type GetResult = (u16, Vec<(String, String)>, Vec<u8>);
 /// hostname and validity verification are identical on both clients.
 #[derive(Clone)]
 pub struct SyncHttpClient {
-    /// Primary client: offers TLS 1.2–1.3.
     inner: Client,
-    /// Compatibility client capped at TLS 1.2, used only for hosts that
-    /// proved non-compliant with the RFC 8446 downgrade sentinel.
     tls12_fallback: Client,
+    max_redirects: usize,
 }
 
 impl SyncHttpClient {
-    /// Build a client with Mozilla TLS roots and production timeouts.
     pub fn new() -> Result<Self> {
         Self::with_timeouts(DEFAULT_CONNECT_TIMEOUT, DEFAULT_READ_TIMEOUT)
     }
@@ -122,30 +127,26 @@ impl SyncHttpClient {
             .unwrap_or(0);
 
         Ok(Self {
-            inner: make_client(
-                connect_timeout,
-                read_timeout,
-                max_redirects,
-                now,
-                TlsVersion::Tls13,
-            )?,
-            tls12_fallback: make_client(
-                connect_timeout,
-                read_timeout,
-                max_redirects,
-                now,
-                TlsVersion::Tls12,
-            )?,
+            max_redirects,
+            inner: make_client(connect_timeout, read_timeout, 0, now, TlsVersion::Tls13)?,
+            tls12_fallback: make_client(connect_timeout, read_timeout, 0, now, TlsVersion::Tls12)?,
         })
     }
 
-    /// Perform a GET and return the full body (bounded by
-    /// `MAX_MEMORY_BODY`). Returns `(status, headers, body)`.
     pub fn get(&self, url: &str, headers: &[(String, String)]) -> Result<GetResult> {
-        self.get_impl(url, headers, None)
+        self.get_with_url(url, headers).map(|(result, _)| result)
     }
 
-    /// Perform a GET with a Range header and return the body.
+    pub fn get_with_url(
+        &self,
+        url: &str,
+        headers: &[(String, String)],
+    ) -> Result<(GetResult, url::Url)> {
+        let response = self.response(url, headers, None)?;
+        let effective = response.url.clone();
+        Ok((collect_response(response)?, effective))
+    }
+
     pub fn get_range(
         &self,
         url: &str,
@@ -153,94 +154,126 @@ impl SyncHttpClient {
         start: u64,
         end: u64,
     ) -> Result<GetResult> {
-        self.get_impl(url, headers, Some((start, end)))
+        collect_response(self.stream_range(url, headers, start, end)?)
     }
 
-    fn get_impl(
+    pub(crate) fn stream(&self, url: &str, headers: &[(String, String)]) -> Result<HttpResponse> {
+        self.response(url, headers, None)
+    }
+
+    pub(crate) fn stream_range(
+        &self,
+        url: &str,
+        headers: &[(String, String)],
+        start: u64,
+        end: u64,
+    ) -> Result<HttpResponse> {
+        self.response(url, headers, Some((start, end)))
+    }
+
+    fn response(
         &self,
         url: &str,
         headers: &[(String, String)],
         range: Option<(u64, u64)>,
-    ) -> Result<GetResult> {
-        ensure_http_url(url)?;
-        self.get_via_courierust(url, headers, range)
-    }
-
-    fn get_via_courierust(
-        &self,
-        url: &str,
-        headers: &[(String, String)],
-        range: Option<(u64, u64)>,
-    ) -> Result<GetResult> {
-        let perform = |client: &Client| -> Result<GetResult> {
-            let mut request = Request::new(Method::GET, "/");
-            for (name, value) in headers {
-                let Some(header_name) = parse_header_name(name) else {
-                    continue;
-                };
-                let Some(header_value) = parse_header_value(value) else {
-                    continue;
-                };
-                request = request.header(header_name, header_value);
+    ) -> Result<HttpResponse> {
+        let mut current = url::Url::parse(url)?;
+        let mut headers = headers.to_vec();
+        let mut seen = HashSet::new();
+        for hop in 0..=self.max_redirects {
+            ensure_http_url(current.as_str())?;
+            crate::download_control::checkpoint()?;
+            if !seen.insert(current.clone()) {
+                bail!("HTTP redirect loop");
             }
-            if let Some((start, end)) = range {
+            let perform = |client: &Client| -> Result<_> {
+                let mut request = Request::new(Method::GET, "/");
+                for (name, value) in &headers {
+                    if matches!(
+                        name.to_ascii_lowercase().as_str(),
+                        "host"
+                            | "content-length"
+                            | "transfer-encoding"
+                            | "connection"
+                            | "accept-encoding"
+                            | "range"
+                    ) {
+                        continue;
+                    }
+                    let name = parse_header_name(name).context("Invalid HTTP header name")?;
+                    let value = parse_header_value(value).context("Invalid HTTP header value")?;
+                    request = request.header(name, value);
+                }
+                if let Some((start, end)) = range {
+                    request = request.header(
+                        HeaderName::from_lowercase("range"),
+                        HeaderValue::from_bytes(format!("bytes={start}-{end}").as_bytes())?,
+                    );
+                }
                 request = request.header(
-                    HeaderName::from_lowercase("range"),
-                    HeaderValue::from_bytes(format!("bytes={}-{}", start, end).as_bytes())?,
+                    HeaderName::from_lowercase("accept-encoding"),
+                    HeaderValue::from_bytes(b"identity")?,
                 );
-            }
-            let response = client
-                .execute(url, request)
-                .with_context(|| format!("HTTP GET failed: {url}"))?;
+                client.execute(current.as_str(), request)
+            };
+            let host = current.host_str().unwrap_or_default();
+            let response = if host_needs_tls12(host) {
+                perform(&self.tls12_fallback)?
+            } else {
+                match perform(&self.inner) {
+                    Ok(response) => response,
+                    Err(error) if is_missing_downgrade_sentinel(&error) => {
+                        remember_tls12_host(host);
+                        perform(&self.tls12_fallback)?
+                    }
+                    Err(error) => return Err(error),
+                }
+            };
             let status = response.status.as_u16();
-            let response_headers = response
+            if matches!(status, 301 | 302 | 303 | 307 | 308) && self.max_redirects > 0 {
+                if hop == self.max_redirects {
+                    bail!("HTTP redirect limit exceeded");
+                }
+                let location = response
+                    .headers
+                    .get("location")
+                    .and_then(|v| v.to_str().ok())
+                    .context("Redirect has no Location")?;
+                let next = current.join(location)?;
+                if current.origin() != next.origin() {
+                    headers.retain(|(name, _)| {
+                        matches!(
+                            name.to_ascii_lowercase().as_str(),
+                            "user-agent" | "accept" | "referer" | "origin" | "if-range"
+                        )
+                    });
+                    if current.scheme() == "https" && next.scheme() == "http" {
+                        headers.retain(|(name, _)| {
+                            !matches!(name.to_ascii_lowercase().as_str(), "referer" | "origin")
+                        });
+                    }
+                }
+                current = next;
+                continue;
+            }
+            let headers = response
                 .headers
                 .iter()
-                .map(|(name, value)| {
+                .map(|(n, v)| {
                     (
-                        name.as_str().to_string(),
-                        String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                        n.as_str().to_owned(),
+                        String::from_utf8_lossy(v.as_bytes()).into_owned(),
                     )
                 })
                 .collect();
-            let body = response
-                .body
-                .collect_limited(MAX_MEMORY_BODY)
-                .context("failed to read HTTP response body")?
-                .to_vec();
-            Ok((status, response_headers, body))
-        };
-
-        let host = url::Url::parse(url)
-            .ok()
-            .and_then(|parsed| parsed.host_str().map(str::to_ascii_lowercase))
-            .unwrap_or_default();
-        // A host that already proved non-compliant skips the TLS 1.3
-        // attempt entirely: the failure is deterministic and every Range
-        // chunk would otherwise pay a wasted handshake.
-        if !host.is_empty() && host_needs_tls12(&host) {
-            return perform(&self.tls12_fallback);
+            return Ok(HttpResponse {
+                status,
+                headers,
+                body: response.body,
+                url: current,
+            });
         }
-
-        match perform(&self.inner) {
-            Ok(result) => Ok(result),
-            Err(error) => {
-                if !is_missing_downgrade_sentinel(&error) {
-                    return Err(error);
-                }
-                warn!(
-                    "TLS 1.2 server omitted the RFC 8446 downgrade sentinel for {}; retrying over a TLS 1.2-only connection",
-                    if host.is_empty() { url } else { host.as_str() }
-                );
-                remember_tls12_host(&host);
-                perform(&self.tls12_fallback)
-            }
-        }
-    }
-
-    /// Underlying Courierust client (for advanced uses).
-    pub fn inner(&self) -> &Client {
-        &self.inner
+        unreachable!()
     }
 }
 
@@ -253,7 +286,7 @@ impl SyncHttpClient {
 /// choose a group the client cannot finish.
 ///
 /// Both RFC 7627 (`extended_master_secret`) and RFC 5077
-/// (`session_ticket`) stay in the offer, since the vendored engine handles
+/// (`session_ticket`) stay in the offer, since the Courierust engine handles
 /// the server's echo and the pre-`ChangeCipherSpec` ticket — Bilibili's
 /// `upos-sz-mirrorcos*` edges exercise both.
 fn tls12_client_profile() -> TlsProfile {
@@ -304,9 +337,6 @@ fn make_client(
             max_version: max_tls,
             now,
             identity: None,
-            // Traffic-risk engines score the ClientHello: Bilibili
-            // answers the built-in, sparse shape with HTTP 412 and
-            // the Chrome parameter set resolves it.
             profile: Some(if max_tls >= TlsVersion::Tls13 {
                 chrome_tls_profile()
             } else {
@@ -534,10 +564,8 @@ mod tests {
 
     #[test]
     fn header_name_rejects_injection() {
-        // Valid token names pass.
         assert!(parse_header_name("User-Agent").is_some());
         assert!(parse_header_name("x-custom-header_1").is_some());
-        // CR/LF / colon / space / non-graphic bytes must be rejected.
         assert!(parse_header_name("X-Evil\r\nInjected").is_none());
         assert!(parse_header_name("X-Evil:value").is_none());
         assert!(parse_header_name("Bad Header").is_none());
@@ -546,10 +574,8 @@ mod tests {
 
     #[test]
     fn header_value_rejects_crlf() {
-        // Normal values pass.
         assert!(parse_header_value("application/json").is_some());
         assert!(parse_header_value("").is_some());
-        // CR / LF / NUL and other control bytes must be rejected.
         assert!(parse_header_value("text/html\r\nX-Evil: 1").is_none());
         assert!(parse_header_value("a\nb").is_none());
         assert!(parse_header_value("a\rb").is_none());
@@ -559,7 +585,6 @@ mod tests {
     fn url_scheme_allowlist() {
         assert!(ensure_http_url("https://example.com/a.m3u8").is_ok());
         assert!(ensure_http_url("http://example.com/a.ts").is_ok());
-        // Non-HTTP schemes are refused.
         assert!(ensure_http_url("file:///etc/passwd").is_err());
         assert!(ensure_http_url("ftp://example.com/a.ts").is_err());
         assert!(ensure_http_url("data:text/plain;base64,AAAA").is_err());
@@ -572,10 +597,8 @@ mod tests {
             "Io: TLS protocol error: TLS 1.2 ServerHello missing downgrade sentinel"
         );
         assert!(is_missing_downgrade_sentinel(&sentinel));
-        // Unrelated protocol errors must not trigger the compatibility path.
         let other = anyhow::anyhow!("Io: TLS protocol error: bad record mac");
         assert!(!is_missing_downgrade_sentinel(&other));
-        // Contexts stack on top; the cause chain keeps the signal.
         let wrapped = sentinel.context("HTTP GET failed: https://example.com/a.m4s");
         assert!(is_missing_downgrade_sentinel(&wrapped));
     }
@@ -593,25 +616,17 @@ mod tests {
     #[test]
     fn tls12_compatibility_profile_stays_within_engine_capabilities() {
         let profile = tls12_client_profile();
-        // The engine's TLS 1.2 client implements ECDHE on secp256r1 only and
-        // must not offer TLS 1.3, or a server can pick a handshake it cannot
-        // finish. The rest of the Chrome profile stays untouched.
         assert_eq!(profile.supported_versions, vec![0x0303]);
         assert_eq!(profile.groups, vec![23]);
         let chrome = chrome_tls_profile();
         assert_eq!(profile.ciphers, chrome.ciphers);
         assert_eq!(profile.extensions, chrome.extensions);
-        // RFC 7627 (`extended_master_secret`) and RFC 5077 (`session_ticket`)
-        // both stay advertised: the vendored engine honours the server's echo
-        // and the pre-`ChangeCipherSpec` ticket (see rust/vendor/PATCHES.md).
         assert!(profile.extensions.contains(&0x0017));
         assert!(profile.extensions.contains(&0x0023));
     }
 
     #[test]
     fn parses_pem_certificate_bundles() {
-        // The parser only verifies PEM framing plus base64, so synthetic
-        // payloads exercise every branch without real certificates.
         let pem = "-----BEGIN CERTIFICATE-----\nZm9vYmFy\n-----END CERTIFICATE-----\n\
                    -----BEGIN CERTIFICATE-----\r\nZm9v\r\n-----END CERTIFICATE-----\r\n";
         let certificates = pem_certificates(pem.as_bytes()).expect("bundle parses");
@@ -716,4 +731,30 @@ mod tests {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod regression_tests;
+
+fn collect_response(response: HttpResponse) -> Result<GetResult> {
+    let mut headers = response.headers;
+    let encoding = headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("content-encoding"))
+        .map(|(_, v)| v.trim().to_ascii_lowercase())
+        .unwrap_or_default();
+    let body = response.body.collect_limited(MAX_MEMORY_BODY)?;
+    let body = match encoding.as_str() {
+        "" | "identity" => body,
+        "gzip" => {
+            let decoded = courierust::courierust_deflate::gunzip(&body, MAX_MEMORY_BODY)?;
+            headers.retain(|(name, _)| {
+                !name.eq_ignore_ascii_case("content-encoding")
+                    && !name.eq_ignore_ascii_case("content-length")
+            });
+            decoded
+        }
+        _ => bail!("Server ignored identity encoding request: {encoding}"),
+    };
+    Ok((response.status, headers, body))
 }

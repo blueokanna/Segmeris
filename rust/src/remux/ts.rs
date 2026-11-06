@@ -67,16 +67,6 @@ pub trait SampleSink {
     fn set_audio_config(&mut self, config: AacConfig) -> Result<()>;
     fn video_sample(&mut self, data: &[u8], dts: i64, cts_offset: i32, key: bool) -> Result<()>;
     fn audio_sample(&mut self, data: &[u8]) -> Result<()>;
-
-    /// Where each track began in the source timeline, in 90 kHz ticks.
-    ///
-    /// Both output timelines are rebuilt from a frame count — video from a
-    /// picture grid, audio from an AAC frame count — which leaves the two
-    /// tracks *zero-based*: a source whose audio starts half a second after
-    /// its video would come out perfectly aligned, i.e. half a second out of
-    /// sync. The sink needs the source starts to restore that offset. Values
-    /// arrive as they are learned (either may still be `None`), so a sink that
-    /// only writes its header at the end can simply remember the latest pair.
     fn set_source_starts(
         &mut self,
         video_ticks: Option<i64>,
@@ -171,10 +161,7 @@ struct TsParser<'s> {
     video_pictures_seen: i64,
     video_pes_anchor: Option<(i64, i64)>,
     video_frame_interval: i64,
-    /// Interval declared by the SPS VUI, when the stream declares one.
     declared_frame_interval: Option<i64>,
-    /// Decode timestamps and the pictures they spanned, accumulated for the
-    /// current measurement era (reset whenever the stream's clock restarts).
     measured_interval_ticks: i64,
     measured_interval_pictures: i64,
     interval_decided: bool,
@@ -282,7 +269,7 @@ impl<'s> TsParser<'s> {
             bail!("lost MPEG-TS sync");
         }
         if packet[1] & 0x80 != 0 {
-            return Ok(()); // transport error indicator
+            return Ok(());
         }
         let pid = ((u16::from(packet[1]) & 0x1F) << 8) | u16::from(packet[2]);
         let afc = (packet[3] >> 4) & 0x3;
@@ -501,8 +488,6 @@ impl<'s> TsParser<'s> {
         self.video_pes_anchor = Some((dts, self.video_pictures_seen));
     }
 
-    /// Frame interval in 90 kHz ticks measured from the PES decode timestamps,
-    /// or `None` while too little of the stream has been seen to trust it.
     fn measured_frame_interval(&self) -> Option<i64> {
         if self.measured_interval_pictures < MIN_MEASURED_PICTURES {
             return None;
@@ -511,16 +496,6 @@ impl<'s> TsParser<'s> {
         plausible_frame_interval(interval).then_some(interval)
     }
 
-    /// Fix the frame interval the output timeline is built on.
-    ///
-    /// The SPS VUI is used only while it agrees with the cadence the stream
-    /// actually delivers. A declared rate that is wrong (a VUI inherited from
-    /// whatever produced the source, for example) would stretch the video track
-    /// by that factor while the audio — counted in AAC frames — keeps the real
-    /// duration, which is how a 25 fps recording ends up reported as 16 fps and
-    /// drifts seconds out of sync. Returns `false` while neither the VUI nor a
-    /// trustworthy measurement can answer yet, so the caller keeps buffering
-    /// instead of guessing.
     fn decide_frame_interval(&mut self, force: bool) -> bool {
         if self.interval_decided {
             return true;
@@ -603,7 +578,6 @@ impl<'s> TsParser<'s> {
     }
 
     fn process_nal(&mut self, nal: Vec<u8>) -> Result<()> {
-        // The NAL is already bounded by start-code delimiters; preserve every payload byte.
         if nal.is_empty() {
             return Ok(());
         }
@@ -968,8 +942,6 @@ fn parse_slice(nal: &[u8], params: &H264Params) -> Result<SliceInfo> {
     })
 }
 
-/// Resolve the picture order count against the previous sample so the values
-/// are monotonic across wraparounds (pic_order_cnt_type 0).
 fn resolve_poc(raw_lsb: i64, params: &mut H264Params) -> i64 {
     let max_lsb = 1i64 << params.log2_max_poc_lsb.min(16);
     if raw_lsb < params.prev_poc_lsb && (params.prev_poc_lsb - raw_lsb) > max_lsb / 2 {

@@ -1,8 +1,8 @@
 name: segmeris
-description: "A Flutter application to download m3u8 files using Rust for performance."
+description: "A Flutter application to download m3u8 video files using Rust for performance."
 publish_to: "none"
 
-version: 1.0.6+1
+version: 1.0.8+1
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -13,16 +13,17 @@ dependencies:
   flutter_localizations:
     sdk: flutter
 
-  cupertino_icons: ^1.0.8
+  cupertino_icons: ^2.0.0
   rust_lib_segmeris:
     path: rust_builder
   flutter_rust_bridge: 2.13.0
-  dynamic_color: 1.8.1
-  file_picker: ^12.2.0
+  dynamic_color: 2.1.0
+  file_picker: ^13.3.2
   flutter_inappwebview: ^6.1.5
   http: ^1.2.0
-  permission_handler: ^13.0.1
-  shared_preferences: ^2.5.3
+  permission_handler: ^13.0.2
+  flutter_secure_storage: ^11.2.0
+  shared_preferences: ^2.5.6
   qr_flutter: ^4.1.0
   url_launcher: ^6.3.3
 

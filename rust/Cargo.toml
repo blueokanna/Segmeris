@@ -1,7 +1,8 @@
 [package]
 name = "rust_lib_segmeris"
-version = "1.0.6"
+version = "1.0.8"
 edition = "2021"
+rust-version = "1.89"
 license-file = "../LICENSE"
 authors = ["blueokanna"]
 description = "Segmeris application runtime and Flutter bridge for video downloading"
@@ -9,11 +10,6 @@ repository = "https://github.com/blueokanna/FerrisLoadDownloader"
 
 [workspace]
 members = ["core"]
-# The vendored TLS fork builds as a plain path dependency: keeping it out of
-# the workspace leaves its sources byte-identical to upstream except for the
-# documented hunks (see vendor/PATCHES.md) instead of exposing it to this
-# package's lints and `cargo fmt` settings.
-exclude = ["vendor/courierust"]
 resolver = "2"
 
 [lib]
@@ -26,10 +22,8 @@ segmeris-core = { path = "core", version = "1.0.6", features = ["std"] }
 flutter_rust_bridge = "=2.13.0"
 
 hex = "0.4.3"
-# 0.22 rewrites the JNI environment API (EnvUnowned, GlobalRef generics); the
-# Android bridge in this crate is written against the 0.21 API.
 jni = "0.21.1"
-log = "0.4.34"
+log = "0.4.35"
 env_logger = "0.11.11"
 
 regex = "1.13.1"
@@ -39,13 +33,14 @@ tzcraft = { version = "0.1.2", default-features = false, features = [
     "std",
     "serde",
 ] }
-courierust = { version = "1.0.9", default-features = false, features = ["std"] }
-webpki-root-certs = "1.0.9"
+courierust = { version = "1.1.0", default-features = false, features = [
+    "std",
+] }
+webpki-root-certs = "1.0.11"
 url = "2.5.8"
 dashmap = "6.2.1"
 indicatif = "0.18.6"
-# Exact pin: uuid 1.27 raises its MSRV to 1.89 while this workspace guarantees 1.88.
-uuid = { version = "=1.26.0", features = ["v4"] }
+uuid = { version = "1.29.0", features = ["v4"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15.1"
@@ -60,10 +55,3 @@ api-server = []
 name = "m3u8_api_server"
 path = "src/bin/m3u8_api_server.rs"
 required-features = ["api-server"]
-
-# The vendored TLS fork replaces the published crate: it derives the RFC 7627
-# extended master secret and accepts the RFC 5077 NewSessionTicket that some
-# Bilibili CDN edges emit before their ChangeCipherSpec (OpenSSL, Go and rustls
-# all accept both). See rust/vendor/PATCHES.md.
-[patch.crates-io]
-courierust = { path = "vendor/courierust" }

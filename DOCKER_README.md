@@ -1,6 +1,6 @@
 # Segmeris Docker部署指南
 
-本项目提供了 Docker 化支持，主要面向可实际使用的 REST API 服务，同时保留 Linux GUI 镜像构建入口。推荐在容器中使用 API 版本，因为它不依赖宿主机图形栈，并且现在已经接入真实的 Rust 下载核心。
+本项目提供了 Docker 化支持，主要面向可实际使用的 REST API 服务，同时保留 Linux GUI 镜像构建入口。API 镜像复用应用的 Rust 下载核心，无需宿主机图形环境。
 
 ## 功能特性
 
@@ -109,11 +109,13 @@ docker run -p 3000:3000 \
 - `POST /inspect` - 分析页面/直链，返回候选流列表（Web 端使用）
 - `GET /status/:task_id` - 查询下载状态
 - `GET /tasks` - 列出任务
+- `POST /tasks/:task_id/pause` - 暂停传输
+- `POST /tasks/:task_id/resume` - 继续传输
 - `GET /health` - 健康检查
 
 **API 安全（强烈建议）：**
 
-- **SSRF 防护默认开启**：拒绝解析到内网/回环/链路本地地址的目标。需要从本地网络（如 NAS）下载时，加 `-e FERRISLOAD_ALLOW_PRIVATE_NETWORKS=1`。
+- **SSRF 防护默认开启**：拒绝解析到内网、回环、链路本地或保留地址的目标，包括 IPv4 映射 IPv6。每次重定向和分片、Key、MAP 请求均校验实际连接地址。默认禁止绕过该策略的外部站点下载器；FFmpeg 仅允许本地输入。需要从本地网络（如 NAS）下载时，加 `-e FERRISLOAD_ALLOW_PRIVATE_NETWORKS=1`。
 - **可选 Bearer 鉴权**：加 `-e FERRISLOAD_API_TOKEN=你的令牌` 后，除 `/health` 外的所有端点都要求 `Authorization: Bearer 你的令牌`，避免公开端口被滥用。
 
 ```bash
@@ -163,7 +165,7 @@ docker run -p 3000:3000 \
 - **存储**: 自动挂载downloads目录
 
 ### API 服务镜像
-- **基础镜像**: Ubuntu 22.04
+- **基础镜像**: Debian bookworm-slim；Rust 1.89 构建阶段
 - **构建过程**:
   1. 安装 Rust 构建环境
   2. 编译真实的 `m3u8_api_server`
@@ -262,7 +264,7 @@ docker-compose --profile api logs segmeris-api
 ## 技术栈
 
 - **前端**: Flutter (Dart)
-- **后端**: Rust + Tokio异步运行时
+- **后端**: Rust + Courierust，同步网络传输与有界工作线程
 - **桥接**: flutter_rust_bridge
 - **媒体处理**: FFmpeg
 - **网络**: reqwest + rustls

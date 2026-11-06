@@ -49,7 +49,6 @@ impl<'a> BitReader<'a> {
         Ok((1u32 << leading_zeros) - 1 + rest)
     }
 
-    /// Signed Exp-Golomb code (`se(v)`).
     pub fn read_se(&mut self) -> Result<i32> {
         let code = self.read_ue()?;
         let value = code.div_ceil(2) as i32;
@@ -63,7 +62,6 @@ mod tests {
 
     #[test]
     fn reads_exp_golomb_values() {
-        // 0b1 -> ue=0; 0b010 -> ue=1; 0b011 -> ue=2; 0b00100 -> ue=3
         let data = [0b1010_0110, 0b0100_0000];
         let mut r = BitReader::new(&data);
         assert_eq!(r.read_ue().unwrap(), 0);

@@ -60,12 +60,13 @@ fn request_authorized(request: &Request<Body>) -> bool {
         .and_then(|value| value.to_str().ok())
         .unwrap_or("");
     let expected_header = format!("Bearer {expected}");
-    // Length + byte comparison (constant-time enough for a bearer token).
+    // Compare every byte of equal-length tokens without an early mismatch exit.
     provided.len() == expected_header.len()
         && provided
             .bytes()
             .zip(expected_header.bytes())
-            .all(|(left, right)| left == right)
+            .fold(0u8, |diff, (left, right)| diff | (left ^ right))
+            == 0
 }
 
 /// Whether `FERRISLOAD_ALLOW_PRIVATE_NETWORKS` explicitly permits
@@ -86,12 +87,25 @@ fn allow_private_networks() -> bool {
 /// the host loopback). Set `FERRISLOAD_ALLOW_PRIVATE_NETWORKS=1` to opt out
 /// for local-network media sources.
 pub(crate) fn validate_public_http_url(url: &str) -> Result<()> {
-    if allow_private_networks() {
-        return Ok(());
-    }
     let parsed = url::Url::parse(url).with_context(|| format!("Invalid URL: {url}"))?;
     if !matches!(parsed.scheme(), "http" | "https") {
         bail!("Only http/https URLs are allowed: {url}");
+    }
+    if allow_private_networks() {
+        return Ok(());
+    }
+    if let Some(host) = parsed.host() {
+        let ip = match host {
+            url::Host::Ipv4(ip) => Some(ip.into()),
+            url::Host::Ipv6(ip) => Some(ip.into()),
+            _ => None,
+        };
+        if let Some(ip) = ip {
+            if is_private_ip(ip) {
+                bail!("Refusing private/loopback network target");
+            }
+            return Ok(());
+        }
     }
     let host = parsed
         .host_str()
@@ -106,7 +120,7 @@ pub(crate) fn validate_public_http_url(url: &str) -> Result<()> {
     }
 
     // Hostname: resolve and reject any private address (best effort; the
-    // downloader re-resolves anyway, this closes the obvious SSRF hole).
+    // network layer also checks the actual address immediately before connecting).
     let addresses = (host, 443)
         .to_socket_addrs()
         .with_context(|| format!("Failed to resolve host: {host}"))?;
@@ -118,45 +132,11 @@ pub(crate) fn validate_public_http_url(url: &str) -> Result<()> {
     Ok(())
 }
 
-/// True for private, loopback, link-local, CGNAT, benchmarking, multicast
-/// and reserved ranges (IPv4 and IPv6).
-fn is_private_ip(ip: std::net::IpAddr) -> bool {
-    match ip {
-        std::net::IpAddr::V4(v4) => {
-            let octets = v4.octets();
-            v4.is_private()
-                || v4.is_loopback()
-                || v4.is_link_local()
-                || v4.is_broadcast()
-                || v4.is_unspecified()
-                || v4.is_documentation()
-                || octets[0] == 0
-                // 100.64.0.0/10 (CGNAT)
-                || (octets[0] == 100 && (octets[1] & 0xC0) == 0x40)
-                // 192.0.0.0/24 (IETF protocol assignments)
-                || (octets[0] == 192 && octets[1] == 0 && octets[2] == 0)
-                // 198.18.0.0/15 (network benchmarking)
-                || (octets[0] == 198 && (octets[1] & 0xFE) == 0x18)
-                // multicast (224.0.0.0/4) and everything above
-                || octets[0] >= 224
-        }
-        std::net::IpAddr::V6(v6) => {
-            let segments = v6.segments();
-            v6.is_loopback()
-                || v6.is_unspecified()
-                || v6.is_multicast()
-                // fc00::/7 unique local (stable manual checks: the
-                // `is_unique_local`/`is_unicast_link_local` helpers only
-                // stabilized in later Rust than this crate's MSRV).
-                || (segments[0] & 0xfe00) == 0xfc00
-                // fe80::/10 link local.
-                || (segments[0] & 0xffc0) == 0xfe80
-        }
-    }
-}
+use crate::network_policy::is_private_ip;
 
 /// Bind and serve the API forever (blocking).
 pub fn run_server() -> std::io::Result<()> {
+    crate::network_policy::enable_api_policy();
     let tasks = TaskStore::new();
 
     let host = std::env::var("API_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
@@ -205,6 +185,13 @@ fn handle_request(request: Request<Body>, tasks: &TaskStore) -> Response<Body> {
         handle_inspect(request)
     } else if method == "POST" && path == "/download" {
         handle_download(request, tasks)
+    } else if method == "POST" && path.starts_with("/tasks/") {
+        let parts: Vec<_> = path.trim_start_matches("/tasks/").split('/').collect();
+        match parts.as_slice() {
+            [id, "pause"] => handle_pause(id, true, tasks),
+            [id, "resume"] => handle_pause(id, false, tasks),
+            _ => json_response(StatusCode::NOT_FOUND, r#"{"error":"Not found"}"#),
+        }
     } else if method == "GET" && path == "/tasks" {
         handle_list(tasks)
     } else if method == "GET" && path.starts_with("/status/") {
@@ -237,6 +224,29 @@ fn handle_request(request: Request<Body>, tasks: &TaskStore) -> Response<Body> {
         "application/json",
     );
     response
+}
+
+fn handle_pause(id: &str, paused: bool, tasks: &TaskStore) -> Response<Body> {
+    let Some(task) = tasks.get(id) else {
+        return json_response(StatusCode::NOT_FOUND, r#"{"error":"Task not found"}"#);
+    };
+    if !matches!(task.status.as_str(), "running" | "paused")
+        || !crate::download_control::set_paused(id, paused)
+    {
+        return json_response(StatusCode::CONFLICT, r#"{"error":"Task is not active"}"#);
+    }
+    tasks.update_progress(
+        id,
+        if paused { "paused" } else { "resuming" },
+        if paused {
+            "Download paused"
+        } else {
+            "Resuming download"
+        },
+        task.progress_percent,
+        None,
+    );
+    json_response(StatusCode::OK, r#"{"ok":true}"#)
 }
 
 fn handle_health() -> Response<Body> {

@@ -2,6 +2,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:segmeris/src/home/home_page_controller.dart';
 
 void main() {
+  test('a late pause response cannot change a completed task', () {
+    final controller = HomePageController();
+    addTearDown(controller.dispose);
+    final id = controller.beginDownloadTask(
+        fileName: 'video.mp4',
+        sourcePage: 'https://example.com/video',
+        status: 'Downloading');
+    controller.completeDownloadTask(
+        id: id,
+        finalPath: '/video.mp4',
+        fileName: 'video.mp4',
+        sourcePage: 'https://example.com/video',
+        completedStatus: 'Completed');
+    controller.setTaskControl(id, paused: true, busy: true);
+    expect(controller.value.downloadTasks.single.paused, isFalse);
+    expect(controller.value.downloadTasks.single.controlBusy, isFalse);
+  });
+
   test('records the actual encoder and replaces it after CPU fallback', () {
     final controller = HomePageController();
     addTearDown(controller.dispose);

@@ -112,6 +112,12 @@ class AppLocalizations {
 
   static const _strings = <String, Map<String, String>>{
     'en': {
+      'download_control_failed': 'Could not change download state',
+      'pause_download': 'Pause',
+      'resume_download': 'Resume',
+      'download_paused': 'Download paused',
+      'copy_download_links': 'Copy download links',
+      'download_links_copied': 'Download links copied',
       'series_kind_parts': 'Multi-part video',
       'series_kind_collection': 'Collection',
       'series_kind_bangumi': 'Bangumi',
@@ -151,14 +157,10 @@ class AppLocalizations {
           'These are the streams this session can reach. Pick one, then start the download.',
       'quality_dialog_series_hint':
           'Applies to every episode: each one downloads this quality or the closest tier it still offers.',
-      'auth_browser_open_external':
-          'Open in system browser',
-      'auth_browser_copy_link':
-          'Copy link',
-      'auth_browser_link_copied':
-          'Link copied',
-      'qr_login_open_browser':
-          'Open in browser',
+      'auth_browser_open_external': 'Open in system browser',
+      'auth_browser_copy_link': 'Copy link',
+      'auth_browser_link_copied': 'Link copied',
+      'qr_login_open_browser': 'Open in browser',
       'qr_login_browser_hint':
           'Only one phone? Open the link in this phone\'s browser (signed in to Bilibili) and confirm there.',
       'start_download': 'Start download',
@@ -283,6 +285,12 @@ class AppLocalizations {
       'separate_audio': 'Separate audio',
     },
     'zh': {
+      'download_control_failed': '无法切换下载状态',
+      'pause_download': '暂停',
+      'resume_download': '继续下载',
+      'download_paused': '下载已暂停',
+      'copy_download_links': '复制下载链接',
+      'download_links_copied': '已复制下载链接',
       'series_kind_parts': '多 P 视频',
       'series_kind_collection': '合集',
       'series_kind_bangumi': '番剧',
@@ -316,20 +324,13 @@ class AppLocalizations {
       'qr_login_retry': '重新生成二维码',
       'download': '下载已选核心流',
       'quality_dialog_title': '选择清晰度',
-      'quality_dialog_hint':
-          '这些是当前会话能拿到的流。选一个，然后开始下载。',
-      'quality_dialog_series_hint':
-          '该清晰度适用于全部剧集：每集按此清晰度下载，若某集未提供则取最接近的一档。',
-      'auth_browser_open_external':
-          '在系统浏览器中打开',
-      'auth_browser_copy_link':
-          '复制链接',
-      'auth_browser_link_copied':
-          '链接已复制',
-      'qr_login_open_browser':
-          '在浏览器中打开',
-      'qr_login_browser_hint':
-          '只有一台手机？在本机浏览器打开该链接（已登录 B 站），在那里确认即可。',
+      'quality_dialog_hint': '这些是当前会话能拿到的流。选一个，然后开始下载。',
+      'quality_dialog_series_hint': '该清晰度适用于全部剧集：每集按此清晰度下载，若某集未提供则取最接近的一档。',
+      'auth_browser_open_external': '在系统浏览器中打开',
+      'auth_browser_copy_link': '复制链接',
+      'auth_browser_link_copied': '链接已复制',
+      'qr_login_open_browser': '在浏览器中打开',
+      'qr_login_browser_hint': '只有一台手机？在本机浏览器打开该链接（已登录 B 站），在那里确认即可。',
       'start_download': '开始下载',
       'download_options': '下载参数',
       'concurrency': '并发',
@@ -387,8 +388,7 @@ class AppLocalizations {
       'subtitle_default': '默认',
       'auth_browser_open': '打开授权浏览器',
       'auth_browser_load_failed': '网页加载失败',
-      'auth_browser_qr_fallback':
-          '如果这里的网页一直空白，请改用「登录哔哩哔哩」扫码登录——它不依赖内置浏览器。',
+      'auth_browser_qr_fallback': '如果这里的网页一直空白，请改用「登录哔哩哔哩」扫码登录——它不依赖内置浏览器。',
       'auth_browser_title': '授权会话浏览器',
       'auth_browser_hint': '在这里打开目标站点，由你自己完成登录或真人验证，然后把当前会话导回 Segmeris。',
       'auth_browser_hint_inline':
@@ -437,6 +437,12 @@ class AppLocalizations {
       'separate_audio': '独立音轨',
     },
     'zh_Hant': {
+      'download_control_failed': '無法切換下載狀態',
+      'pause_download': '暫停',
+      'resume_download': '繼續下載',
+      'download_paused': '下載已暫停',
+      'copy_download_links': '複製下載連結',
+      'download_links_copied': '已複製下載連結',
       'series_kind_parts': '多 P 影片',
       'series_kind_collection': '合集',
       'series_kind_bangumi': '番劇',
@@ -467,20 +473,13 @@ class AppLocalizations {
       'qr_login_retry': '重新產生 QR Code',
       'download': '下載已選核心流',
       'quality_dialog_title': '選擇畫質',
-      'quality_dialog_hint':
-          '這些是目前工作階段能取得的串流。選一個，然後開始下載。',
-      'quality_dialog_series_hint':
-          '此畫質適用於全部集數：每集依此畫質下載，若某集未提供則取最接近的一檔。',
-      'auth_browser_open_external':
-          '在系統瀏覽器中開啟',
-      'auth_browser_copy_link':
-          '複製連結',
-      'auth_browser_link_copied':
-          '連結已複製',
-      'qr_login_open_browser':
-          '在瀏覽器中開啟',
-      'qr_login_browser_hint':
-          '只有一支手機？在本機瀏覽器開啟該連結（已登入 B 站），在那裡確認即可。',
+      'quality_dialog_hint': '這些是目前工作階段能取得的串流。選一個，然後開始下載。',
+      'quality_dialog_series_hint': '此畫質適用於全部集數：每集依此畫質下載，若某集未提供則取最接近的一檔。',
+      'auth_browser_open_external': '在系統瀏覽器中開啟',
+      'auth_browser_copy_link': '複製連結',
+      'auth_browser_link_copied': '連結已複製',
+      'qr_login_open_browser': '在瀏覽器中開啟',
+      'qr_login_browser_hint': '只有一支手機？在本機瀏覽器開啟該連結（已登入 B 站），在那裡確認即可。',
       'start_download': '開始下載',
       'download_options': '下載參數',
       'concurrency': '並發',
@@ -535,8 +534,7 @@ class AppLocalizations {
       'subtitle_default': '預設',
       'auth_browser_open': '開啟授權瀏覽器',
       'auth_browser_load_failed': '網頁載入失敗',
-      'auth_browser_qr_fallback':
-          '如果這裡的網頁一直空白，請改用「登入嗶哩嗶哩」掃碼登入——它不依賴內建瀏覽器。',
+      'auth_browser_qr_fallback': '如果這裡的網頁一直空白，請改用「登入嗶哩嗶哩」掃碼登入——它不依賴內建瀏覽器。',
       'auth_browser_title': '授權會話瀏覽器',
       'auth_browser_hint': '在這裡打開目標站點，由你自行完成登入或真人驗證，然後把目前會話導回 Segmeris。',
       'auth_browser_hint_inline':
@@ -586,18 +584,13 @@ class AppLocalizations {
       'qr_login_retry': 'QR コードを再生成',
       'download': '選択したストリームをダウンロード',
       'quality_dialog_title': '画質を選択',
-      'quality_dialog_hint':
-          'このセッションで取得できるストリームです。選んでからダウンロードを開始してください。',
+      'quality_dialog_hint': 'このセッションで取得できるストリームです。選んでからダウンロードを開始してください。',
       'quality_dialog_series_hint':
           'この画質は全エピソードに適用されます。提供されていない話は最も近い画質で保存します。',
-      'auth_browser_open_external':
-          'システムブラウザで開く',
-      'auth_browser_copy_link':
-          'リンクをコピー',
-      'auth_browser_link_copied':
-          'リンクをコピーしました',
-      'qr_login_open_browser':
-          'ブラウザで開く',
+      'auth_browser_open_external': 'システムブラウザで開く',
+      'auth_browser_copy_link': 'リンクをコピー',
+      'auth_browser_link_copied': 'リンクをコピーしました',
+      'qr_login_open_browser': 'ブラウザで開く',
       'qr_login_browser_hint':
           'スマホが1台だけのときは、この端末のブラウザ（Bilibili にログイン済み）でリンクを開き、そこで確認してください。',
       'start_download': 'ダウンロード開始',
@@ -708,14 +701,10 @@ class AppLocalizations {
           'هذه هي التدفّقات المتاحة لهذه الجلسة. اختر واحدًا ثم ابدأ التنزيل.',
       'quality_dialog_series_hint':
           'تُطبَّق هذه الجودة على كل الحلقات: تُنزَّل كل حلقة بهذه الجودة أو بأقرب جودة متاحة.',
-      'auth_browser_open_external':
-          'الفتح في متصفح النظام',
-      'auth_browser_copy_link':
-          'نسخ الرابط',
-      'auth_browser_link_copied':
-          'تم نسخ الرابط',
-      'qr_login_open_browser':
-          'الفتح في المتصفح',
+      'auth_browser_open_external': 'الفتح في متصفح النظام',
+      'auth_browser_copy_link': 'نسخ الرابط',
+      'auth_browser_link_copied': 'تم نسخ الرابط',
+      'qr_login_open_browser': 'الفتح في المتصفح',
       'qr_login_browser_hint':
           'لديك هاتف واحد فقط؟ افتح الرابط في متصفح هذا الهاتف مع تسجيل الدخول إلى Bilibili وأكّد من هناك.',
       'start_download': 'ابدأ التنزيل',
@@ -830,14 +819,10 @@ class AppLocalizations {
           'این‌ها جریان‌های قابل‌دسترسی در این نشست هستند. یکی را انتخاب و دانلود را آغاز کنید.',
       'quality_dialog_series_hint':
           'این کیفیت برای همه قسمت‌ها اعمال می‌شود؛ هر قسمت با همین کیفیت یا نزدیک‌ترین کیفیت موجود ذخیره می‌شود.',
-      'auth_browser_open_external':
-          'باز کردن در مرورگر سیستم',
-      'auth_browser_copy_link':
-          'کپی پیوند',
-      'auth_browser_link_copied':
-          'پیوند کپی شد',
-      'qr_login_open_browser':
-          'باز کردن در مرورگر',
+      'auth_browser_open_external': 'باز کردن در مرورگر سیستم',
+      'auth_browser_copy_link': 'کپی پیوند',
+      'auth_browser_link_copied': 'پیوند کپی شد',
+      'qr_login_open_browser': 'باز کردن در مرورگر',
       'qr_login_browser_hint':
           'فقط یک گوشی دارید؟ پیوند را در مرورگر همین گوشی با ورود به Bilibili باز کنید و همان‌جا تأیید کنید.',
       'start_download': 'شروع دانلود',
@@ -953,14 +938,10 @@ class AppLocalizations {
           'یہ اس سیشن میں دستیاب اسٹریمز ہیں۔ ایک منتخب کریں پھر ڈاؤن لوڈ شروع کریں۔',
       'quality_dialog_series_hint':
           'یہ کوالٹی ہر قسط پر لاگو ہوتی ہے؛ جو قسط اس میں دستیاب نہ ہو وہ قریب ترین کوالٹی میں محفوظ ہو گی۔',
-      'auth_browser_open_external':
-          'سسٹم براؤزر میں کھولیں',
-      'auth_browser_copy_link':
-          'لنک کاپی کریں',
-      'auth_browser_link_copied':
-          'لنک کاپی ہو گیا',
-      'qr_login_open_browser':
-          'براؤزر میں کھولیں',
+      'auth_browser_open_external': 'سسٹم براؤزر میں کھولیں',
+      'auth_browser_copy_link': 'لنک کاپی کریں',
+      'auth_browser_link_copied': 'لنک کاپی ہو گیا',
+      'qr_login_open_browser': 'براؤزر میں کھولیں',
       'qr_login_browser_hint':
           'صرف ایک فون ہے؟ لنک اسی فون کے براؤزر میں Bilibili پر لاگ اِن کر کے کھولیں اور وہیں تصدیق کریں۔',
       'start_download': 'ڈاؤن لوڈ شروع کریں',
@@ -1076,14 +1057,10 @@ class AppLocalizations {
           'Estos son los flujos accesibles en esta sesión. Elige uno y empieza la descarga.',
       'quality_dialog_series_hint':
           'Se aplica a todos los episodios: cada uno se descarga en esta calidad o en la más cercana disponible.',
-      'auth_browser_open_external':
-          'Abrir en el navegador del sistema',
-      'auth_browser_copy_link':
-          'Copiar enlace',
-      'auth_browser_link_copied':
-          'Enlace copiado',
-      'qr_login_open_browser':
-          'Abrir en el navegador',
+      'auth_browser_open_external': 'Abrir en el navegador del sistema',
+      'auth_browser_copy_link': 'Copiar enlace',
+      'auth_browser_link_copied': 'Enlace copiado',
+      'qr_login_open_browser': 'Abrir en el navegador',
       'qr_login_browser_hint':
           '¿Solo tienes un teléfono? Abre el enlace en el navegador de este teléfono con la sesión de Bilibili iniciada y confirma allí.',
       'start_download': 'Iniciar descarga',
@@ -1161,14 +1138,10 @@ class AppLocalizations {
           'Это потоки, доступные в текущей сессии. Выберите один и начните загрузку.',
       'quality_dialog_series_hint':
           'Это качество применяется ко всем сериям: каждая скачивается в нём или в ближайшем доступном.',
-      'auth_browser_open_external':
-          'Открыть в системном браузере',
-      'auth_browser_copy_link':
-          'Скопировать ссылку',
-      'auth_browser_link_copied':
-          'Ссылка скопирована',
-      'qr_login_open_browser':
-          'Открыть в браузере',
+      'auth_browser_open_external': 'Открыть в системном браузере',
+      'auth_browser_copy_link': 'Скопировать ссылку',
+      'auth_browser_link_copied': 'Ссылка скопирована',
+      'qr_login_open_browser': 'Открыть в браузере',
       'qr_login_browser_hint':
           'Телефон только один? Откройте ссылку в браузере этого телефона с входом в Bilibili и подтвердите там.',
       'start_download': 'Начать загрузку',
@@ -1245,14 +1218,10 @@ class AppLocalizations {
           'ये इस सत्र में उपलब्ध स्ट्रीम हैं। एक चुनें, फिर डाउनलोड शुरू करें।',
       'quality_dialog_series_hint':
           'यह गुणवत्ता हर एपिसोड पर लागू होती है; जिस एपिसोड में यह उपलब्ध नहीं, वह निकटतम गुणवत्ता में सहेजा जाएगा।',
-      'auth_browser_open_external':
-          'सिस्टम ब्राउज़र में खोलें',
-      'auth_browser_copy_link':
-          'लिंक कॉपी करें',
-      'auth_browser_link_copied':
-          'लिंक कॉपी हो गया',
-      'qr_login_open_browser':
-          'ब्राउज़र में खोलें',
+      'auth_browser_open_external': 'सिस्टम ब्राउज़र में खोलें',
+      'auth_browser_copy_link': 'लिंक कॉपी करें',
+      'auth_browser_link_copied': 'लिंक कॉपी हो गया',
+      'qr_login_open_browser': 'ब्राउज़र में खोलें',
       'qr_login_browser_hint':
           'सिर्फ़ एक फ़ोन है? लिंक को इसी फ़ोन के ब्राउज़र में Bilibili पर साइन-इन कर के खोलें और वहीं पुष्टि करें।',
       'start_download': 'डाउनलोड शुरू करें',
@@ -1327,14 +1296,10 @@ class AppLocalizations {
           'Voici les flux accessibles à cette session. Choisissez-en un, puis lancez le téléchargement.',
       'quality_dialog_series_hint':
           'Cette qualité s\'applique à tous les épisodes : chacun est téléchargé dans cette qualité ou la plus proche disponible.',
-      'auth_browser_open_external':
-          'Ouvrir dans le navigateur du système',
-      'auth_browser_copy_link':
-          'Copier le lien',
-      'auth_browser_link_copied':
-          'Lien copié',
-      'qr_login_open_browser':
-          'Ouvrir dans le navigateur',
+      'auth_browser_open_external': 'Ouvrir dans le navigateur du système',
+      'auth_browser_copy_link': 'Copier le lien',
+      'auth_browser_link_copied': 'Lien copié',
+      'qr_login_open_browser': 'Ouvrir dans le navigateur',
       'qr_login_browser_hint':
           'Un seul téléphone ? Ouvrez le lien dans le navigateur de ce téléphone, connecté à Bilibili, et confirmez-y.',
       'start_download': 'Lancer le téléchargement',
@@ -1451,14 +1416,10 @@ class AppLocalizations {
           'Das sind die in dieser Sitzung erreichbaren Streams. Einen wählen und den Download starten.',
       'quality_dialog_series_hint':
           'Diese Qualität gilt für alle Folgen; fehlt sie bei einer Folge, wird die nächstbeste geladen.',
-      'auth_browser_open_external':
-          'Im Systembrowser öffnen',
-      'auth_browser_copy_link':
-          'Link kopieren',
-      'auth_browser_link_copied':
-          'Link kopiert',
-      'qr_login_open_browser':
-          'Im Browser öffnen',
+      'auth_browser_open_external': 'Im Systembrowser öffnen',
+      'auth_browser_copy_link': 'Link kopieren',
+      'auth_browser_link_copied': 'Link kopiert',
+      'qr_login_open_browser': 'Im Browser öffnen',
       'qr_login_browser_hint':
           'Nur ein Telefon? Öffne den Link im Browser dieses Telefons mit Bilibili-Anmeldung und bestätige dort.',
       'start_download': 'Download starten',
@@ -1577,14 +1538,10 @@ class AppLocalizations {
           'Estes são os fluxos acessíveis nesta sessão. Escolha um e inicie o download.',
       'quality_dialog_series_hint':
           'Aplica-se a todos os episódios: cada um baixa nesta qualidade ou na mais próxima disponível.',
-      'auth_browser_open_external':
-          'Abrir no navegador do sistema',
-      'auth_browser_copy_link':
-          'Copiar link',
-      'auth_browser_link_copied':
-          'Link copiado',
-      'qr_login_open_browser':
-          'Abrir no navegador',
+      'auth_browser_open_external': 'Abrir no navegador do sistema',
+      'auth_browser_copy_link': 'Copiar link',
+      'auth_browser_link_copied': 'Link copiado',
+      'qr_login_open_browser': 'Abrir no navegador',
       'qr_login_browser_hint':
           'Só tem um telefone? Abra o link no navegador deste telefone com a sessão do Bilibili iniciada e confirme por lá.',
       'start_download': 'Iniciar download',
@@ -1662,14 +1619,10 @@ class AppLocalizations {
           'Bu oturumda erişilebilen akışlar bunlar. Birini seçip indirmeyi başlatın.',
       'quality_dialog_series_hint':
           'Bu kalite tüm bölümlere uygulanır; bu kaliteyi sunmayan bölüm en yakın kalitede indirilir.',
-      'auth_browser_open_external':
-          'Sistem tarayıcısında aç',
-      'auth_browser_copy_link':
-          'Bağlantıyı kopyala',
-      'auth_browser_link_copied':
-          'Bağlantı kopyalandı',
-      'qr_login_open_browser':
-          'Tarayıcıda aç',
+      'auth_browser_open_external': 'Sistem tarayıcısında aç',
+      'auth_browser_copy_link': 'Bağlantıyı kopyala',
+      'auth_browser_link_copied': 'Bağlantı kopyalandı',
+      'qr_login_open_browser': 'Tarayıcıda aç',
       'qr_login_browser_hint':
           'Tek telefonunuz mu var? Bağlantıyı bu telefonun tarayıcısında Bilibili oturumu açıkken açıp oradan onaylayın.',
       'start_download': 'İndirmeyi başlat',
@@ -1746,14 +1699,10 @@ class AppLocalizations {
           'Đây là các luồng phiên này truy cập được. Chọn một rồi bắt đầu tải.',
       'quality_dialog_series_hint':
           'Chất lượng này áp dụng cho mọi tập; tập không có chất lượng đó sẽ tải ở mức gần nhất.',
-      'auth_browser_open_external':
-          'Mở trong trình duyệt hệ thống',
-      'auth_browser_copy_link':
-          'Sao chép liên kết',
-      'auth_browser_link_copied':
-          'Đã sao chép liên kết',
-      'qr_login_open_browser':
-          'Mở trong trình duyệt',
+      'auth_browser_open_external': 'Mở trong trình duyệt hệ thống',
+      'auth_browser_copy_link': 'Sao chép liên kết',
+      'auth_browser_link_copied': 'Đã sao chép liên kết',
+      'qr_login_open_browser': 'Mở trong trình duyệt',
       'qr_login_browser_hint':
           'Chỉ có một điện thoại? Hãy mở liên kết trong trình duyệt của máy này khi đã đăng nhập Bilibili và xác nhận tại đó.',
       'start_download': 'Bắt đầu tải',
@@ -1829,14 +1778,10 @@ class AppLocalizations {
           'Ini aliran yang dapat diakses sesi ini. Pilih satu, lalu mulai unduhan.',
       'quality_dialog_series_hint':
           'Kualitas ini berlaku untuk semua episode; episode tanpa kualitas tersebut diunduh pada kualitas terdekat.',
-      'auth_browser_open_external':
-          'Buka di browser sistem',
-      'auth_browser_copy_link':
-          'Salin tautan',
-      'auth_browser_link_copied':
-          'Tautan disalin',
-      'qr_login_open_browser':
-          'Buka di browser',
+      'auth_browser_open_external': 'Buka di browser sistem',
+      'auth_browser_copy_link': 'Salin tautan',
+      'auth_browser_link_copied': 'Tautan disalin',
+      'qr_login_open_browser': 'Buka di browser',
       'qr_login_browser_hint':
           'Hanya punya satu ponsel? Buka tautannya di browser ponsel ini dengan Bilibili sudah masuk, lalu konfirmasi di sana.',
       'start_download': 'Mulai unduh',

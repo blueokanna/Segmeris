@@ -18,7 +18,7 @@ import 'download_engine.dart';
 /// Because browsers cannot run the Rust engine, this client translates the
 /// REST responses into the same `ProgressUpdate` / `MediaInspectionResult`
 /// objects the native UI consumes.
-class ApiDownloadEngine implements DownloadEngine {
+class ApiDownloadEngine implements DownloadEngine, PausableDownloadEngine {
   ApiDownloadEngine({required String apiBaseUrl, this.apiToken = ''})
       : apiBaseUrl = _normalizeBaseUrl(apiBaseUrl);
 
@@ -26,6 +26,15 @@ class ApiDownloadEngine implements DownloadEngine {
 
   /// Optional bearer token forwarded to the API server (`FERRISLOAD_API_TOKEN`).
   final String apiToken;
+  final _activeTasks = <String, String>{};
+
+  @override
+  Future<bool> setPaused({required String output, required bool paused}) async {
+    final id = _activeTasks[output];
+    if (id == null || id.isEmpty) return false;
+    await _postJson('/tasks/$id/${paused ? 'pause' : 'resume'}', {});
+    return true;
+  }
 
   static const _pollInterval = Duration(seconds: 1);
 
@@ -203,13 +212,11 @@ class ApiDownloadEngine implements DownloadEngine {
       extractor: raw['extractor'] as String? ?? '',
       pageUrl: raw['page_url'] as String? ?? '',
       mediaUrl: raw['media_url'] as String? ?? '',
-      mediaFallbackUrls: _asList(raw['media_fallback_urls'])
-          .whereType<String>()
-          .toList(),
+      mediaFallbackUrls:
+          _asList(raw['media_fallback_urls']).whereType<String>().toList(),
       audioUrl: raw['audio_url'] as String?,
-      audioFallbackUrls: _asList(raw['audio_fallback_urls'])
-          .whereType<String>()
-          .toList(),
+      audioFallbackUrls:
+          _asList(raw['audio_fallback_urls']).whereType<String>().toList(),
       container: raw['container'] as String? ?? '',
       protocol: raw['protocol'] as String? ?? '',
       mimeType: raw['mime_type'] as String? ?? '',
@@ -238,82 +245,97 @@ class ApiDownloadEngine implements DownloadEngine {
     required DownloadOptions options,
     required RequestContext requestContext,
   }) async* {
-    final accepted = await _postJson('/download', {
-      'url': pageUrl,
-      'media_url': mediaUrl,
-      'media_fallback_urls': mediaFallbackUrls,
-      'audio_url': audioUrl,
-      'audio_fallback_urls': audioFallbackUrls,
-      'output_filename': _basename(output),
-      'concurrency': options.concurrency,
-      'retries': options.retries,
-      'video_bitrate': options.videoBitrate,
-      'audio_bitrate': options.audioBitrate,
-      'keep_temp': options.keepTemp,
-      'subtitle': {
-        'mode': _subtitleModeName(options.subtitleMode),
-        'value': options.subtitleValue,
-      },
-      'request_context': _contextToJson(requestContext),
-    });
-    final taskId = accepted['task_id'] as String?;
-    if (taskId == null || taskId.isEmpty) {
-      throw ApiEngineException('API did not return a task id');
+    if (_activeTasks.containsKey(output)) {
+      throw ApiEngineException('A download already owns this output path');
     }
-
-    var sawProgress = false;
-    final started = DateTime.now();
-    while (true) {
-      // Guard against a server that never progresses: fail instead of
-      // polling forever.
-      if (DateTime.now().difference(started) > _maxPollDuration) {
-        throw ApiEngineException(
-          'API server did not finish the task within '
-          '${_maxPollDuration.inHours}h; check the server logs.',
-        );
+    _activeTasks[output] = '';
+    try {
+      final accepted = await _postJson('/download', {
+        'url': pageUrl,
+        'media_url': mediaUrl,
+        'media_fallback_urls': mediaFallbackUrls,
+        'audio_url': audioUrl,
+        'audio_fallback_urls': audioFallbackUrls,
+        'output_filename': _basename(output),
+        'concurrency': options.concurrency,
+        'retries': options.retries,
+        'video_bitrate': options.videoBitrate,
+        'audio_bitrate': options.audioBitrate,
+        'keep_temp': options.keepTemp,
+        'subtitle': {
+          'mode': _subtitleModeName(options.subtitleMode),
+          'value': options.subtitleValue,
+        },
+        'request_context': _contextToJson(requestContext),
+      });
+      final taskId = accepted['task_id'] as String?;
+      if (taskId == null || taskId.isEmpty) {
+        throw ApiEngineException('API did not return a task id');
       }
-      final status = await _getJson('/status/$taskId');
-      final state = status['status'] as String? ?? 'running';
-      final message = status['message'] as String? ?? '';
-      final percent = (status['progress_percent'] as num?)?.toDouble();
-      final error = status['error'] as String?;
-      final serverOutput = status['output_path'] as String?;
-      if (serverOutput != null && serverOutput.isNotEmpty) {
-        _lastOutputPath = serverOutput;
-      }
 
-      switch (state) {
-        case 'completed':
-          yield ProgressUpdate(
-            message: message.isEmpty ? 'All tasks completed' : message,
-            progress: 1.0,
+      _activeTasks[output] = taskId;
+      var sawProgress = false;
+      var activeElapsed = Duration.zero;
+      var lastPoll = DateTime.now();
+      var wasPaused = false;
+      while (true) {
+        // Guard against a server that never progresses: fail instead of
+        // polling forever.
+        final now = DateTime.now();
+        if (!wasPaused) activeElapsed += now.difference(lastPoll);
+        lastPoll = now;
+        if (activeElapsed > _maxPollDuration) {
+          throw ApiEngineException(
+            'API server did not finish the task within '
+            '${_maxPollDuration.inHours}h; check the server logs.',
           );
-          return;
-        case 'failed':
-          yield ProgressUpdate(
-            message: '',
-            progress: 0.0,
-            error: (error == null || error.isEmpty)
-                ? 'Download failed on the API server'
-                : error,
-          );
-          return;
-        default:
-          final progress = (percent ?? 0.0).clamp(0.0, 100.0) / 100.0;
-          if (progress > 0 || message.isNotEmpty) {
-            sawProgress = true;
+        }
+        final status = await _getJson('/status/$taskId');
+        final state = status['status'] as String? ?? 'running';
+        wasPaused = state == 'paused';
+        final message = status['message'] as String? ?? '';
+        final percent = (status['progress_percent'] as num?)?.toDouble();
+        final error = status['error'] as String?;
+        final serverOutput = status['output_path'] as String?;
+        if (serverOutput != null && serverOutput.isNotEmpty) {
+          _lastOutputPath = serverOutput;
+        }
+
+        switch (state) {
+          case 'completed':
             yield ProgressUpdate(
-              message: message.isEmpty ? 'Working...' : message,
-              progress: progress,
+              message: message.isEmpty ? 'All tasks completed' : message,
+              progress: 1.0,
             );
-          }
-          if (!sawProgress && _pollInterval.inMilliseconds > 0) {
-            // Keep emitting an initial progress so the UI never stalls blank.
+            return;
+          case 'failed':
             yield ProgressUpdate(
-                message: 'Waiting for API server...', progress: 0.0);
-          }
-          await Future<void>.delayed(_pollInterval);
+              message: '',
+              progress: 0.0,
+              error: (error == null || error.isEmpty)
+                  ? 'Download failed on the API server'
+                  : error,
+            );
+            return;
+          default:
+            final progress = (percent ?? 0.0).clamp(0.0, 100.0) / 100.0;
+            if (progress > 0 || message.isNotEmpty) {
+              sawProgress = true;
+              yield ProgressUpdate(
+                message: message.isEmpty ? 'Working...' : message,
+                progress: progress,
+              );
+            }
+            if (!sawProgress && _pollInterval.inMilliseconds > 0) {
+              // Keep emitting an initial progress so the UI never stalls blank.
+              yield ProgressUpdate(
+                  message: 'Waiting for API server...', progress: 0.0);
+            }
+            await Future<void>.delayed(_pollInterval);
+        }
       }
+    } finally {
+      _activeTasks.remove(output);
     }
   }
 

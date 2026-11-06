@@ -1,16 +1,9 @@
-//! MurmurHash3 x64 128-bit — the hash Bilibili's web client uses to
-//! derive the `buvid_fp` browser fingerprint from the User-Agent
-//! string. Implemented from the public-domain reference algorithm
-//! (Austin Appleby); the tests below pin fixed outputs.
-
 const C1: u64 = 0x87c3_7b91_1142_53d5;
 const C2: u64 = 0x4cf5_ad43_2745_937f;
 const R1: u32 = 27;
 const R2: u32 = 31;
 const R3: u32 = 33;
 
-/// Hashes `data` with MurmurHash3 x64 128-bit, returning the `(h1, h2)`
-/// halves in the order the reference implementation reports them.
 pub fn murmur3_x64_128(data: &[u8], seed: u32) -> (u64, u64) {
     let mut h1 = u64::from(seed);
     let mut h2 = u64::from(seed);
@@ -68,7 +61,6 @@ pub fn murmur3_x64_128(data: &[u8], seed: u32) -> (u64, u64) {
     (h1, h2)
 }
 
-/// The final avalanche mixer of the reference implementation.
 fn fmix64(mut value: u64) -> u64 {
     value ^= value >> 33;
     value = value.wrapping_mul(0xff51_afd7_ed55_8ccd);
@@ -81,13 +73,6 @@ fn fmix64(mut value: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::murmur3_x64_128;
-
-    /// The reference test suite (`PeterScott/murmur3` `test.c`, the
-    /// implementation the `mmh3` package validates against) prints the
-    /// 16 output bytes as four 32-bit words in memory order; on
-    /// little-endian hosts that is `[h1 low][h1 high][h2 low][h2
-    /// high]`, which is exactly how the expected pairs below were
-    /// derived (`x64, 128` rows).
     #[test]
     fn matches_reference_vectors() {
         assert_eq!(
@@ -108,9 +93,6 @@ mod tests {
         );
     }
 
-    /// A second, independent vector source: `mmh3.hash64("foo")`,
-    /// which the published test suite pins as `(h1, h2)` in signed
-    /// 64-bit form, here written unsigned.
     #[test]
     fn matches_mmh3_hash64_of_foo() {
         assert_eq!(

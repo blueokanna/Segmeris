@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
 import 'package:segmeris/src/app/app_theme.dart';
 import 'package:segmeris/src/home/home_page_controller.dart';
@@ -9,10 +10,12 @@ class HomeDownloadTasksCard extends StatelessWidget {
     super.key,
     required this.tasks,
     required this.onRetry,
+    this.onTogglePause,
   });
 
   final List<HomeDownloadTask> tasks;
   final ValueChanged<String> onRetry;
+  final ValueChanged<String>? onTogglePause;
 
   @override
   Widget build(BuildContext context) {
@@ -44,6 +47,7 @@ class HomeDownloadTasksCard extends StatelessWidget {
                         key: ValueKey(entry.$2.id),
                         task: entry.$2,
                         onRetry: onRetry,
+                        onTogglePause: onTogglePause,
                       ),
                     ),
                 ],
@@ -95,10 +99,12 @@ class _DownloadTaskTile extends StatelessWidget {
     super.key,
     required this.task,
     required this.onRetry,
+    this.onTogglePause,
   });
 
   final HomeDownloadTask task;
   final ValueChanged<String> onRetry;
+  final ValueChanged<String>? onTogglePause;
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +143,10 @@ class _DownloadTaskTile extends StatelessWidget {
         children: [
           Row(
             children: [
-              StatusPulseDot(active: task.running, color: foreground, size: 10),
+              StatusPulseDot(
+                  active: task.running && !task.paused,
+                  color: foreground,
+                  size: 10),
               const SizedBox(width: 10),
               Icon(icon, size: 18, color: foreground),
               const SizedBox(width: 8),
@@ -187,7 +196,7 @@ class _DownloadTaskTile extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            task.status,
+            task.paused ? l.text('download_paused') : task.status,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: t.textTheme.bodySmall?.copyWith(
@@ -222,6 +231,35 @@ class _DownloadTaskTile extends StatelessWidget {
               ],
             ),
           ],
+          Wrap(
+            spacing: 8,
+            children: [
+              if (onTogglePause != null && task.canPause)
+                TextButton.icon(
+                  onPressed:
+                      task.controlBusy ? null : () => onTogglePause!(task.id),
+                  icon: Icon(task.paused
+                      ? Icons.play_arrow_rounded
+                      : Icons.pause_rounded),
+                  label: Text(l.text(
+                      task.paused ? 'resume_download' : 'pause_download')),
+                ),
+              TextButton.icon(
+                onPressed: () async {
+                  final urls = task.downloadUrls.isEmpty
+                      ? [task.sourcePage]
+                      : task.downloadUrls;
+                  await Clipboard.setData(ClipboardData(text: urls.join('\n')));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(l.text('download_links_copied'))));
+                  }
+                },
+                icon: const Icon(Icons.link_rounded),
+                label: Text(l.text('copy_download_links')),
+              ),
+            ],
+          ),
           const SizedBox(height: 6),
           Text(
             task.resultPath ?? task.sourcePage,

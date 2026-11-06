@@ -1,14 +1,6 @@
-//! Synchronous entry points for the download engine.
-//!
-//! These wrap the synchronous `courierust`-backed core so that
-//! non-Flutter callers (the HTTP API server) can drive downloads
-//! without an async runtime.
-
-use std::sync::Arc;
-
-use anyhow::Result;
-
 use crate::api::downloader::{self, DownloadOptions, MediaSource, ProgressUpdate, RequestContext};
+use anyhow::Result;
+use std::sync::Arc;
 
 pub type DownloadProgressHandler = Arc<dyn Fn(ProgressUpdate) + Send + Sync>;
 
@@ -35,7 +27,6 @@ pub fn hls_to_mp4(
     )
 }
 
-/// Download one resolved media source.
 pub fn download_media(
     source: MediaSource,
     output: String,

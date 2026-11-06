@@ -90,13 +90,18 @@ object MediaTranscoder {
                 return false
             }
 
+            val requiredDurationMs = if (expectedDurationMs > 0) expectedDurationMs else probeDurationMs(inputPath, scanSamples = true)
+            if (requiredDurationMs <= 0) {
+                Log.e(TAG, "Cannot determine source duration")
+                return false
+            }
             val hasBframes = videoNeedsReencode(inputPath)
             val canMuxBframes = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1
             if (vBitrate <= 0 && effABitrate <= 0 && (!hasBframes || canMuxBframes)) {
                 val remuxOk = tryRemux(inputPath, outputPath, hasBframes && canMuxBframes)
                 if (remuxOk &&
                                 verifyOutput(outputPath) &&
-                                verifyDuration(outputPath, expectedDurationMs, "remux")
+                                verifyDuration(outputPath, requiredDurationMs, "remux")
                 ) {
                     Log.i(TAG, "✅ Remux succeeded: ${File(outputPath).length()} bytes")
                     return true
@@ -118,7 +123,7 @@ object MediaTranscoder {
             val hwOk = hardwareTranscode(inputPath, outputPath, vBitrate, effABitrate)
             if (hwOk &&
                             verifyOutput(outputPath) &&
-                            verifyDuration(outputPath, expectedDurationMs, "transcode")
+                            verifyDuration(outputPath, requiredDurationMs, "transcode")
             ) {
                 Log.i(TAG, "✅ Hardware transcode succeeded: ${File(outputPath).length()} bytes")
                 return true
@@ -257,8 +262,6 @@ object MediaTranscoder {
             Log.e(TAG, "transcodeDir: segment directory missing: $segmentDir")
             return false
         }
-        // Same graceful degradation as `transcode`: an audio bitrate request
-        // must not force the hardware re-encode path or fail the download.
         val effABitrate =
                 if (aBitrate > 0) {
                     Log.w(
@@ -270,12 +273,6 @@ object MediaTranscoder {
                     aBitrate
                 }
 
-        // 1) Stream-copy remux of every segment. MediaMuxer (API 25+) writes a
-        //    proper ctts table when the video samples are fed in decode order
-        //    with their REAL (B-frame swinging) PTS, so even B-frame content
-        //    can be remuxed losslessly and at disk speed. Only when that is
-        //    impossible (old API, or the muxer rejects the stream) do we fall
-        //    back to hardware re-encoding.
         val hasBframes = segmentVideoNeedsReencode(segmentDir, prefix, total)
         val canMuxBframes = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1
         if (vBitrate <= 0 && effABitrate <= 0 && (!hasBframes || canMuxBframes)) {
@@ -307,8 +304,6 @@ object MediaTranscoder {
             )
         }
 
-        // 2) Hardware (or software fallback) transcode feeding every segment
-        //    into ONE continuous decode→encode→mux pipeline.
         val hwOk =
                 hardwareTranscodeSegments(
                         segmentDir,
@@ -422,8 +417,6 @@ object MediaTranscoder {
             var lastPts = Long.MIN_VALUE
             var frames = 0
             val scratch = ByteBuffer.allocateDirect(4 * 1024 * 1024)
-            // A constant frame rate only needs a short sampling window;
-            // scanning a whole long input just to measure fps wastes I/O.
             while (frames < 900) {
                 val sz = ext.readSampleData(scratch, 0)
                 if (sz < 0) break
@@ -435,7 +428,6 @@ object MediaTranscoder {
                 }
                 ext.advance()
             }
-            // Require a representative sample before trusting the estimate.
             if (frames >= 5 && lastPts > firstPts) {
                 val durationUs = lastPts - firstPts
                 val measured = (frames - 1) * 1_000_000L / durationUs
@@ -471,15 +463,8 @@ object MediaTranscoder {
 
         fun next(rawUs: Long): Long {
             val raw = if (rawUs < 0) 0L else rawUs
-            // A restarted segment jumps back by roughly a whole segment (seconds); a
-            // legitimate B-frame swing never exceeds the stream's reorder depth, which
-            // is a handful of frame intervals. Scaling the threshold with the measured
-            // interval keeps even long-GOP reordering out of the reset detection.
             val resetThresholdUs = maxOf(SEGMENT_RESET_US, 20L * minStepUs)
             if (maxFedUs != Long.MIN_VALUE && raw + offsetUs < maxFedUs - resetThresholdUs) {
-                // Land exactly one sample interval after the previous segment's last
-                // sample: glueing to the sample's own timestamp (offset = maxFedUs)
-                // instead would hand the codec two frames with one timestamp.
                 offsetUs = maxFedUs + minStepUs - raw
             }
             val fed = raw + offsetUs
@@ -537,13 +522,13 @@ object MediaTranscoder {
          * segment that would then overlap the previous one gets clamped to +1 us as well — audible
          * as a skip/clamp at every segment boundary.
          */
-        fun beginSegment(index: Int, headUs: Long, measure: Boolean): Long {
+        fun beginSegment(index: Int, headUs: Long, measure: Boolean, discontinuity: Boolean = false): Long {
             if (index < segmentLifts.size) return segmentLifts[index]
             val head = headUs - originUs
             val endUs =
                     if (measuredEndUs == Long.MIN_VALUE) Long.MIN_VALUE
                     else measuredEndUs + minStepUs
-            val lift = if (endUs == Long.MIN_VALUE || head >= endUs) 0L else endUs - head
+            val lift = if (endUs == Long.MIN_VALUE || (!discontinuity && head >= endUs)) 0L else endUs - head
             if (!measure) {
                 // The measuring pass never reached this segment (it does not exist
                 // there): glue it to the shared timeline from its own head without
@@ -663,6 +648,25 @@ object MediaTranscoder {
      * independent, so sharing the measured lifts by index would move whole segments to the wrong
      * timestamp.
      */
+    /** The last sample needs an explicit end time for a reliable MP4 duration. */
+    private class TrackEnd {
+        private var maximum = Long.MIN_VALUE
+        private var step = 0L
+        fun observe(pts: Long) {
+            if (maximum != Long.MIN_VALUE && pts > maximum) {
+                val delta = pts - maximum
+                if (step == 0L || delta < step) step = delta
+            }
+            maximum = maxOf(maximum, pts)
+        }
+        fun finish(muxer: MediaMuxer, track: Int) {
+            check(maximum != Long.MIN_VALUE) { "Cannot finalize an empty media track" }
+            val end = MediaCodec.BufferInfo()
+            end.set(0, 0, maximum + step.coerceAtLeast(1L), MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+            muxer.writeSampleData(track, ByteBuffer.allocate(0), end)
+        }
+    }
+
     private fun writeSegmentTrack(
             segmentDir: String,
             prefix: String,
@@ -678,6 +682,9 @@ object MediaTranscoder {
         val info = MediaCodec.BufferInfo()
         var samples = 0
         var lastOutPts = Long.MIN_VALUE
+        val discontinuityFile = File(segmentDir, "$prefix.discontinuities")
+        val discontinuities = if (discontinuityFile.exists()) discontinuityFile.readLines().filter(String::isNotBlank).map(String::toInt).toSet() else emptySet()
+        val trackEnd = TrackEnd()
         val swinging = video && preserveBframes
         for (i in 0 until total) {
             val ext = MediaExtractor()
@@ -692,7 +699,7 @@ object MediaTranscoder {
                 }
                 ext.selectTrack(srcIdx)
                 val liftUs =
-                        timeline.beginSegment(i, ext.sampleTime.coerceAtLeast(0L), measure = measure)
+                        timeline.beginSegment(i, ext.sampleTime.coerceAtLeast(0L), measure = measure, discontinuity = i in discontinuities)
                 while (true) {
                     val sz = ext.readSampleData(buf, 0)
                     if (sz < 0) break
@@ -705,6 +712,7 @@ object MediaTranscoder {
                     info.presentationTimeUs = mappedPts
                     info.flags = ext.sampleFlags
                     muxer.writeSampleData(dstIdx, buf, info)
+                    trackEnd.observe(mappedPts)
                     samples++
                     if (measure) timeline.observe(mappedPts)
                     ext.advance()
@@ -720,6 +728,7 @@ object MediaTranscoder {
                 ext.release()
             }
         }
+        trackEnd.finish(muxer, dstIdx)
         return samples
     }
 
@@ -1325,9 +1334,12 @@ object MediaTranscoder {
      * unknown (0) this check is skipped.
      */
     private fun verifyDuration(path: String, expectedMs: Long, what: String): Boolean {
-        if (expectedMs <= 0) return true
-        val minTolerance = (expectedMs * 80L / 100L).coerceAtLeast(expectedMs - 120_000L)
-        val maxTolerance = expectedMs + maxOf(30_000L, expectedMs / 5L)
+        val containerMs = Mp4Duration.readMs(path) ?: run {
+            Log.e(TAG, "$what output has no finalized MP4 movie duration")
+            return false
+        }
+        val minTolerance = (expectedMs * 97L / 100L).coerceAtLeast(expectedMs - 5_000L)
+        val maxTolerance = expectedMs + maxOf(5_000L, expectedMs * 3L / 100L)
 
         val future = java.util.concurrent.Executors.newSingleThreadExecutor()
         val actualMs =
@@ -1368,7 +1380,11 @@ object MediaTranscoder {
             )
             return false
         }
-        return durationWithinBounds(referenceMs, minTolerance, maxTolerance, expectedMs, what)
+        if (kotlin.math.abs(containerMs - referenceMs) > maxOf(1000L, referenceMs / 100L)) {
+            Log.e(TAG, "$what movie duration ${containerMs}ms disagrees with media duration ${referenceMs}ms")
+            return false
+        }
+        return expectedMs <= 0 || durationWithinBounds(referenceMs, minTolerance, maxTolerance, expectedMs, what)
     }
 
     /**
@@ -1377,7 +1393,7 @@ object MediaTranscoder {
      * that is absent walks the last samples to recover a timeline. Returns ms, or -1 for an
      * unreadable file.
      */
-    private fun probeDurationMs(path: String): Long {
+    private fun probeDurationMs(path: String, scanSamples: Boolean = false): Long {
         val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
         return try {
             val task =
@@ -1402,20 +1418,27 @@ object MediaTranscoder {
                                             if (durationUs > longestUs) longestUs = durationUs
                                         }
                                     }
-                                    if (longestUs <= 0 && sawTrack) {
+                                    if ((scanSamples || longestUs <= 0) && sawTrack) {
                                         // No track durations in the container;
                                         // recover the timeline by walking samples
                                         // (decode order, without copying data).
                                         for (i in 0 until extractor.trackCount) {
                                             extractor.selectTrack(i)
+                                            extractor.seekTo(0, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                                            var firstPts = Long.MAX_VALUE
                                             var lastPts = Long.MIN_VALUE
                                             while (true) {
                                                 val pts = extractor.sampleTime
+                                                if (Thread.currentThread().isInterrupted) throw InterruptedException("Duration scan cancelled")
+                                                if (pts < 0) break
+                                                if (pts < firstPts) firstPts = pts
                                                 if (pts > lastPts) lastPts = pts
                                                 if (!extractor.advance()) break
                                             }
                                             extractor.unselectTrack(i)
-                                            if (lastPts > longestUs) longestUs = lastPts
+                                            if (firstPts != Long.MAX_VALUE && lastPts >= firstPts) {
+                                                longestUs = maxOf(longestUs, lastPts - firstPts)
+                                            }
                                         }
                                     }
                                     if (longestUs <= 0) -1L
@@ -1512,6 +1535,7 @@ object MediaTranscoder {
             // output stays continuous. Everything else (audio, and video that
             // MediaMuxer must flatten) is clamped to a strictly monotonic
             // timeline, which the MP4 writer requires.
+            val trackEnd = TrackEnd()
             val bframeTimeline = DecoderPtsTimeline()
             var lastPts = Long.MIN_VALUE
             var ptsOffset = 0L
@@ -1548,9 +1572,11 @@ object MediaTranscoder {
                 if (adjustedPts < 0) adjustedPts = 0
                 info.presentationTimeUs = adjustedPts
                 muxer.writeSampleData(destinationIndex, buffer, info)
+                trackEnd.observe(adjustedPts)
                 samples++
                 extractor.advance()
             }
+            trackEnd.finish(muxer, destinationIndex)
             return samples
         } finally {
             extractor.release()
@@ -1585,8 +1611,8 @@ object MediaTranscoder {
             if (audioIdx >= 0) {
                 val aMime = extractor.getTrackFormat(audioIdx).getString(MediaFormat.KEY_MIME) ?: ""
                 if (aMime != "audio/mp4a-latm" && aMime != "audio/aac") {
-                    Log.w(TAG, "Remux: dropping non-AAC audio track $aMime")
-                    audioIdx = -1
+                    Log.w(TAG, "Remux requires an MP4-compatible audio track: $aMime")
+                    return false
                 }
             }
 

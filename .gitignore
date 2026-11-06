@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Machine-specific Cargo overrides; never ship local dependency paths.
+/.cargo/config.toml

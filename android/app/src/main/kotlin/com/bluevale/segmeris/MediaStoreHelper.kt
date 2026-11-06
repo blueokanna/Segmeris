@@ -98,8 +98,6 @@ object MediaStoreHelper {
         return try {
             val dir = File(destDir)
             if (!dir.exists()) dir.mkdirs()
-            // Defense in depth: never let a caller-provided file name escape
-            // the chosen directory (path traversal).
             val destFile = File(dir, sanitizeFileName(fileName))
             srcFile.copyTo(destFile, overwrite = true)
             MediaScannerConnection.scanFile(
@@ -151,22 +149,26 @@ object MediaStoreHelper {
             return null
         }
 
-        resolver.openOutputStream(itemUri)?.use { outputStream ->
-            FileInputStream(srcFile).use { inputStream ->
-                inputStream.copyTo(outputStream, bufferSize = 65536)
-                outputStream.flush()
-            }
-        } ?: run {
-            Log.e(TAG, "Failed to open output stream for URI: $itemUri")
-            resolver.delete(itemUri, null, null)
-            return null
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        try {
+            resolver.openOutputStream(itemUri)?.use { outputStream ->
+                FileInputStream(srcFile).use { inputStream ->
+                    val copied = inputStream.copyTo(outputStream, bufferSize = 65536)
+                    check(copied == srcFile.length()) { "Incomplete media export" }
+                    outputStream.flush()
+                }
+            } ?: error("Cannot open MediaStore output")
             val updateValues = ContentValues().apply {
+                if (mimeType.startsWith("video/")) {
+                    val duration = Mp4Duration.readMs(srcFile.absolutePath)
+                        ?: error("Cannot publish an MP4 without a valid movie duration")
+                    put(MediaStore.Video.VideoColumns.DURATION, duration)
+                }
                 put(MediaStore.MediaColumns.IS_PENDING, 0)
             }
-            resolver.update(itemUri, updateValues, null, null)
+            check(resolver.update(itemUri, updateValues, null, null) == 1) { "Cannot publish MediaStore entry" }
+        } catch (error: Exception) {
+            resolver.delete(itemUri, null, null)
+            throw error
         }
 
         val savedPath = getPathFromUri(context, itemUri)

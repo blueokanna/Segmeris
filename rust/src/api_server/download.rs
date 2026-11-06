@@ -19,6 +19,7 @@ pub fn run_download_task(task_id: String, req: DownloadRequest, tasks: TaskStore
 }
 
 fn execute_download_task(task_id: &str, req: &DownloadRequest, tasks: &TaskStore) -> Result<()> {
+    let _control_scope = crate::download_control::register(task_id)?;
     tasks.update_progress(task_id, "running", "Inspecting source...", Some(1.0), None);
 
     let request_context: RequestContext = req.request_context.clone().unwrap_or_default().into();
@@ -28,9 +29,6 @@ fn execute_download_task(task_id: &str, req: &DownloadRequest, tasks: &TaskStore
             "A media stream may have at most 8 CDN fallback URLs"
         ));
     }
-    // SSRF guard (defense in depth on top of the scheme allow-list): the API
-    // server is network-exposed, so refuse any target that resolves to a
-    // private / loopback / link-local address unless explicitly allowlisted.
     for target in std::iter::once(source.page_url.as_str())
         .chain(std::iter::once(source.media_url.as_str()))
         .chain(source.media_fallback_urls.iter().map(String::as_str))
