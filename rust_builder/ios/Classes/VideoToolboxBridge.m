@@ -37,8 +37,8 @@ static BOOL segmeris_wait_for_tracks(AVURLAsset *asset,
   dispatch_time_t deadline =
       dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC));
   if (dispatch_semaphore_wait(semaphore, deadline) != 0) {
-    [writer cancelWriting];
-    return segmeris_write_error(errbuf, errbuf_len, @"Writer finalization timed out");
+    [asset cancelLoading];
+    return NO;
   }
   return finished;
 }
@@ -86,7 +86,8 @@ static BOOL segmeris_drain(AVAssetReaderTrackOutput *output,
                            AVAssetWriterInput *input, AVAssetReader *reader,
                            AVAssetWriter *writer, char *errbuf,
                            size_t errbuf_len) {
-  while (input.readyForMoreMediaData) {
+  NSTimeInterval lastProgress = NSProcessInfo.processInfo.systemUptime;
+  while (YES) {
     if (reader.status == AVAssetReaderStatusFailed) {
       return segmeris_write_error(
           errbuf, errbuf_len,
@@ -96,6 +97,15 @@ static BOOL segmeris_drain(AVAssetReaderTrackOutput *output,
       return segmeris_write_error(
           errbuf, errbuf_len,
           segmeris_error_desc(writer.error, @"Writer failed during drain"));
+    }
+    if (!input.readyForMoreMediaData) {
+      if (NSProcessInfo.processInfo.systemUptime - lastProgress > 30.0) {
+        [reader cancelReading];
+        [writer cancelWriting];
+        return segmeris_write_error(errbuf, errbuf_len, @"Writer stalled during drain");
+      }
+      [NSThread sleepForTimeInterval:0.001];
+      continue;
     }
     CMSampleBufferRef sample = [output copyNextSampleBuffer];
     if (sample == NULL) {
@@ -108,6 +118,7 @@ static BOOL segmeris_drain(AVAssetReaderTrackOutput *output,
           segmeris_error_desc(writer.error, @"Sample append failed"));
     }
     CFRelease(sample);
+    lastProgress = NSProcessInfo.processInfo.systemUptime;
   }
   [input markAsFinished];
   return YES;
@@ -122,7 +133,10 @@ static BOOL segmeris_finish_writer(AVAssetWriter *writer, long long expected_ms,
   }];
   dispatch_time_t deadline =
       dispatch_time(DISPATCH_TIME_NOW, (int64_t)(300 * NSEC_PER_SEC));
-  dispatch_semaphore_wait(semaphore, deadline);
+  if (dispatch_semaphore_wait(semaphore, deadline) != 0) {
+    [writer cancelWriting];
+    return segmeris_write_error(errbuf, errbuf_len, @"Writer finalization timed out");
+  }
 
   if (writer.status != AVAssetWriterStatusCompleted) {
     return segmeris_write_error(
