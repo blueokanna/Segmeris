@@ -27,6 +27,8 @@ The embedded authorization browser stays on stable `flutter_inappwebview 6.1.5`.
 
 Android builds use JDK 17, AGP 9.1.1 and Gradle 9.3.1 to read API 37.0 SDK metadata. Foreground services respect system background time limits: the timeout callback stops the service and releases its wake lock. Indefinite background execution is not guaranteed.
 
+Use `flutter build apk --release --split-per-abi` for architecture-specific Android packages. CI verifies each APK's ABI, Flutter/Rust runtime libraries, 16 KB ELF alignment for 64-bit libraries, and ZIP alignment; incomplete extra architectures fail validation.
+
 On Windows, run `powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1`. The script downloads a pinned NuGet CLI from the official package endpoint, with Microsoft's public .NET feed as a fallback. Downloads have timeouts; SHA-256 and Authenticode signatures are verified. The tool is cached under `build/tools/nuget` and added only to the current process PATH. CI uses the same script, including Windows builds for pull requests.
 
     flutter pub get --enforce-lockfile
