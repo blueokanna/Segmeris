@@ -21,7 +21,7 @@ val hasReleaseSigning = releaseStoreFile != null &&
     }
 
 android {
-    namespace = "com.bluevale.segmeris"
+    namespace = "com.blue.segmeris"
     compileSdk = 37
     ndkVersion = flutter.ndkVersion
 

@@ -15,6 +15,8 @@ Segmeris is a Flutter video downloader with a Rust engine for media discovery, H
 - **Authentication:** Bilibili QR login, an embedded authorization browser and custom request headers. Native credentials use platform secure storage; legacy plaintext values are removed after a verified migration.
 - **Interface:** Material 3 components, the 2021 typography scale, dynamic colors and AMOLED themes. Download settings expand on demand; narrow screens and large text use a single column, while wide screens keep a bounded content width. Animations respect the system reduced-motion setting.
 
+The application ID is `com.blue.segmeris`. Android package identity, Kotlin namespace, manifest components and Rust JNI class lookup use the same identifier. CI checks both source metadata and the final APK package ID and version. Android is a priority platform: codec capabilities select the hardware path, while emulator tests do not replace validation on vendor devices.
+
 ## Install and build
 
 Published binaries are available from [Releases](https://github.com/blueokanna/Segmeris/releases).

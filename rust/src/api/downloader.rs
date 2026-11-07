@@ -1067,7 +1067,7 @@ fn media_transcoder_class<'local>(env: &mut JNIEnv<'local>) -> Result<JClass<'lo
         .map_err(|e| anyhow!("Failed to get ClassLoader: {:?}", e))?
         .l()
         .map_err(|e| anyhow!("ClassLoader is not an object: {:?}", e))?;
-    let class_name = jni_string!(env, "com.bluevale.segmeris.MediaTranscoder", "class_name");
+    let class_name = jni_string!(env, "com.blue.segmeris.MediaTranscoder", "class_name");
     let loaded_class = env
         .call_method(
             &class_loader,

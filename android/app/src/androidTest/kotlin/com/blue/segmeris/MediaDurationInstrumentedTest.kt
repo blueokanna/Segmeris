@@ -1,4 +1,4 @@
-package com.bluevale.segmeris
+package com.blue.segmeris
 
 import android.media.MediaExtractor
 import android.media.MediaFormat

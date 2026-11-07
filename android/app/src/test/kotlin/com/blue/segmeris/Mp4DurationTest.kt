@@ -1,4 +1,4 @@
-package com.bluevale.segmeris
+package com.blue.segmeris
 
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream

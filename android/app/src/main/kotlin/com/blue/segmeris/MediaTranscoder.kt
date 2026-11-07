@@ -1,8 +1,9 @@
-package com.bluevale.segmeris
+package com.blue.segmeris
 
 import android.annotation.SuppressLint
 import android.media.*
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
 import java.io.File
@@ -526,11 +527,6 @@ object MediaTranscoder {
                     else measuredEndUs + minStepUs
             val lift = if (endUs == Long.MIN_VALUE || (!discontinuity && head >= endUs)) 0L else endUs - head
             if (!measure) {
-                // The measuring pass never reached this segment (it does not exist
-                // there): glue it to the shared timeline from its own head without
-                // disturbing the measured track's state. Reusing the last measured
-                // lift instead would drop a segment that belongs much later onto
-                // that earlier timestamp.
                 return lift
             }
             measuredEndUs = head + lift
@@ -857,13 +853,6 @@ object MediaTranscoder {
                 val aOutIdx = muxer.addTrack(aSetup.getTrackFormat(audioIdx))
                 aSetup.release()
 
-                // Both streams start from one shared origin (so the source's own
-                // A/V offset survives), but each track measures its own per-segment
-                // lifts: an audio rendition's segment i is cut independently of the
-                // video's segment i, so reusing the video's lift by index used to
-                // shift a whole audio segment by the difference between the two
-                // cutting grids — squeezing or delaying seconds of sound whenever
-                // the boundaries disagreed.
                 val originUs =
                         sharedOriginUs(
                                 firstSamplePts(vFirst, videoIdx),
@@ -976,7 +965,6 @@ object MediaTranscoder {
 
             muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
 
-            // Audio passthrough preparation from the first segment.
             var audioMuxIdx = -1
             var audioIdx = -1
             val aProbe = MediaExtractor()
@@ -1002,12 +990,9 @@ object MediaTranscoder {
             var decoderDone = false
             var encoderDone = false
             var frames = 0
-            var lastProgressMs = System.currentTimeMillis()
+            var lastProgressMs = SystemClock.elapsedRealtime()
             var segmentIndex = 0
             val ptsTimeline = DecoderPtsTimeline()
-            // The transcoded video and the copied audio must ride one clock
-            // (see SharedTimeline): the origin is the earliest first sample of
-            // the two, so the source's own A/V offset survives the transcode.
             val timeline =
                     SharedTimeline(
                             sharedOriginUs(
@@ -1019,19 +1004,9 @@ object MediaTranscoder {
             val decInfo = MediaCodec.BufferInfo()
             val encInfo = MediaCodec.BufferInfo()
 
-            // Main pump: each iteration feeds every free decoder input buffer
-            // and drains every ready decoder/encoder output buffer, so the
-            // hardware codecs stay saturated and the loop only blocks when
-            // nothing is ready (no CPU spin). Feed PTS is the source PTS
-            // unchanged: B-frame streams store samples in decode order whose
-            // PTS steps backward inside each GOP, but the decoder reorders to
-            // presentation order and needs the REAL PTS to do that. A
-            // synthetic monotonic timeline made the reordered Surface
-            // timestamps go backward, which GraphicBufferSource then dropped.
             while (!encoderDone) {
                 var progressed = false
 
-                // ── 1. Feed decoder across segments until input queue full ──
                 if (!inputDone) {
                     while (true) {
                         val feedIdx = decoder.dequeueInputBuffer(0)
@@ -1078,7 +1053,7 @@ object MediaTranscoder {
                             if (sz < 0) {
                                 ext.release()
                                 currentExtractor = null
-                                continue // exhausted: continue with next segment
+                                continue
                             }
                             decoder.queueInputBuffer(
                                     feedIdx,
@@ -1092,10 +1067,9 @@ object MediaTranscoder {
                         }
                         if (inputDone) break
                     }
-                    if (progressed) lastProgressMs = System.currentTimeMillis()
+                    if (progressed) lastProgressMs = SystemClock.elapsedRealtime()
                 }
 
-                // ── 2. Drain every ready decoder output → Surface ──
                 if (!decoderDone) {
                     while (true) {
                         val drainIdx = decoder.dequeueOutputBuffer(decInfo, 0)
@@ -1103,18 +1077,18 @@ object MediaTranscoder {
                         if (drainIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) continue
                         if (drainIdx < 0) break
                         progressed = true
-                        lastProgressMs = System.currentTimeMillis()
+                        lastProgressMs = SystemClock.elapsedRealtime()
                         val eos = (decInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                        decoder.releaseOutputBuffer(drainIdx, !eos)
+                        decoder.releaseOutputBuffer(drainIdx, decInfo.size > 0)
                         if (eos) {
                             decoderDone = true
                             encoder.signalEndOfInputStream()
-                            break
                         }
+                        // Drain the encoder before submitting another decoded frame.
+                        break
                     }
                 }
 
-                // ── 3. Drain every ready encoder output → muxer ──
                 while (true) {
                     val outIdx = encoder.dequeueOutputBuffer(encInfo, 0)
                     if (outIdx == MediaCodec.INFO_TRY_AGAIN_LATER) break
@@ -1128,7 +1102,7 @@ object MediaTranscoder {
                     }
                     if (outIdx < 0) break
                     progressed = true
-                    lastProgressMs = System.currentTimeMillis()
+                    lastProgressMs = SystemClock.elapsedRealtime()
                     val data = encoder.getOutputBuffer(outIdx)!!
                     if (encInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
                         encInfo.size = 0
@@ -1139,9 +1113,6 @@ object MediaTranscoder {
                             muxer.start()
                             muxerStarted = true
                         }
-                        // The re-encoded video rides the same clock as the
-                        // copied audio (see SharedTimeline), instead of keeping
-                        // its raw source timestamps while the audio starts at 0.
                         encInfo.presentationTimeUs =
                                 (encInfo.presentationTimeUs - timeline.originUs).coerceAtLeast(0L)
                         data.position(encInfo.offset)
@@ -1156,8 +1127,6 @@ object MediaTranscoder {
                     }
                 }
 
-                // Nothing was ready this pass (codecs still busy): yield the
-                // CPU briefly instead of spinning, then poll again.
                 if (!progressed && !encoderDone) {
                     try {
                         Thread.sleep(1L)
@@ -1167,17 +1136,13 @@ object MediaTranscoder {
                     }
                 }
 
-                if (System.currentTimeMillis() - lastProgressMs > MAX_STALL_MS) {
+                if (SystemClock.elapsedRealtime() - lastProgressMs > MAX_STALL_MS) {
                     Log.e(TAG, "Segment transcode stalled for ${MAX_STALL_MS}ms, aborting")
                     return false
                 }
             }
 
-            // ── 4. Audio passthrough across all segments ──
             if (audioMuxIdx >= 0 && muxerStarted) {
-                // The video pass here is the encoder, so this pass measures the
-                // per-segment lifts itself — the audio still gets a continuous
-                // timeline instead of a per-segment restart.
                 writeSegmentTrack(
                         segmentDir,
                         prefix,
@@ -1198,14 +1163,10 @@ object MediaTranscoder {
             return false
         } finally {
             runCatching { currentExtractor?.release() }
-            runCatching {
-                decoder?.stop()
-                decoder?.release()
-            }
-            runCatching {
-                encoder?.stop()
-                encoder?.release()
-            }
+            runCatching { decoder?.stop() }
+            runCatching { decoder?.release() }
+            runCatching { encoder?.stop() }
+            runCatching { encoder?.release() }
             runCatching { encoderSurface?.release() }
             runCatching { muxer?.release() }
             probe.release()
@@ -1358,8 +1319,6 @@ object MediaTranscoder {
 
         val referenceMs = if (actualMs > 0) actualMs else probeDurationMs(path)
         if (referenceMs <= 0) {
-            // The container carries no readable timeline. Accepting it would
-            // deliver a 0:00 file as success, so treat it as a failed output.
             Log.e(
                     TAG,
                     "$what duration check failed: no usable duration in output (expected≈${expectedMs}ms)"
@@ -1405,9 +1364,6 @@ object MediaTranscoder {
                                         }
                                     }
                                     if ((scanSamples || longestUs <= 0) && sawTrack) {
-                                        // No track durations in the container;
-                                        // recover the timeline by walking samples
-                                        // (decode order, without copying data).
                                         for (i in 0 until extractor.trackCount) {
                                             extractor.selectTrack(i)
                                             extractor.seekTo(0, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
@@ -1508,28 +1464,13 @@ object MediaTranscoder {
         try {
             extractor.setDataSource(path)
             extractor.selectTrack(sourceIndex)
-            // 8 MiB so high-bitrate 4K H.264/HEVC samples (which can exceed
-            // 1 MiB per NAL unit) never overflow the read buffer.
             val buffer = ByteBuffer.allocateDirect(8 * 1024 * 1024)
             val info = MediaCodec.BufferInfo()
             var samples = 0
-            // Map a source PTS to the PTS handed to the muxer. B-frame video
-            // keeps its real (swinging) decode-order PTS so MediaMuxer (API
-            // 25+) writes a proper ctts table and the stream is copied
-            // losslessly; every backward step of more than 500 ms is a fresh
-            // segment/timeline whose PTS restarted, and is lifted so the whole
-            // output stays continuous. Everything else (audio, and video that
-            // MediaMuxer must flatten) is clamped to a strictly monotonic
-            // timeline, which the MP4 writer requires.
             val trackEnd = TrackEnd()
             val bframeTimeline = DecoderPtsTimeline()
             var lastPts = Long.MIN_VALUE
             var ptsOffset = 0L
-            // Smallest positive step between two written samples: the real frame
-            // interval. A restarted timeline is glued one interval after the
-            // previous sample instead of 1 us after its timestamp, which used to
-            // collapse that sample's duration and clamp the first samples of
-            // every new segment.
             var minStepUs = 0L
             val mapPts: (Long) -> Long =
                     if (video && preserveBframes) {
@@ -1780,7 +1721,7 @@ object MediaTranscoder {
             var decoderDone = false
             var encoderDone = false
             var frames = 0
-            var lastProgressMs = System.currentTimeMillis()
+            var lastProgressMs = SystemClock.elapsedRealtime()
             val ptsTimeline = DecoderPtsTimeline()
 
             val decInfo = MediaCodec.BufferInfo()
@@ -1789,13 +1730,12 @@ object MediaTranscoder {
             while (!encoderDone) {
                 var progressed = false
 
-                // ── 1. Feed decoder until input queue is full ──
                 if (!inputDone) {
                     while (true) {
                         val feedIdx = decoder.dequeueInputBuffer(0)
                         if (feedIdx < 0) break
                         progressed = true
-                        lastProgressMs = System.currentTimeMillis()
+                        lastProgressMs = SystemClock.elapsedRealtime()
                         val buf = decoder.getInputBuffer(feedIdx)!!
                         val sz = extractor.readSampleData(buf, 0)
                         if (sz < 0) {
@@ -1820,7 +1760,6 @@ object MediaTranscoder {
                     }
                 }
 
-                // ── 2. Drain every ready decoder output → Surface ──
                 if (!decoderDone) {
                     while (true) {
                         val drainIdx = decoder.dequeueOutputBuffer(decInfo, 0)
@@ -1828,18 +1767,18 @@ object MediaTranscoder {
                         if (drainIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) continue
                         if (drainIdx < 0) break
                         progressed = true
-                        lastProgressMs = System.currentTimeMillis()
+                        lastProgressMs = SystemClock.elapsedRealtime()
                         val eos = (decInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                        decoder.releaseOutputBuffer(drainIdx, !eos)
+                        decoder.releaseOutputBuffer(drainIdx, decInfo.size > 0)
                         if (eos) {
                             decoderDone = true
                             encoder.signalEndOfInputStream()
-                            break
                         }
+                        // Drain the encoder before submitting another decoded frame.
+                        break
                     }
                 }
 
-                // ── 3. Drain every ready encoder output → muxer ──
                 while (true) {
                     val outIdx = encoder.dequeueOutputBuffer(encInfo, 0)
                     if (outIdx == MediaCodec.INFO_TRY_AGAIN_LATER) break
@@ -1853,7 +1792,7 @@ object MediaTranscoder {
                     }
                     if (outIdx < 0) break
                     progressed = true
-                    lastProgressMs = System.currentTimeMillis()
+                    lastProgressMs = SystemClock.elapsedRealtime()
                     val data = encoder.getOutputBuffer(outIdx)!!
                     if (encInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
                         encInfo.size = 0
@@ -1864,9 +1803,6 @@ object MediaTranscoder {
                             muxer.start()
                             muxerStarted = true
                         }
-                        // The re-encoded video rides the same clock as the
-                        // copied audio (see SharedTimeline), instead of keeping
-                        // its raw source timestamps while the audio starts at 0.
                         encInfo.presentationTimeUs =
                                 (encInfo.presentationTimeUs - timeline.originUs).coerceAtLeast(0L)
                         data.position(encInfo.offset)
@@ -1881,8 +1817,6 @@ object MediaTranscoder {
                     }
                 }
 
-                // Nothing was ready this pass (codecs still busy): yield the
-                // CPU briefly instead of spinning, then poll again.
                 if (!progressed && !encoderDone) {
                     try {
                         Thread.sleep(1L)
@@ -1892,7 +1826,7 @@ object MediaTranscoder {
                     }
                 }
 
-                if (System.currentTimeMillis() - lastProgressMs > MAX_STALL_MS) {
+                if (SystemClock.elapsedRealtime() - lastProgressMs > MAX_STALL_MS) {
                     Log.e(TAG, "Transcode stalled for ${MAX_STALL_MS}ms, aborting")
                     return false
                 }
@@ -1909,14 +1843,10 @@ object MediaTranscoder {
             Log.e(TAG, "hardwareTranscode failed: ${e.message}", e)
             return false
         } finally {
-            runCatching {
-                decoder?.stop()
-                decoder?.release()
-            }
-            runCatching {
-                encoder?.stop()
-                encoder?.release()
-            }
+            runCatching { decoder?.stop() }
+            runCatching { decoder?.release() }
+            runCatching { encoder?.stop() }
+            runCatching { encoder?.release() }
             runCatching { encoderSurface?.release() }
             runCatching { muxer?.release() }
             extractor.release()
@@ -1970,9 +1900,7 @@ object MediaTranscoder {
 
     /**
      * Creates an AVC encoder that prefers dedicated hardware and falls back to a software (CPU)
-     * encoder when no hardware encoder supports the requested resolution/bitrate. This guarantees
-     * the transcode path works on every device instead of failing when GPU encoders are missing or
-     * refuse the format.
+     * encoder when hardware candidates reject the requested format.
      */
     private fun createAvcEncoder(
             format: MediaFormat,
@@ -2079,12 +2007,6 @@ object MediaTranscoder {
             val buf = ByteBuffer.allocateDirect(256 * 1024)
             val info = MediaCodec.BufferInfo()
             var n = 0
-            // Audio in a naively-concatenated TS also restarts its PTS at each
-            // HLS segment boundary; re-base the timeline so audio stays
-            // monotonic and on the same clock as the re-encoded video: the raw
-            // timestamps are put back on the shared origin (the video pass no
-            // longer zero-bases itself, so the two can no longer disagree by the
-            // source's own start offset).
             var lastPts = Long.MIN_VALUE
             var ptsOffset = 0L
             var minStepUs = 0L
@@ -2122,6 +2044,9 @@ object MediaTranscoder {
     }
 
     private fun createDecoder(mime: String, format: MediaFormat, surface: Surface): MediaCodec {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            format.setInteger(MediaFormat.KEY_ALLOW_FRAME_DROP, 0)
+        }
         var lastError: Exception? = null
         for (candidate in codecCandidates(mime, encoder = false, hardwareOnly = false)) {
             var codec: MediaCodec? = null

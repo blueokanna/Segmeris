@@ -1,4 +1,4 @@
-package com.bluevale.segmeris
+package com.blue.segmeris
 
 import android.content.ContentValues
 import android.content.Context

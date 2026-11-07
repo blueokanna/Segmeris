@@ -15,6 +15,8 @@ Segmeris 是一个 Flutter 视频下载器，使用 Rust 处理媒体解析、�
 - **登录**：支持 Bilibili 扫码、内置授权浏览器和手动请求头。原生客户端通过系统安全存储保存会话，旧版明文凭据在成功迁移后删除。
 - **界面**：Material 3 组件、2021 字体排版规范、动态配色与 AMOLED 主题。下载参数按需展开，窄屏与大字体采用单列布局，宽屏限制内容宽度；动画适配系统“减少动画”设置。
 
+应用标识统一为 `com.blue.segmeris`；Android 的安装包 ID、Kotlin 命名空间、Manifest 组件和 Rust JNI 类名保持一致。CI 同时检查源码标识和最终 APK 的包名、版本。Android 是重点验证平台，采用系统编解码器能力选择硬件路径；模拟器测试不能代替各厂商真机验证。
+
 ## 安装与构建
 
 从 [Releases](https://github.com/blueokanna/Segmeris/releases) 获取已发布版本。

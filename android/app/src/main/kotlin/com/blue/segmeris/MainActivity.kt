@@ -1,4 +1,4 @@
-package com.bluevale.segmeris
+package com.blue.segmeris
 
 import android.content.Intent
 import android.net.Uri

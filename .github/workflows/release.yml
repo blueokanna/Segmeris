@@ -49,7 +49,9 @@ jobs:
       - name: Validate release versions
         env:
           RELEASE_TAG: ${{ inputs.tag_name }}
-        run: python3 scripts/check_versions.py
+        run: |
+          python3 scripts/check_versions.py
+          python3 scripts/check_app_identity.py
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -233,6 +235,15 @@ jobs:
               exit 1
             fi
             local apk="build/app/outputs/flutter-apk/app-release.apk"
+            local aapt
+            aapt=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)
+            test -n "$aapt"
+            local package_info
+            package_info=$("$aapt" dump badging "$apk")
+            if ! grep -q "^package: name='com.blue.segmeris'.*versionName='1.0.8'" <<< "$package_info"; then
+              echo "::error::$artifact_name has an unexpected package ID or version"
+              exit 1
+            fi
             if ! unzip -l "$apk" | grep -q "librust_lib_segmeris.so"; then
               echo "::error::$artifact_name does not embed librust_lib_segmeris.so"
               exit 1

@@ -33,7 +33,7 @@
         android:allowBackup="false"
         android:requestLegacyExternalStorage="true">
         <activity
-            android:name="com.bluevale.segmeris.MainActivity"
+            android:name="com.blue.segmeris.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
@@ -52,7 +52,7 @@
         </activity>
 
         <service
-            android:name="com.bluevale.segmeris.DownloadForegroundService"
+            android:name="com.blue.segmeris.DownloadForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
