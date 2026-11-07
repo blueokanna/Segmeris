@@ -633,26 +633,29 @@ class _RuntimeCapabilityContent extends StatelessWidget {
         ],
         if (report.unavailableVideoEncoders.isNotEmpty) ...[
           const SizedBox(height: 10),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            childrenPadding: const EdgeInsets.only(bottom: 8),
-            title: Text(
-              l.text('unavailable_encoders'),
-              style: t.textTheme.labelLarge,
+          Material(
+            type: MaterialType.transparency,
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(bottom: 8),
+              title: Text(
+                l.text('unavailable_encoders'),
+                style: t.textTheme.labelLarge,
+              ),
+              subtitle: Text(
+                l.text('unavailable_encoders_hint'),
+                style: t.textTheme.bodySmall,
+              ),
+              children: [
+                for (final encoder in report.unavailableVideoEncoders)
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.info_outline_rounded, size: 18),
+                    title: Text(encoder, style: t.textTheme.bodySmall),
+                  ),
+              ],
             ),
-            subtitle: Text(
-              l.text('unavailable_encoders_hint'),
-              style: t.textTheme.bodySmall,
-            ),
-            children: [
-              for (final encoder in report.unavailableVideoEncoders)
-                ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.info_outline_rounded, size: 18),
-                  title: Text(encoder, style: t.textTheme.bodySmall),
-                ),
-            ],
           ),
         ],
         if (report.videoDecoders.isNotEmpty) ...[

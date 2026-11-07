@@ -26,6 +26,7 @@ void main() {
           'Linux V4L2 M2M',
         ],
         videoDecoders: ['H.264 hardware decoder', 'HEVC hardware decoder'],
+        unavailableVideoEncoders: ['Rockchip MPP'],
         ffmpegAvailable: true,
         ytdlpAvailable: true,
         notes: ['Capabilities were verified with runtime probes.'],
@@ -61,6 +62,12 @@ void main() {
       expect(find.textContaining('yt-dlp'), findsOneWidget);
       expect(find.text('NVIDIA NVENC'), findsOneWidget);
       expect(find.text('Linux V4L2 M2M'), findsOneWidget);
+      expect(find.text('Rockchip MPP'), findsNothing);
+      final failedProbes = find.text('Encoders that did not pass the probe');
+      await tester.ensureVisible(failedProbes);
+      await tester.tap(failedProbes);
+      await tester.pumpAndSettle();
+      expect(find.text('Rockchip MPP'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
