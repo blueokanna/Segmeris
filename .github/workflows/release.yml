@@ -256,7 +256,7 @@ jobs:
 
       - name: Run Android unit tests
         working-directory: android
-        run: ./gradlew :app:testReleaseUnitTest -Ptarget-platform=android-x64 --console=plain
+        run: ./gradlew :app:testDebugUnitTest -Ptarget-platform=android-x64 --console=plain
 
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
