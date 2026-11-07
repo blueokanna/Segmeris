@@ -187,6 +187,18 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(list.controller!.offset, greaterThan(beforeWheel));
+    tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(
+      tester.binding.platformDispatcher.clearAccessibilityFeaturesTestValue,
+    );
+    await tester.pump();
+    final beforeButton = list.controller!.offset;
+    final nextTheme = find.byKey(const ValueKey('theme-next'));
+    await tester.ensureVisible(nextTheme);
+    await tester.tap(nextTheme);
+    await tester.pumpAndSettle();
+    expect(list.controller!.offset, greaterThan(beforeButton));
     expect(tester.takeException(), isNull);
     await _capture(find.byKey(captureKey), 'home_settings_mobile.png');
   });

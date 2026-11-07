@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - 'codex/**'
+      - testchain
     tags:
       - "v*"
   pull_request:
@@ -130,7 +130,7 @@ jobs:
 
   build-android:
     name: Build Android APKs
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/codex/')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -253,7 +253,7 @@ jobs:
 
   build-windows:
     name: Build Windows x64
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/codex/')
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
     needs: validate
     runs-on: windows-latest
     timeout-minutes: 45
@@ -314,7 +314,7 @@ jobs:
 
   build-macos:
     name: Build macOS ${{ matrix.arch }}
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
     needs: validate
     strategy:
       fail-fast: false
@@ -375,7 +375,7 @@ jobs:
 
   build-linux:
     name: Build Linux x64 bundle
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -439,7 +439,7 @@ jobs:
 
   build-web:
     name: Build Web (JS + WASM)
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -489,7 +489,7 @@ jobs:
     name: Build iOS arm64 (unsigned)
     if: >-
       startsWith(github.ref, 'refs/tags/v')
-      || startsWith(github.ref, 'refs/heads/codex/')
+      || github.ref == 'refs/heads/testchain'
       || (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_ios != 'true')
     needs: validate
     runs-on: macos-15

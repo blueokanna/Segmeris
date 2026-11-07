@@ -506,41 +506,43 @@ class RuntimeCapabilitiesPanel extends StatelessWidget {
         future: capabilities,
         builder: (context, snapshot) {
           final report = snapshot.data;
-          return AnimatedSize(
+          final content = AnimatedSwitcher(
             duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
+            switchInCurve: SegmerisMotion.emphasizedDecelerate,
+            switchOutCurve: SegmerisMotion.emphasizedAccelerate,
+            transitionBuilder: segmerisSharedAxisTransition,
+            child: report == null
+                ? Row(
+                    key: const ValueKey('capabilities-loading'),
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          color: cs.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          l.text('probing_capabilities'),
+                          style: t.textTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
+                  )
+                : _RuntimeCapabilityContent(
+                    key: const ValueKey('capabilities-ready'),
+                    report: report,
+                  ),
+          );
+          if (MediaQuery.disableAnimationsOf(context)) return content;
+          return AnimatedSize(
+            duration: SegmerisMotion.medium,
             curve: SegmerisMotion.emphasized,
             alignment: Alignment.topCenter,
-            child: AnimatedSwitcher(
-              duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
-              switchInCurve: SegmerisMotion.emphasizedDecelerate,
-              switchOutCurve: SegmerisMotion.emphasizedAccelerate,
-              transitionBuilder: segmerisSharedAxisTransition,
-              child: report == null
-                  ? Row(
-                      key: const ValueKey('capabilities-loading'),
-                      children: [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.4,
-                            color: cs.primary,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            l.text('probing_capabilities'),
-                            style: t.textTheme.bodyMedium,
-                          ),
-                        ),
-                      ],
-                    )
-                  : _RuntimeCapabilityContent(
-                      key: const ValueKey('capabilities-ready'),
-                      report: report,
-                    ),
-            ),
+            child: content,
           );
         },
       ),

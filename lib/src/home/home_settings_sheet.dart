@@ -79,14 +79,19 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
           position.minScrollExtent,
           position.maxScrollExtent,
         );
-    _themeScroll.animateTo(
-      target,
-      duration: SegmerisMotion.duration(
-        context,
-        const Duration(milliseconds: 220),
-      ),
-      curve: Curves.easeOutCubic,
+    final duration = SegmerisMotion.duration(
+      context,
+      const Duration(milliseconds: 220),
     );
+    if (duration == Duration.zero) {
+      _themeScroll.jumpTo(target);
+    } else {
+      _themeScroll.animateTo(
+        target,
+        duration: duration,
+        curve: Curves.easeOutCubic,
+      );
+    }
   }
 
   void _scrollThemes(PointerSignalEvent event) {
@@ -280,6 +285,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                           ),
                         ),
                         IconButton.filledTonal(
+                          key: const ValueKey('theme-previous'),
                           tooltip: MaterialLocalizations.of(context)
                               .previousPageTooltip,
                           onPressed: () => _pageThemes(-1),
@@ -287,6 +293,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                         ),
                         const SizedBox(width: 8),
                         IconButton.filledTonal(
+                          key: const ValueKey('theme-next'),
                           tooltip: MaterialLocalizations.of(context)
                               .nextPageTooltip,
                           onPressed: () => _pageThemes(1),

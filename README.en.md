@@ -34,6 +34,8 @@ Courierust is pinned to the published crates.io release **1.1.1**, without a ven
 
 ## Use
 
+The theme selector supports mouse dragging, wheel and trackpad scrolling, a visible scrollbar and previous/next buttons on desktop.
+
 1. Paste a media URL or page address. Analyze a page to choose quality, codec and subtitles.
 2. Set the filename, directory and download options. A bitrate of 0 requests stream copy; incompatible containers or codecs may still require encoding.
 3. Start the task. Its card provides pause, resume and actual stream URLs. Pause is available during transfer, not conversion or export.
@@ -67,8 +69,6 @@ Hardware support depends on the device, driver, resolution and codec. The engine
 
 ## Hardware encoding
 
-The theme selector supports mouse dragging, wheel and trackpad scrolling, a visible scrollbar and previous/next buttons on desktop.
-
 Stream copy preserves the compressed video and does not invoke a hardware encoder. Encoding is used when the requested bitrate or media conversion requires it. Hardware encoding does not accelerate HTTP downloads.
 
 | Platform | Implemented path | Requirements |
@@ -90,6 +90,8 @@ Linux support is determined by the kernel and userspace API, not the SoC brand. 
 The desktop capability panel lists every encoder that passes a three-frame 720p test, in selection order. Failed probes are shown separately; they can indicate missing hardware, drivers, FFmpeg support, permissions or temporarily busy resources. They do not mean the application only supports the first GPU vendor shown. Android reports advertised capabilities; iOS checks session initialization and reports hardware availability as unknown before iOS 17.4. AVFoundation manages encoder selection for actual iOS exports. These checks do not replace end-to-end tests on the target device. No all-vendor hardware validation is claimed.
 
 Platform references: [Android MediaCodecInfo](https://developer.android.com/reference/android/media/MediaCodecInfo), [Apple hardware encoder selection](https://developer.apple.com/documentation/videotoolbox/kvtvideoencoderspecification_requirehardwareacceleratedvideoencoder), [HarmonyOS native video encoding](https://developer.huawei.com/consumer/en/doc/harmonyos-guides/video-encoding/).
+
+An isolated HarmonyOS port was attempted with SDK 26.0.0.105 and the OHOS Flutter 3.47.7 preview. Compilation failed because `material_ui 1.10.0` does not handle `TargetPlatform.ohos`; the current dependencies also lack OHOS implementations for the Rust bridge, secure storage and file selection. Installing the SDK or generating an `ohos` directory does not complete native support. No HAP has passed validation, and OpenHarmony API 11 remains untested.
 
 If the NVIDIA probe reports `Driver does not support the required nvenc API version`, FFmpeg requires a newer NVENC interface than the installed driver exposes. The capability panel preserves the actual error. Update the driver or point `FERRISLOAD_FFMPEG_PATH` at a compatible build; installing newer FFmpeg does not update the driver's API. Intel QSV accepts NV12 software frames and handles upload internally, avoiding texture-pool initialization failures on some drivers.
 
