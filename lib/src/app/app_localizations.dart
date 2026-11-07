@@ -175,6 +175,10 @@ class AppLocalizations {
       'warnings': 'Warnings',
       'appearance': 'Appearance',
       'runtime_capabilities': 'Runtime capabilities',
+      'capability_probe_timeout': 'The encoder probe timed out.',
+      'capability_probe_start_failed':
+          'The probe process could not be started.',
+      'capability_nvenc_driver': 'This FFmpeg build requires a newer NVIDIA driver API. Update the driver or configure a compatible FFmpeg build.',
       'unavailable_encoders': 'Encoders that did not pass the probe',
       'unavailable_encoders_hint':
           'Check the GPU, driver, device permissions and FFmpeg build.',
@@ -341,6 +345,10 @@ class AppLocalizations {
       'warnings': '提示',
       'appearance': '外观',
       'runtime_capabilities': '运行时能力',
+      'capability_probe_timeout': '编码器探测超时。',
+      'capability_probe_start_failed': '无法启动探测进程。',
+      'capability_nvenc_driver':
+          '当前 FFmpeg 要求更新的 NVIDIA 驱动接口，请更新显卡驱动或配置兼容的 FFmpeg 构建。',
       'unavailable_encoders': '未通过探测的编码器',
       'unavailable_encoders_hint': '请检查显卡、驱动、设备权限和 FFmpeg 构建配置。',
       'capability_desktop_probe': '列出的编码器均通过短时 720p 编码测试，转码时优先使用第一项；流复制不使用编码器。',
@@ -495,6 +503,10 @@ class AppLocalizations {
       'warnings': '提示',
       'appearance': '外觀',
       'runtime_capabilities': '執行階段能力',
+      'capability_probe_timeout': '編碼器探測逾時。',
+      'capability_probe_start_failed': '無法啟動探測程序。',
+      'capability_nvenc_driver':
+          '目前 FFmpeg 要求更新的 NVIDIA 驅動介面，請更新驅動程式或設定相容的 FFmpeg 建置。',
       'unavailable_encoders': '未通過探測的編碼器',
       'unavailable_encoders_hint': '請檢查顯示卡、驅動程式、裝置權限及 FFmpeg 建置設定。',
       'capability_desktop_probe':

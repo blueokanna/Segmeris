@@ -16,6 +16,7 @@ Future<PlatformCapabilitySnapshot> probeDesktopCapabilities() async {
   var accelerated = false;
   var encoders = <String>[];
   var unavailableEncoders = <String>[];
+  var diagnostics = <String, String>{};
 
   if (ffmpeg != null) {
     final report = await probeFfmpegEncoders(
@@ -26,6 +27,13 @@ Future<PlatformCapabilitySnapshot> probeDesktopCapabilities() async {
     unavailableEncoders = report.unavailable
         .map((encoder) => encoder.label)
         .toList();
+    diagnostics = report.diagnostics;
+    if (diagnostics['NVIDIA NVENC']?.contains(
+          'Driver does not support the required nvenc API version',
+        ) ??
+        false) {
+      notes.add('capability_nvenc_driver');
+    }
     notes.add('capability_desktop_probe');
     if (report.available.isNotEmpty) {
       final encoder = report.available.first;
@@ -48,6 +56,7 @@ Future<PlatformCapabilitySnapshot> probeDesktopCapabilities() async {
     hardwareAccelerated: accelerated,
     videoEncoders: encoders,
     unavailableVideoEncoders: unavailableEncoders,
+    encoderDiagnostics: diagnostics,
     videoDecoders: const [],
     ffmpegAvailable: ffmpeg != null,
     ytdlpAvailable: ytdlpAvailable,

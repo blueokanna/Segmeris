@@ -653,6 +653,13 @@ class _RuntimeCapabilityContent extends StatelessWidget {
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.info_outline_rounded, size: 18),
                     title: Text(encoder, style: t.textTheme.bodySmall),
+                    subtitle: switch (report.encoderDiagnostics[encoder]) {
+                      final String reason => Text(
+                        l.text(reason),
+                        style: t.textTheme.bodySmall,
+                      ),
+                      _ => null,
+                    },
                   ),
               ],
             ),

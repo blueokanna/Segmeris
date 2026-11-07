@@ -67,6 +67,8 @@ Bilibili 系列按顺序处理，每集开始前重新解析地址。登录只�
 
 ## 硬件编码
 
+主题选择支持鼠标拖动、滚轮、触控板、滚动条和左右按钮，桌面端无需依赖触摸手势。
+
 流复制保留原始压缩数据，不调用硬件编码器；指定码率或媒体转换需要重新编码时，才进入编码路径。硬件编码不会加速 HTTP 下载。
 
 | 平台 | 已实现的路径 | 使用条件 |
@@ -88,6 +90,8 @@ Linux 是否可用由内核和用户态接口决定，不能仅凭芯片品牌�
 桌面能力面板会按选择顺序列出所有通过三帧 720p 测试的编码器，并单独展示未通过项。探测失败可能源于硬件、驱动、FFmpeg 构建、设备权限或临时资源占用，不能据此判断应用只支持列表中第一个厂商。Android 展示系统声明的能力，iOS 检查会话初始化结果，早于 iOS 17.4 的系统将硬件能力标为未知；实际 iOS 导出由 AVFoundation 管理编码器选择。这些检查不能代替目标设备上的完整转码测试，项目不声称已完成所有芯片的真机验证。
 
 平台接口参考：[Android MediaCodecInfo](https://developer.android.com/reference/android/media/MediaCodecInfo)、[Apple 硬件编码器选择](https://developer.apple.com/documentation/videotoolbox/kvtvideoencoderspecification_requirehardwareacceleratedvideoencoder)、[HarmonyOS 原生视频编码](https://developer.huawei.com/consumer/en/doc/harmonyos-guides/video-encoding/)。
+
+若 NVIDIA 探测报告 `Driver does not support the required nvenc API version`，说明 FFmpeg 所需的 NVENC 接口高于当前驱动提供的版本。能力面板保留实际错误原因；需更新驱动或通过 `FERRISLOAD_FFMPEG_PATH` 指向兼容构建。仅安装新版本 FFmpeg 不会升级显卡驱动接口。Intel QSV 使用 NV12 软件帧输入，由编码器负责上传，避免强制创建纹理池导致部分驱动初始化失败。
 
 ## Web 与 Docker API
 

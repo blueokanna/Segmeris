@@ -4,6 +4,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:segmeris/src/app/ffmpeg_capabilities_io.dart';
 
 void main() {
+  test('captures bounded diagnostics while draining noisy probes', () async {
+    final result = await runCommandProbe(
+      Platform.isWindows ? 'powershell.exe' : '/bin/sh',
+      Platform.isWindows
+          ? [
+              '-NoProfile',
+              '-NonInteractive',
+              '-Command',
+              "[Console]::Out.Write(('x' * 100000)); [Console]::Error.Write(('e' * 20000)); exit 3",
+            ]
+          : ['-c', "printf '%100000s' x; printf '%20000s' e >&2; exit 3"],
+    );
+    expect(result.success, isFalse);
+    expect(result.diagnostic.length, 8192);
+  });
   test(
     'keeps every usable encoder and separately reports failed probes',
     () async {
@@ -14,7 +29,10 @@ void main() {
         run: (_, args) async {
           final encoder = args[args.indexOf('-c:v') + 1];
           tried.add(encoder);
-          return encoder != 'h264_amf';
+          return CommandProbeResult(
+            encoder != 'h264_amf',
+            diagnostic: 'No compatible AMF device',
+          );
         },
       );
       expect(tried, ['h264_nvenc', 'h264_amf', 'h264_qsv', 'libx264']);
@@ -24,6 +42,7 @@ void main() {
         'CPU libx264',
       ]);
       expect(report.unavailable.single.label, 'AMD AMF');
+      expect(report.diagnostics['AMD AMF'], 'No compatible AMF device');
     },
   );
 
@@ -37,16 +56,13 @@ void main() {
         run: (_, args) async {
           final encoder = args[args.indexOf('-c:v') + 1];
           arguments[encoder] = args;
-          return encoder == 'h264_v4l2m2m';
+          return CommandProbeResult(encoder == 'h264_v4l2m2m');
         },
       );
       expect(report.available.single.label, 'Linux V4L2 M2M');
       expect(arguments['h264_v4l2m2m'], contains('format=nv12'));
       expect(arguments['h264_rkmpp'], contains('format=nv12'));
-      expect(
-        arguments['h264_qsv'],
-        contains('format=nv12,hwupload=extra_hw_frames=64'),
-      );
+      expect(arguments['h264_qsv'], contains('format=nv12'));
       expect(
         arguments['h264_nvenc'],
         contains('color=c=black:s=1280x720:r=30'),
@@ -65,7 +81,7 @@ void main() {
           if (args.contains('h264_videotoolbox')) {
             expect(args[args.indexOf('-allow_sw') + 1], '0');
           }
-          return false;
+          return const CommandProbeResult(false);
         },
       );
     },

@@ -10,6 +10,7 @@ class PlatformCapabilitySnapshot {
     required this.ytdlpAvailable,
     required this.notes,
     this.unavailableVideoEncoders = const [],
+    this.encoderDiagnostics = const {},
   });
 
   final String platform;
@@ -17,6 +18,7 @@ class PlatformCapabilitySnapshot {
   final bool? hardwareAccelerated;
   final List<String> videoEncoders;
   final List<String> unavailableVideoEncoders;
+  final Map<String, String> encoderDiagnostics;
   final List<String> videoDecoders;
   final bool? ffmpegAvailable;
   final bool? ytdlpAvailable;

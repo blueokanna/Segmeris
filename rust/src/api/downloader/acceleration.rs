@@ -131,14 +131,7 @@ pub(super) fn push_accel_encode_args(args: &mut Vec<String>, accel: AccelType) {
             "-vf".to_string(),
             "format=nv12,hwupload".to_string(),
         ]),
-        AccelType::IntelQuickSync => args.extend([
-            "-init_hw_device".to_string(),
-            "qsv=hw".to_string(),
-            "-filter_hw_device".to_string(),
-            "hw".to_string(),
-            "-vf".to_string(),
-            "format=nv12,hwupload=extra_hw_frames=64".to_string(),
-        ]),
+        AccelType::IntelQuickSync => args.extend(["-vf".to_string(), "format=nv12".to_string()]),
         AccelType::LinuxV4l2M2m | AccelType::RockchipMpp => {
             args.extend(["-vf".to_string(), "format=nv12".to_string()])
         }

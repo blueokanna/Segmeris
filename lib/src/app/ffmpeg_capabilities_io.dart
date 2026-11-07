@@ -1,10 +1,19 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:io';
 
-typedef CommandProbe = Future<bool> Function(
+typedef CommandProbe = Future<CommandProbeResult> Function(
   String executable,
   List<String> arguments,
 );
+
+class CommandProbeResult {
+  const CommandProbeResult(this.success, {this.diagnostic = ''});
+
+  final bool success;
+  final String diagnostic;
+}
 
 class FfmpegEncoder {
   const FfmpegEncoder(
@@ -21,16 +30,17 @@ class FfmpegEncoder {
 }
 
 class FfmpegEncoderReport {
-  const FfmpegEncoderReport(this.available, this.unavailable);
+  const FfmpegEncoderReport(this.available, this.unavailable, this.diagnostics);
 
   final List<FfmpegEncoder> available;
   final List<FfmpegEncoder> unavailable;
+  final Map<String, String> diagnostics;
 }
 
 Future<FfmpegEncoderReport> probeFfmpegEncoders(
   String executable, {
   required String operatingSystem,
-  CommandProbe run = probeCommand,
+  CommandProbe run = runCommandProbe,
 }) async {
   final candidates = [
     const FfmpegEncoder('NVIDIA NVENC', 'h264_nvenc', true, [
@@ -41,12 +51,8 @@ Future<FfmpegEncoderReport> probeFfmpegEncoders(
     ]),
     const FfmpegEncoder('AMD AMF', 'h264_amf', true),
     const FfmpegEncoder('Intel Quick Sync', 'h264_qsv', true, [
-      '-init_hw_device',
-      'qsv=hw',
-      '-filter_hw_device',
-      'hw',
       '-vf',
-      'format=nv12,hwupload=extra_hw_frames=64',
+      'format=nv12',
     ]),
     if (operatingSystem == 'linux') ...[
       const FfmpegEncoder('Linux VAAPI', 'h264_vaapi', true, [
@@ -73,8 +79,9 @@ Future<FfmpegEncoderReport> probeFfmpegEncoders(
   ];
   final available = <FfmpegEncoder>[];
   final unavailable = <FfmpegEncoder>[];
+  final diagnostics = <String, String>{};
   for (final candidate in candidates) {
-    final works = await run(executable, [
+    final result = await run(executable, [
       '-hide_banner',
       '-loglevel',
       'error',
@@ -93,17 +100,33 @@ Future<FfmpegEncoderReport> probeFfmpegEncoders(
       'null',
       '-',
     ]);
-    (works ? available : unavailable).add(candidate);
+    (result.success ? available : unavailable).add(candidate);
+    if (!result.success && result.diagnostic.isNotEmpty) {
+      diagnostics[candidate.label] = const LineSplitter()
+          .convert(result.diagnostic.trim())
+          .take(2)
+          .map((line) => line.replaceFirst(RegExp(r'^\[[^\]]+\]\s*'), ''))
+          .join('\n');
+    }
   }
-  return FfmpegEncoderReport(available, unavailable);
+  return FfmpegEncoderReport(available, unavailable, diagnostics);
 }
 
-/// Discards output while draining both pipes; a timed-out probe is killed.
 Future<bool> probeCommand(
   String executable,
   List<String> arguments, {
   Duration timeout = const Duration(seconds: 8),
+}) async =>
+    (await runCommandProbe(executable, arguments, timeout: timeout)).success;
+
+/// Keeps at most 8 KiB of stderr while draining both pipes and bounding runtime.
+Future<CommandProbeResult> runCommandProbe(
+  String executable,
+  List<String> arguments, {
+  Duration timeout = const Duration(seconds: 8),
 }) async {
+  final captured = BytesBuilder(copy: false);
+  final errorDone = Completer<void>();
   Process? process;
   StreamSubscription<List<int>>? stdout;
   StreamSubscription<List<int>>? stderr;
@@ -138,21 +161,45 @@ Future<bool> probeCommand(
       },
     );
     stdout = process.stdout.listen((_) {}, onError: (Object _) {});
-    stderr = process.stderr.listen((_) {}, onError: (Object _) {});
+    stderr = process.stderr.listen(
+      (chunk) {
+        final remaining = 8192 - captured.length;
+        if (remaining > 0) {
+          captured.add(
+            chunk.length <= remaining ? chunk : chunk.sublist(0, remaining),
+          );
+        }
+      },
+      onError: (Object _) {},
+      onDone: errorDone.complete,
+    );
     final code = await process.exitCode.timeout(timeout);
-    return code == 0;
+    await errorDone.future.timeout(const Duration(seconds: 2));
+    return CommandProbeResult(
+      code == 0,
+      diagnostic: utf8.decode(captured.takeBytes(), allowMalformed: true),
+    );
   } on TimeoutException {
     process?.kill(ProcessSignal.sigkill);
     if (process != null) {
       try {
         await process.exitCode.timeout(const Duration(seconds: 2));
       } on TimeoutException {
-        return false;
+        return const CommandProbeResult(
+          false,
+          diagnostic: 'capability_probe_timeout',
+        );
       }
     }
-    return false;
+    return const CommandProbeResult(
+      false,
+      diagnostic: 'capability_probe_timeout',
+    );
   } on ProcessException {
-    return false;
+    return const CommandProbeResult(
+      false,
+      diagnostic: 'capability_probe_start_failed',
+    );
   } finally {
     await stdout?.cancel();
     await stderr?.cancel();
