@@ -20,6 +20,7 @@ class MediaDurationInstrumentedTest {
 
     private fun roundTrip(bitrate: Int) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        assertEquals("com.blue.segmeris", instrumentation.targetContext.packageName)
         val assets = instrumentation.context.assets
         val directory = File(instrumentation.targetContext.cacheDir, "duration-test-" + System.nanoTime())
         check(directory.mkdirs())

@@ -10,10 +10,7 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 
-/**
- * Keeps download/transcode alive in the background; holds a WakeLock so
- * CPU sleep cannot kill long-running jobs.
- */
+/** Foreground notification and bounded wake lock for active download tasks. */
 class DownloadForegroundService : Service() {
 
     companion object {
@@ -96,7 +93,13 @@ class DownloadForegroundService : Service() {
         }
 
         acquireWakeLock()
-        return START_STICKY
+        return START_NOT_STICKY
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        Log.w(TAG, "Foreground service time budget exhausted: $fgsType")
+        stopSelf()
+        releaseWakeLock()
     }
 
     override fun onDestroy() {
@@ -108,14 +111,16 @@ class DownloadForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
         if (wakeLock == null) {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = pm.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "Segmeris::DownloadWakeLock"
-            ).apply { acquire(4 * 60 * 60 * 1000L) } // up to 4 h
-            Log.i(TAG, "WakeLock acquired")
+            ).apply { setReferenceCounted(false) }
         }
+        wakeLock?.acquire(4 * 60 * 60 * 1000L)
+        Log.i(TAG, "WakeLock acquired")
     }
 
     private fun releaseWakeLock() {
