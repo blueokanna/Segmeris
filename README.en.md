@@ -65,6 +65,29 @@ Quick conversion copies compressed samples without encoding them again. Fragment
 
 Hardware support depends on the device, driver, resolution and codec. The engine probes available backends and falls back where the platform supports it. FFmpeg processes have timeouts, and unverifiable output duration is an error. Gallery display, synchronization and HDR behavior still require testing on the actual Android devices used for release.
 
+## Hardware encoding
+
+Stream copy preserves the compressed video and does not invoke a hardware encoder. Encoding is used when the requested bitrate or media conversion requires it. Hardware encoding does not accelerate HTTP downloads.
+
+| Platform | Implemented path | Requirements |
+| --- | --- | --- |
+| Windows / Linux, NVIDIA | FFmpeg `h264_nvenc` | A supported GPU, driver and FFmpeg build |
+| Windows / Linux, AMD | FFmpeg `h264_amf`; Linux can also use `h264_vaapi` | A working AMF runtime or VAAPI driver |
+| Windows / Linux, Intel | FFmpeg `h264_qsv`; Linux can also use `h264_vaapi` | A working Intel media driver |
+| Linux SoCs | FFmpeg `h264_v4l2m2m` | A kernel driver exposing a stateful V4L2 M2M H.264 **encoder**, with access to its `/dev/video*` nodes |
+| Android | Native MediaCodec + MediaMuxer | Firmware exposing compatible H.264 Surface encoding |
+| macOS, including Apple silicon | FFmpeg `h264_videotoolbox` | A usable VideoToolbox encoder; software fallback is disabled for the hardware probe |
+| iOS / iPadOS | Native AVFoundation + VideoToolbox | Hardware H.264 session initialization must succeed |
+| HarmonyOS NEXT | Not implemented | Requires a separate native application, HarmonyOS SDK integration and device validation |
+
+Android codec selection is not restricted to a vendor whitelist. Amlogic, Allwinner, Qualcomm, Rockchip, MediaTek and Huawei Kirin devices use the codecs their Android-compatible firmware exposes. Android 10 and later provide hardware flags; older versions require codec-name heuristics. Neither is a guarantee that a particular resolution or bitrate works: the pipeline validates capabilities, tries initialization and can fall back to a compatible software encoder. A HarmonyOS device that runs the Android APK uses this Android path; it is not a native HarmonyOS NEXT port.
+
+Linux support is determined by the kernel and userspace API, not the SoC brand. A decoder-only driver, stateless V4L2 decoding interface or vendor SDK such as Rockchip MPP is not interchangeable with V4L2 M2M encoding. Segmeris does not currently integrate vendor-specific MPP, CedarX or OpenMAX backends. VAAPI currently uses `/dev/dri/renderD128`. Containers also need explicit device access and matching drivers; the default Docker image does not configure GPU passthrough.
+
+The desktop capability panel lists every encoder that passes a three-frame 720p test, in selection order. Failed probes are shown separately; they can indicate missing hardware, drivers, FFmpeg support, permissions or temporarily busy resources. They do not mean the application only supports the first GPU vendor shown. Android reports advertised capabilities; iOS checks hardware session initialization. These checks do not replace end-to-end tests on the target device. No all-vendor hardware validation is claimed.
+
+Platform references: [Android MediaCodecInfo](https://developer.android.com/reference/android/media/MediaCodecInfo), [Apple hardware encoder selection](https://developer.apple.com/documentation/videotoolbox/kvtvideoencoderspecification_requirehardwareacceleratedvideoencoder), [HarmonyOS native video encoding](https://developer.huawei.com/consumer/en/doc/harmonyos-guides/video-encoding/).
+
 ## Web and Docker API
 
 The web app delegates analysis and downloads to the API; files remain on the server. Configure the server URL and token in Settings. Non-local endpoints require HTTPS. Browser credentials are held only for the current page session.

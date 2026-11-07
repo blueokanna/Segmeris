@@ -26,6 +26,7 @@ class HomeSettingsSheet extends StatefulWidget {
     required this.headersController,
     this.inspection,
     this.enabled = true,
+    this.capabilityProbe = RuntimeCapabilityProbe.inspect,
   });
 
   final AppSettings settings;
@@ -43,6 +44,7 @@ class HomeSettingsSheet extends StatefulWidget {
   final TextEditingController headersController;
   final MediaInspectionResult? inspection;
   final bool enabled;
+  final Future<PlatformCapabilitySnapshot> Function() capabilityProbe;
 
   @override
   State<HomeSettingsSheet> createState() => _HomeSettingsSheetState();
@@ -50,12 +52,14 @@ class HomeSettingsSheet extends StatefulWidget {
 
 class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
   late AppSettings _draft = widget.settings;
-  late final Future<PlatformCapabilitySnapshot> _capabilities =
-      RuntimeCapabilityProbe.inspect();
-  late final TextEditingController _apiUrlCtrl =
-      TextEditingController(text: widget.settings.apiBaseUrl);
-  late final TextEditingController _apiTokenCtrl =
-      TextEditingController(text: widget.settings.apiToken);
+  late final Future<PlatformCapabilitySnapshot> _capabilities = widget
+      .capabilityProbe();
+  late final TextEditingController _apiUrlCtrl = TextEditingController(
+    text: widget.settings.apiBaseUrl,
+  );
+  late final TextEditingController _apiTokenCtrl = TextEditingController(
+    text: widget.settings.apiToken,
+  );
 
   @override
   void dispose() {
@@ -182,7 +186,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                   const SizedBox(height: 10),
                   AnimatedContainer(
                     duration: SegmerisMotion.duration(
-                        context, const Duration(milliseconds: 260)),
+                      context,
+                      const Duration(milliseconds: 260),
+                    ),
                     curve: Curves.easeOutCubic,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -260,7 +266,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                       for (final item in appThemeProfiles)
                         AnimatedContainer(
                           duration: SegmerisMotion.duration(
-                              context, const Duration(milliseconds: 220)),
+                            context,
+                            const Duration(milliseconds: 220),
+                          ),
                           curve: Curves.easeOutCubic,
                           margin: const EdgeInsets.symmetric(horizontal: 3),
                           width: profile.id == item.id ? 20 : 6,
@@ -282,7 +290,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
               delay: const Duration(milliseconds: 200),
               child: AnimatedContainer(
                 duration: SegmerisMotion.duration(
-                    context, const Duration(milliseconds: 260)),
+                  context,
+                  const Duration(milliseconds: 260),
+                ),
                 curve: Curves.easeOutCubic,
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
@@ -329,8 +339,8 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                 autoOpenAuthBrowser: _draft.autoOpenAuthBrowser,
                 onAutoOpenChanged: widget.enabled
                     ? (value) => _updateDraft(
-                          _draft.copyWith(autoOpenAuthBrowser: value),
-                        )
+                        _draft.copyWith(autoOpenAuthBrowser: value),
+                      )
                     : null,
                 onOpenBrowser: widget.onOpenBrowser,
                 onQrLogin: widget.onQrLogin,

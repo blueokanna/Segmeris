@@ -8,6 +8,8 @@ use crate::hls::{
 };
 use crate::media_probe::*;
 use crate::net::SyncHttpClient;
+mod acceleration;
+use acceleration::{detect_acceleration, push_accel_encode_args, AccelType};
 mod hls;
 mod transfer;
 use transfer::*;
@@ -44,48 +46,11 @@ use jni::JavaVM;
 
 pub(crate) type ProgressReporter = Arc<dyn Fn(ProgressUpdate) + Send + Sync>;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AccelType {
-    Nvidia,
-    Amd,
-    IntelQuickSync,
-    LinuxVaapi,
-    AppleVideoToolbox,
-    Cpu,
-}
-
-impl AccelType {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Nvidia => "NVIDIA NVENC",
-            Self::Amd => "AMD AMF",
-            Self::IntelQuickSync => "Intel Quick Sync",
-            Self::LinuxVaapi => "Linux VAAPI",
-            Self::AppleVideoToolbox => "Apple VideoToolbox",
-            Self::Cpu => "CPU libx264",
-        }
-    }
-
-    fn encoder(self) -> &'static str {
-        match self {
-            Self::Nvidia => "h264_nvenc",
-            Self::Amd => "h264_amf",
-            Self::IntelQuickSync => "h264_qsv",
-            Self::LinuxVaapi => "h264_vaapi",
-            Self::AppleVideoToolbox => "h264_videotoolbox",
-            Self::Cpu => "libx264",
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 enum TranscoderKind {
     Ffmpeg(AccelType),
     AndroidHardware,
     /// Native iOS AVFoundation / VideoToolbox hardware H.264 pipeline.
-    /// AVAssetWriter selects the hardware encoder automatically on every
-    /// Apple device (A-series and M-series chips); there is no software
-    /// H.264 encoder on iOS, so this is the only correct backend there.
     IosVideoToolbox,
 }
 
@@ -5709,8 +5674,7 @@ fn select_transcoder_backend() -> Result<TranscoderKind> {
         return Ok(TranscoderKind::AndroidHardware);
     }
 
-    // iOS has no embedded FFmpeg and no software H.264 encoder: the only
-    // backend is the native AVFoundation / VideoToolbox hardware pipeline.
+    // The iOS runner links the native AVFoundation / VideoToolbox bridge.
     #[cfg(target_os = "ios")]
     if ios_videotoolbox::available() {
         return Ok(TranscoderKind::IosVideoToolbox);
@@ -5738,108 +5702,6 @@ fn select_transcoder_backend() -> Result<TranscoderKind> {
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Identifies a set of HLS segment files on disk that the Android
-/// segment-based transcoder consumes one-by-one (the equivalent of feeding
-/// ffmpeg's concat demuxer). On non-Android platforms this is ignored.
-fn detect_acceleration(ffmpeg_path: &Path) -> Result<AccelType> {
-    let output = run_ffmpeg(
-        ffmpeg_path,
-        &["-hide_banner".to_string(), "-encoders".to_string()],
-        Duration::from_secs(30),
-    )?;
-
-    let list = String::from_utf8_lossy(&output.stdout);
-    let candidates = [
-        AccelType::Nvidia,
-        AccelType::Amd,
-        AccelType::IntelQuickSync,
-        AccelType::LinuxVaapi,
-        AccelType::AppleVideoToolbox,
-    ];
-    for candidate in candidates {
-        if list.contains(candidate.encoder()) && probe_ffmpeg_encoder(ffmpeg_path, candidate) {
-            return Ok(candidate);
-        }
-    }
-    if list.contains(AccelType::Cpu.encoder()) && probe_ffmpeg_encoder(ffmpeg_path, AccelType::Cpu)
-    {
-        return Ok(AccelType::Cpu);
-    }
-    bail!("FFmpeg is installed but no usable H.264 encoder passed the runtime probe")
-}
-
-fn probe_ffmpeg_encoder(ffmpeg_path: &Path, accel: AccelType) -> bool {
-    let mut args = vec![
-        "-hide_banner".to_string(),
-        "-loglevel".to_string(),
-        "error".to_string(),
-        "-f".to_string(),
-        "lavfi".to_string(),
-        "-i".to_string(),
-        "color=c=black:s=64x64:r=1".to_string(),
-        "-frames:v".to_string(),
-        "1".to_string(),
-        "-an".to_string(),
-        "-c:v".to_string(),
-        accel.encoder().to_string(),
-    ];
-    match accel {
-        AccelType::LinuxVaapi => args.extend([
-            "-vaapi_device".to_string(),
-            "/dev/dri/renderD128".to_string(),
-            "-vf".to_string(),
-            "format=nv12,hwupload".to_string(),
-        ]),
-
-        AccelType::IntelQuickSync => args.extend([
-            "-init_hw_device".to_string(),
-            "qsv=hw".to_string(),
-            "-filter_hw_device".to_string(),
-            "hw".to_string(),
-            "-vf".to_string(),
-            "format=nv12,hwupload=extra_hw_frames=64".to_string(),
-        ]),
-
-        AccelType::Nvidia | AccelType::Amd | AccelType::AppleVideoToolbox | AccelType::Cpu => {}
-    }
-    args.extend(["-f".to_string(), "null".to_string(), "-".to_string()]);
-
-    match run_ffmpeg(ffmpeg_path, &args, Duration::from_secs(30)) {
-        Ok(output) => output.status.success(),
-        Err(_) => false,
-    }
-}
-
-/// Appends the hardware-acceleration specific arguments (device init, frame
-/// upload filters, encoder presets) for a real transcode run.
-fn push_accel_encode_args(args: &mut Vec<String>, accel: AccelType) {
-    match accel {
-        AccelType::Nvidia => args.extend([
-            "-preset".to_string(),
-            "p4".to_string(),
-            "-rc".to_string(),
-            "vbr".to_string(),
-        ]),
-        AccelType::Cpu => args.extend(["-preset".to_string(), "medium".to_string()]),
-        AccelType::LinuxVaapi => args.extend([
-            "-vaapi_device".to_string(),
-            "/dev/dri/renderD128".to_string(),
-            "-vf".to_string(),
-            "format=nv12,hwupload".to_string(),
-        ]),
-        AccelType::IntelQuickSync => args.extend([
-            "-init_hw_device".to_string(),
-            "qsv=hw".to_string(),
-            "-filter_hw_device".to_string(),
-            "hw".to_string(),
-            "-vf".to_string(),
-            "format=nv12,hwupload=extra_hw_frames=64".to_string(),
-        ]),
-        // AMF and VideoToolbox accept software frames and upload internally.
-        AccelType::Amd | AccelType::AppleVideoToolbox => {}
-    }
-}
-
 /// Returns the concat-demuxer list file that `download_and_merge_once` writes
 /// next to the merged stream (e.g. `temp_primary.ts.concat.txt`), when present.
 ///

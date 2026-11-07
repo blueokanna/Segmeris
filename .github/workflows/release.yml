@@ -130,7 +130,7 @@ jobs:
 
   build-android:
     name: Build Android APKs
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/codex/')
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -489,6 +489,7 @@ jobs:
     name: Build iOS arm64 (unsigned)
     if: >-
       startsWith(github.ref, 'refs/tags/v')
+      || startsWith(github.ref, 'refs/heads/codex/')
       || (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_ios != 'true')
     needs: validate
     runs-on: macos-15

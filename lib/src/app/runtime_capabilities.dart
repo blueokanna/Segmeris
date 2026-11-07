@@ -98,7 +98,7 @@ class RuntimeCapabilityProbe {
         ffmpegAvailable: raw['ffmpegAvailable'] as bool?,
         ytdlpAvailable: raw['ytdlpAvailable'] as bool?,
         notes: const [
-          'iOS AVFoundation and VideoToolbox capabilities are not currently reported by the native bridge.',
+          'capability_ios_probe',
           'YouTube uses the native resolver; signature-protected formats may require desktop yt-dlp.',
         ],
       );

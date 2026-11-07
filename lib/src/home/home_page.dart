@@ -13,6 +13,7 @@ import 'package:segmeris/src/app/download_engine.dart';
 import 'package:segmeris/src/app/local_file_utils.dart';
 import 'package:segmeris/src/app/platform_bridge.dart';
 import 'package:segmeris/src/app/platform_utils.dart';
+import 'package:segmeris/src/app/runtime_capabilities.dart';
 import 'package:segmeris/src/home/home_candidates_card.dart';
 import 'package:segmeris/src/home/download_options_dialog.dart';
 import 'package:segmeris/src/home/home_download_tasks_card.dart';
@@ -107,10 +108,12 @@ class HomePage extends StatefulWidget {
     super.key,
     required this.settings,
     required this.onSettingsChanged,
+    this.capabilityProbe = RuntimeCapabilityProbe.inspect,
   });
 
   final AppSettings settings;
   final ValueChanged<AppSettings> onSettingsChanged;
+  final Future<PlatformCapabilitySnapshot> Function() capabilityProbe;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -1121,6 +1124,7 @@ class _HomePageState extends State<HomePage> {
       useSafeArea: true,
       builder: (context) => HomeSettingsSheet(
         settings: widget.settings,
+        capabilityProbe: widget.capabilityProbe,
         enabled: !_pageController.value.busy,
         inspection: _pageController.value.inspection,
         onSettingsChanged: widget.onSettingsChanged,

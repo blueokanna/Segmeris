@@ -1,17 +1,4 @@
-//
-//  VideoToolboxBridge.h
-//  Runner
-//
-//  C interface between the Rust download engine and the native iOS
-//  AVFoundation / VideoToolbox transcoder. AVAssetWriter automatically uses
-//  the hardware H.264 encoder (VideoToolbox) on every Apple device — A-series
-//  iPhones/iPads and M-series Macs — which is what "call the hardware codec"
-//  means on iOS.
-//
-//  These functions are declared `extern "C"` on the Rust side
-//  (`rust/src/api/downloader.rs`, gated by `#[cfg(target_os = "ios")]`) and
-//  must stay in sync with that declaration.
-//
+// C interface used by the Rust iOS download engine.
 
 #ifndef VideoToolboxBridge_h
 #define VideoToolboxBridge_h
@@ -23,7 +10,7 @@ extern "C" {
 #endif
 
 /// Returns 1 when the native H.264 hardware encoder pipeline is usable,
-/// 0 otherwise. Cheap; called once per download to select the backend.
+/// 0 otherwise. Initializes and releases a 720p H.264 compression session.
 int segmeris_videotoolbox_available(void);
 
 /// Transcode a single input file (MPEG-TS, MP4, ...) into an MP4 container.

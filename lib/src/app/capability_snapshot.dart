@@ -9,12 +9,14 @@ class PlatformCapabilitySnapshot {
     required this.ffmpegAvailable,
     required this.ytdlpAvailable,
     required this.notes,
+    this.unavailableVideoEncoders = const [],
   });
 
   final String platform;
   final String transcoderBackend;
   final bool? hardwareAccelerated;
   final List<String> videoEncoders;
+  final List<String> unavailableVideoEncoders;
   final List<String> videoDecoders;
   final bool? ffmpegAvailable;
   final bool? ytdlpAvailable;

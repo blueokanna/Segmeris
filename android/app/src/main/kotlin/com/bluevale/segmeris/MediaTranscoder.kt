@@ -17,26 +17,22 @@ object MediaTranscoder {
 
     @JvmStatic
     fun capabilityReport(): String {
-        val codecs = MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
+        val codecs = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+                .filterNot { Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && it.isAlias }
         val hardwareEncoders =
                 codecs.asSequence()
                         .filter {
                             it.isEncoder &&
-                                    !isSoftwareCodec(it) &&
+                                    isHardwareCodec(it) &&
                                     supportsSurfaceInput(it, "video/avc")
                         }
-                        .flatMap { codec ->
-                            codec.supportedTypes
-                                    .asSequence()
-                                    .filter { it.startsWith("video/", ignoreCase = true) }
-                                    .map { mime -> "${codec.name} | ${mime.lowercase()}" }
-                        }
+                        .map { codec -> "${codec.name} | video/avc" }
                         .distinct()
                         .sorted()
                         .toList()
         val hardwareDecoders =
                 codecs.asSequence()
-                        .filter { !it.isEncoder && !isSoftwareCodec(it) }
+                        .filter { !it.isEncoder && isHardwareCodec(it) }
                         .flatMap { codec ->
                             codec.supportedTypes
                                     .asSequence()
@@ -2021,7 +2017,8 @@ object MediaTranscoder {
                 }
         Log.w(TAG, "No suitable hardware AVC encoder; falling back to software encoder")
         return createEncoderWith(
-                codecCandidates("video/avc", encoder = true, hardwareOnly = false),
+                codecCandidates("video/avc", encoder = true, hardwareOnly = false)
+                        .filterNot { isHardwareCodec(it) },
                 format,
                 width,
                 height,
@@ -2074,15 +2071,17 @@ object MediaTranscoder {
             }
 
             var codec: MediaCodec? = null
+            var surface: Surface? = null
             try {
                 codec = MediaCodec.createByCodecName(codecInfo.name)
                 codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-                val surface = codec.createInputSurface()
+                surface = codec.createInputSurface()
                 codec.start()
                 Log.i(TAG, "Using encoder ${codecInfo.name}")
                 return EncoderSession(codec, surface)
             } catch (error: Exception) {
                 Log.w(TAG, "Encoder ${codecInfo.name} rejected the format: ${error.message}")
+                runCatching { surface?.release() }
                 runCatching { codec?.release() }
             }
         }
@@ -2170,9 +2169,10 @@ object MediaTranscoder {
                     .filter { codec ->
                         codec.isEncoder == encoder &&
                                 codec.supportedTypes.any { it.equals(mime, ignoreCase = true) } &&
-                                (!hardwareOnly || !isSoftwareCodec(codec))
+                                (!hardwareOnly || isHardwareCodec(codec)) &&
+                                !(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && codec.isAlias)
                     }
-                    .sortedByDescending { scoreCodec(it) }
+                    .sortedByDescending { isHardwareCodec(it) }
 
     private fun supportsSurfaceInput(codec: MediaCodecInfo, mime: String): Boolean =
             runCatching {
@@ -2185,20 +2185,12 @@ object MediaTranscoder {
                     }
                     .getOrDefault(false)
 
-    private fun scoreCodec(codec: MediaCodecInfo): Int {
-        val name = codec.name.lowercase()
-        var score = 0
-        if (!isSoftwareCodec(codec)) score += 100
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && codec.isHardwareAccelerated)
-                score += 60
-        if (name.contains("qcom") || name.contains("qti")) score += 40
-        if (name.contains("mtk") || name.contains("mediatek")) score += 38
-        if (name.contains("hisi") || name.contains("kirin") || name.contains("huawei")) score += 36
-        if (name.contains("exynos") || name.contains("sec")) score += 34
-        if (name.startsWith("c2.") || name.startsWith("omx.")) score += 10
-        if (name.contains("google") || name.contains("android") || name.contains("sw")) score -= 80
-        return score
-    }
+    private fun isHardwareCodec(codec: MediaCodecInfo): Boolean =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                codec.isHardwareAccelerated && !codec.isSoftwareOnly
+            } else {
+                !isSoftwareCodec(codec)
+            }
 
     private fun isSoftwareCodec(codec: MediaCodecInfo): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) return codec.isSoftwareOnly

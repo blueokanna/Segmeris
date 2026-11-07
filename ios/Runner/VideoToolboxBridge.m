@@ -1,23 +1,4 @@
-//
-//  VideoToolboxBridge.m
-//  Runner
-//
-//  Native iOS transcoder used by the Rust download engine.
-//
-//  Design notes
-//  ------------
-//  * AVAssetWriter + AVVideoCodecTypeH264 transparently uses the hardware
-//    H.264 encoder (VideoToolbox) on all Apple devices (A-series and M-series
-//    chips). There is no "software H.264" fallback on iOS, so this is the
-//    correct way to hit the hardware codec.
-//  * Everything runs synchronously on the caller's (background) thread. The
-//    Rust side already bounds the whole operation with a wall-clock timeout.
-//  * Audio is passed through when it is AAC (the only audio format MP4 muxes
-//    natively without re-encoding); anything else is re-encoded to AAC.
-//  * The produced file is validated against `expected_ms` so a truncated
-//    output (a failure mode of the older byte-concatenation approach) is
-//    detected and surfaced as an error instead of a silent bad file.
-//
+// Native AVFoundation transcoding and VideoToolbox capability checks.
 
 #import "VideoToolboxBridge.h"
 
@@ -80,15 +61,18 @@ static NSDictionary *segmeris_h264_settings(CGSize size, int videoBitrateKbps) {
     settings[AVVideoCodecKey] = AVVideoCodecTypeH264;
     settings[AVVideoWidthKey] = @(width);
     settings[AVVideoHeightKey] = @(height);
-    if (videoBitrateKbps > 0) {
-        settings[AVVideoAverageBitRateKey] = @((NSUInteger)videoBitrateKbps * 1000);
-    }
-    settings[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel;
-    settings[AVVideoAllowFrameReorderingKey] = @NO;
-    settings[AVVideoCompressionPropertiesKey] = @{
-        AVVideoRealTimeKey : @YES,
-        AVVideoAverageNonDroppableFrameRateKey : @30,
+    settings[AVVideoEncoderSpecificationKey] = @{
+        (__bridge NSString *)kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder : @YES,
     };
+    NSMutableDictionary *compression = [@{
+        AVVideoProfileLevelKey : AVVideoProfileLevelH264HighAutoLevel,
+        AVVideoAllowFrameReorderingKey : @NO,
+        AVVideoAverageNonDroppableFrameRateKey : @30,
+    } mutableCopy];
+    if (videoBitrateKbps > 0) {
+        compression[AVVideoAverageBitRateKey] = @((NSUInteger)videoBitrateKbps * 1000);
+    }
+    settings[AVVideoCompressionPropertiesKey] = compression;
     return settings;
 }
 
@@ -594,9 +578,25 @@ static BOOL segmeris_merge_segments_impl(NSString *dir,
 
 int segmeris_videotoolbox_available(void) {
     @autoreleasepool {
-        // AVAssetWriter is backed by VideoToolbox on every iOS device;
-        // H.264 is universally supported by the hardware encoder.
-        return [AVAssetWriter isAvailable] ? 1 : 0;
+        VTCompressionSessionRef session = NULL;
+        NSDictionary *specification = @{
+            (__bridge NSString *)kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder : @YES,
+        };
+        OSStatus status = VTCompressionSessionCreate(
+            kCFAllocatorDefault, 1280, 720, kCMVideoCodecType_H264,
+            (__bridge CFDictionaryRef)specification, NULL, NULL,
+            NULL, NULL, &session);
+        if (status != noErr || session == NULL) {
+            if (session != NULL) {
+                VTCompressionSessionInvalidate(session);
+                CFRelease(session);
+            }
+            return 0;
+        }
+        status = VTCompressionSessionPrepareToEncodeFrames(session);
+        VTCompressionSessionInvalidate(session);
+        CFRelease(session);
+        return status == noErr ? 1 : 0;
     }
 }
 

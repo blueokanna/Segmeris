@@ -11,6 +11,8 @@ import 'package:segmeris/src/app/download_engine.dart';
 import 'package:segmeris/src/home/home_page.dart';
 import 'package:segmeris/src/home/home_settings_sheet.dart';
 
+import '../support/capability_fixture.dart';
+
 const _settings = AppSettings(
   themeProfileId: 'monet_flow',
   themeMode: ThemeMode.light,
@@ -66,7 +68,11 @@ Widget _buildApp(Key captureKey) {
         GlobalCupertinoLocalizations.delegate,
       ],
       theme: _captureTheme(),
-      home: HomePage(settings: _settings, onSettingsChanged: (_) {}),
+      home: HomePage(
+        settings: _settings,
+        onSettingsChanged: (_) {},
+        capabilityProbe: unknownCapabilities,
+      ),
     ),
   );
 }
