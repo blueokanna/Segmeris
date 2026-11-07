@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - 'codex/**'
     tags:
       - "v*"
   pull_request:
@@ -252,7 +253,7 @@ jobs:
 
   build-windows:
     name: Build Windows x64
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/codex/')
     needs: validate
     runs-on: windows-latest
     timeout-minutes: 45
