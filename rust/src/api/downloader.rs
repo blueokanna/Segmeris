@@ -2823,69 +2823,6 @@ pub(crate) fn run_hls_pipeline(
     let audio_bitrate = audio_bitrate.max(0) as u32;
     let multi_progress = MultiProgress::new();
 
-    let check_pb = multi_progress.add(ProgressBar::new_spinner());
-    check_pb.set_style(
-        ProgressStyle::with_template("{spinner:.green} {msg}")?
-            .tick_strings(&["-", "\\", "|", "/"]),
-    );
-    check_pb.set_message("Selecting transcoder backend...");
-    check_pb.enable_steady_tick(Duration::from_millis(100));
-
-    emit_progress(reporter, "Selecting transcoder backend...", 0.01);
-
-    let backend = select_transcoder_backend()?;
-    let requires_reencode = video_bitrate > 0 || audio_bitrate > 0;
-    match backend {
-        TranscoderKind::Ffmpeg(accel) if requires_reencode => {
-            check_pb.finish_with_message(format!("Selected FFmpeg backend ({})", accel.label()));
-            emit_progress(
-                reporter,
-                format!("Selected transcoder backend: {}", accel.label()),
-                0.015,
-            );
-        }
-        TranscoderKind::Ffmpeg(_) => {
-            check_pb.finish_with_message("Selected FFmpeg stream-copy backend");
-            emit_progress(
-                reporter,
-                "Selected FFmpeg stream copy (no re-encoding)",
-                0.015,
-            );
-        }
-        TranscoderKind::AndroidHardware if requires_reencode => {
-            check_pb.finish_with_message("Selected Android MediaCodec backend");
-            emit_progress(
-                reporter,
-                "Selected hardware encoder: Android MediaCodec",
-                0.015,
-            );
-        }
-        TranscoderKind::AndroidHardware => {
-            check_pb.finish_with_message("Selected Android MediaMuxer pipeline");
-            emit_progress(
-                reporter,
-                "Selected Android MediaMuxer (MediaCodec fallback if remux fails)",
-                0.015,
-            );
-        }
-        TranscoderKind::IosVideoToolbox if requires_reencode => {
-            check_pb.finish_with_message("Selected iOS VideoToolbox hardware encoder");
-            emit_progress(
-                reporter,
-                "Selected hardware encoder: Apple VideoToolbox (A/M-series)",
-                0.015,
-            );
-        }
-        TranscoderKind::IosVideoToolbox => {
-            check_pb.finish_with_message("Selected iOS AVFoundation remux");
-            emit_progress(
-                reporter,
-                "Selected iOS AVFoundation (hardware H.264 if re-encoding)",
-                0.015,
-            );
-        }
-    }
-
     info!("M3U8 URL: {}", url);
 
     let download_pb = multi_progress.add(ProgressBar::new_spinner());
@@ -2903,6 +2840,69 @@ pub(crate) fn run_hls_pipeline(
     download_pb.finish_with_message("Parsed M3U8 playlist");
 
     let base_url = Some(playlist_base_url(&effective_playlist_url));
+
+    let check_pb = multi_progress.add(ProgressBar::new_spinner());
+    check_pb.set_style(
+        ProgressStyle::with_template("{spinner:.green} {msg}")?
+            .tick_strings(&["-", "\\", "|", "/"]),
+    );
+    check_pb.set_message("Selecting transcoder backend...");
+    check_pb.enable_steady_tick(Duration::from_millis(100));
+
+    emit_progress(reporter, "Selecting transcoder backend...", 0.025);
+
+    let backend = select_transcoder_backend()?;
+    let requires_reencode = video_bitrate > 0 || audio_bitrate > 0;
+    match backend {
+        TranscoderKind::Ffmpeg(accel) if requires_reencode => {
+            check_pb.finish_with_message(format!("Selected FFmpeg backend ({})", accel.label()));
+            emit_progress(
+                reporter,
+                format!("Selected transcoder backend: {}", accel.label()),
+                0.03,
+            );
+        }
+        TranscoderKind::Ffmpeg(_) => {
+            check_pb.finish_with_message("Selected FFmpeg stream-copy backend");
+            emit_progress(
+                reporter,
+                "Selected FFmpeg stream copy (no re-encoding)",
+                0.03,
+            );
+        }
+        TranscoderKind::AndroidHardware if requires_reencode => {
+            check_pb.finish_with_message("Selected Android MediaCodec backend");
+            emit_progress(
+                reporter,
+                "Selected hardware encoder: Android MediaCodec",
+                0.03,
+            );
+        }
+        TranscoderKind::AndroidHardware => {
+            check_pb.finish_with_message("Selected Android MediaMuxer pipeline");
+            emit_progress(
+                reporter,
+                "Selected Android MediaMuxer (MediaCodec fallback if remux fails)",
+                0.03,
+            );
+        }
+        TranscoderKind::IosVideoToolbox if requires_reencode => {
+            check_pb.finish_with_message("Selected iOS VideoToolbox hardware encoder");
+            emit_progress(
+                reporter,
+                "Selected hardware encoder: Apple VideoToolbox (A/M-series)",
+                0.03,
+            );
+        }
+        TranscoderKind::IosVideoToolbox => {
+            check_pb.finish_with_message("Selected iOS AVFoundation remux");
+            emit_progress(
+                reporter,
+                "Selected iOS AVFoundation (hardware H.264 if re-encoding)",
+                0.03,
+            );
+        }
+    }
 
     let temp_root = if cfg!(target_os = "android") {
         #[cfg(target_os = "android")]
@@ -5016,9 +5016,6 @@ fn merge_media_streams(
 ) -> Result<()> {
     let requires_reencode = video_bitrate > 0 || audio_bitrate > 0;
 
-    // Failure note for the Android merge attempts, surfaced in the final
-    // error when no backend (and no FFmpeg) could package the streams, so
-    // the user sees what actually failed instead of a misleading hint.
     #[cfg(target_os = "android")]
     let mut android_merge_error: Option<String> = None;
 
@@ -5199,9 +5196,6 @@ fn merge_media_streams(
         }
     };
 
-    // Prefer concat demuxer segment lists (written by download_and_merge_once)
-    // over the naively-concatenated TS files, for the same discontinuity reasons
-    // described in convert_to_mp4.
     let video_concat = concat_list_for_input(video_path);
     let audio_concat = concat_list_for_input(audio_path);
 
@@ -5305,12 +5299,6 @@ fn run_ffmpeg_merge(
         "-hide_banner".to_string(),
         "-loglevel".to_string(),
         "error".to_string(),
-        // Generate missing PTS and ignore DTS errors so independently-encoded
-        // HLS segments that were naively concatenated (PTS restarts at zero at
-        // every segment boundary) are re-stamped into a continuous timeline.
-        // `+genpts` alone only fills absent timestamps; `+igndts` additionally
-        // stops ffmpeg from dropping frames when the DTS goes backwards, which
-        // was a second root cause of "only the first few seconds survive".
         "-fflags".to_string(),
         "+genpts+igndts".to_string(),
     ];
@@ -5377,8 +5365,6 @@ fn run_ffmpeg_merge(
     ]);
     args.push(output_path.to_string());
 
-    // Bound the merge/encode run so a hung hardware encoder cannot stall
-    // the download indefinitely; derive the timeout from the input length.
     let input_duration = probe_media_duration(video_path, ffmpeg_path);
     let hardware = requires_reencode && accel != AccelType::Cpu;
     let timeout = ffmpeg_transcode_timeout(input_duration, hardware);
@@ -5481,9 +5467,7 @@ fn score_candidate(
     if candidate.width > 0 {
         score += candidate.width.min(3840) / 24;
     }
-    // A quality label only stands in for the resolution when the stream
-    // itself did not report one (label-only HLS variants); with a real
-    // height the number above is the honest signal.
+
     if candidate.height == 0
         && (lower_quality.contains("1080")
             || lower_quality.contains("720")
@@ -5556,11 +5540,6 @@ pub(crate) fn request_headers(
     request_context: &RequestContext,
 ) -> Result<Vec<(String, String)>> {
     let mut headers: Vec<(String, String)> = Vec::new();
-    // A *complete* browser UA string matters: both reference
-    // downloaders (lanyeeee/bilibili-video-downloader,
-    // Bili23-Downloader) ship a full Chrome/Edge user agent — a
-    // truncated "Mozilla/… AppleWebKit/…" string is a classic bot
-    // marker that risk control flags.
     let user_agent = if request_context.user_agent.trim().is_empty() {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
     } else {
@@ -5597,10 +5576,6 @@ pub(crate) fn request_headers(
         validate_header_value(&cookie, "cookie")?;
         headers.push(("cookie".to_string(), cookie));
     } else if is_bilibili_domain(source_url.domain().unwrap_or_default()) {
-        // Follow lanyeeee/bilibili-video-downloader: even without a
-        // login, send a "SESSDATA=" placeholder cookie. Bilibili's
-        // risk control is markedly stricter towards requests that
-        // carry no cookie at all — a browser always has one.
         headers.push(("cookie".to_string(), "SESSDATA=".to_string()));
     }
 
@@ -5699,7 +5674,8 @@ fn download_playlist_with_url(
         match result {
             Ok(((status, _, body), effective_url)) => {
                 if !(200..300).contains(&status) {
-                    last_error = Some(anyhow!("Failed to download playlist: HTTP {}", status));
+                    last_error =
+                        Some(hls_http_error(status, &body).context("Failed to download playlist"));
                     if !matches!(status, 408 | 429 | 500..=599) {
                         break;
                     }
@@ -5996,9 +5972,6 @@ fn convert_to_mp4(
         return Ok(());
     }
 
-    // Mobile HLS must keep the individual segment boundaries available to
-    // the platform muxer. The native TS remuxer rebuilds timing from frame
-    // counts and cannot faithfully preserve per-segment timestamp resets.
     if !requires_reencode
         && is_mpeg_ts_file(Path::new(input_ts))
         && !cfg!(any(target_os = "android", target_os = "ios"))
@@ -6006,12 +5979,6 @@ fn convert_to_mp4(
         emit_progress(&reporter, "Remuxing TS → MP4 (stream copy)", 0.96);
         match crate::remux::remux_ts_to_mp4(Path::new(input_ts), Path::new(output_path)) {
             Ok(summary) => {
-                // Reject a truncated *and* a stretched timeline. The native
-                // remuxer builds the video track by counting pictures on one
-                // fixed interval, so a stream whose declared frame rate lies
-                // would otherwise pass with a video track far longer than the
-                // audio (and than the playlist), drifting seconds out of sync.
-                // A rejected file falls through to the platform transcoder.
                 let duration_ok = expected_duration.is_none_or(|expected| {
                     let shortest = (expected * 0.97).max(expected - 5.0);
                     let longest = expected + (expected * 0.03).max(5.0);

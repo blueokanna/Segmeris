@@ -21,7 +21,7 @@ Segmeris 是一个 Flutter 视频下载器，使用 Rust 处理媒体解析、�
 
 源码构建使用 Flutter 3.47.9（Dart 3.13.7）、Rust 1.89 或更新的 stable，以及目标平台的构建工具链。桌面端请将 FFmpeg 和 ffprobe 放入 PATH；Android 不需要 FFmpeg。Linux 的安全存储还需要 Secret Service，编译时安装 libsecret-1-dev。
 
-Windows 构建还需要将 [NuGet CLI](https://www.nuget.org/downloads) 加入 PATH，用于获取 WebView2 等原生插件依赖。CI 会显式安装；本地缺少 NuGet 时，CMake 会立即提示。
+Windows 使用 `powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1` 构建。脚本从 NuGet 官方包接口获取固定版本的 CLI，失败时尝试微软公开 .NET 包源；每次下载有超时限制，并验证 SHA-256 与 Authenticode 签名。工具缓存在 `build/tools/nuget`，只修改当前进程的 PATH。CI 与本地使用同一脚本，PR 也会构建 Windows 包。
 
     flutter pub get --enforce-lockfile
     flutter run
@@ -101,7 +101,7 @@ cargo run --manifest-path rust/Cargo.toml --locked --bin http_probe -- "https://
 
 TLS 默认使用 Mozilla 根证书。Courierust 无法锚定交叉签名链时，客户端以相同信任集重新执行 rustls / WebPKI 验证；仍检查签名、主机名和有效期，重连使用已经通过地址策略的 IP。不会通过关闭验证或恢复已退役根证书解决兼容问题。`SEGMERIS_EXTRA_CA_FILE` 仅用于部署方明确配置的额外信任。
 
-2026-11-08 复核的 `oss-hqwx-video.hqwx.com` issue 链接，在修复证书链兼容问题后仍返回 **HTTP 404**。网络修复不能恢复源站删除或失效的文件；需使用当前有效的播放列表验证完整下载。
+2026-11-08 复核的 `oss-hqwx-video.hqwx.com` issue 链接返回 **HTTP 404 / NoSuchKey**，响应头显示 `x-oss-cdn-auth: success`。源站报告对象不存在；客户端不能恢复这个对象，需要从原页面取得当前有效链接。程序会保留该错误原因，并在选择转码后端之前终止失败的播放列表请求。
 
 ## 工程与验证
 

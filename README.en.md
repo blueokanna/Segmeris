@@ -21,7 +21,7 @@ Published binaries are available from [Releases](https://github.com/blueokanna/S
 
 Build with Flutter 3.47.9 (Dart 3.13.7), Rust 1.89 or newer and the toolchain for the target platform. Desktop media processing needs FFmpeg and ffprobe on PATH. Android does not need FFmpeg. Linux secure storage needs a Secret Service implementation and libsecret-1-dev at build time.
 
-Windows builds also require the [NuGet CLI](https://www.nuget.org/downloads) on PATH to restore native plugin dependencies such as WebView2. CI installs it explicitly; local CMake configuration fails immediately with setup instructions when it is missing.
+On Windows, run `powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1`. The script downloads a pinned NuGet CLI from the official package endpoint, with Microsoft's public .NET feed as a fallback. Downloads have timeouts; SHA-256 and Authenticode signatures are verified. The tool is cached under `build/tools/nuget` and added only to the current process PATH. CI uses the same script, including Windows builds for pull requests.
 
     flutter pub get --enforce-lockfile
     flutter run
@@ -101,7 +101,7 @@ cargo run --manifest-path rust/Cargo.toml --locked --bin http_probe -- "https://
 
 TLS uses Mozilla roots by default. When Courierust cannot anchor a cross-signed chain, the client retries with rustls / WebPKI against the same trust set. Signature, hostname and validity checks stay enabled, and reconnection uses the IP already checked by the address policy. Retired roots are not restored for compatibility. `SEGMERIS_EXTRA_CA_FILE` adds only the trust explicitly configured by the deployment operator.
 
-The `oss-hqwx-video.hqwx.com` issue URL checked on 2026-11-08 returned **HTTP 404** after the certificate-chain compatibility fix. A transport fix cannot restore a removed or expired object; use a currently valid playlist to verify the complete download.
+The `oss-hqwx-video.hqwx.com` issue URL checked on 2026-11-08 returned **HTTP 404 / NoSuchKey**, with `x-oss-cdn-auth: success`. The origin reports that the object does not exist. The client cannot restore it; obtain a current link from the source page. The application preserves this cause and stops the failed playlist request before selecting a transcoding backend.
 
 ## Source layout and checks
 

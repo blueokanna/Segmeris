@@ -252,7 +252,7 @@ jobs:
 
   build-windows:
     name: Build Windows x64
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     needs: validate
     runs-on: windows-latest
     timeout-minutes: 45
@@ -270,10 +270,11 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Setup NuGet for Windows plugins
-        uses: nuget/setup-nuget@v3
+      - name: Cache verified NuGet CLI
+        uses: actions/cache@v4
         with:
-          nuget-version: latest
+          path: build/tools/nuget
+          key: windows-nuget-${{ hashFiles('scripts/setup_nuget.ps1') }}
 
       - name: Cache Rust dependencies
         uses: actions/cache@v4
@@ -293,10 +294,10 @@ jobs:
           CMAKE_GENERATOR: Visual Studio 17 2022
           CMAKE_GENERATOR_PLATFORM: x64
         run: |
-          if (Test-Path build\windows) {
-            Remove-Item -Recurse -Force build\windows
-          }
-          flutter build windows --release
+          ./scripts/build_windows.ps1 -NoPub
+
+      - name: Verify the release Rust library through Flutter FFI
+        run: flutter test --no-pub test/native_runtime_test.dart --dart-define=SEGMERIS_NATIVE_LIBRARY=build/windows/x64/runner/Release/rust_lib_segmeris.dll
 
       - name: Package Windows artifact
         run: |
@@ -560,7 +561,7 @@ jobs:
 
   docker-validate:
     name: Validate Docker API image (linux/amd64)
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     needs: validate
     runs-on: ubuntu-latest
     permissions:
@@ -586,18 +587,24 @@ jobs:
       - name: Smoke-test the health endpoint
         shell: bash
         run: |
-          docker run -d --name segmeris-api-validate -p 3000:3000 segmeris-api:validate
+          trap 'docker rm -f segmeris-api-validate >/dev/null 2>&1 || true' EXIT
+          docker run -d --name segmeris-api-validate -p 127.0.0.1:3000:3000 segmeris-api:validate
           for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:3000/health > /dev/null; then
+            if [ "$(docker inspect --format '{{.State.Running}}' segmeris-api-validate)" != true ]; then
+              echo '::error::API container exited before becoming healthy'
+              docker inspect --format '{{json .State}}' segmeris-api-validate
+              docker logs segmeris-api-validate
+              exit 1
+            fi
+            if curl -fsS --connect-timeout 1 --max-time 2 http://127.0.0.1:3000/health > health.json; then
+              python3 -c 'import json; h=json.load(open("health.json")); assert h == {"status":"ok","service":"segmeris-api"}, h'
               echo "health endpoint responded after ${attempt}s"
-              docker rm -f segmeris-api-validate
               exit 0
             fi
             sleep 1
           done
           echo "::error::the container never answered /health"
           docker logs segmeris-api-validate || true
-          docker rm -f segmeris-api-validate
           exit 1
 
   docker-api:
