@@ -184,7 +184,7 @@ class AppLocalizations {
       'capability_no_ffmpeg':
           'FFmpeg was not found in the configured, bundled or system paths.',
       'capability_ytdlp_on_demand': 'yt-dlp is not installed yet. Desktop downloads install the verified official binary on demand.',
-      'capability_ios_probe': 'VideoToolbox hardware availability was checked by initializing an H.264 session. Actual media and device load may affect availability.',
+      'capability_ios_probe': 'An H.264 session was initialized. Hardware selection is checked on iOS 17.4 and later; older systems report it as unknown. Actual media and device load may affect availability.',
       'probing_capabilities': 'Probing real codec and engine availability...',
       'available': 'Available',
       'not_available': 'Unavailable',
@@ -348,7 +348,7 @@ class AppLocalizations {
       'capability_no_ffmpeg': '配置目录、应用目录和系统路径中均未找到 FFmpeg。',
       'capability_ytdlp_on_demand': '尚未安装 yt-dlp；桌面下载任务会按需安装经过校验的官方程序。',
       'capability_ios_probe':
-          '已通过初始化 H.264 会话检查 VideoToolbox 硬件能力；实际媒体参数和设备负载仍可能影响可用性。',
+          '已检查 H.264 会话初始化；iOS 17.4 及以上检查硬件选择，更早版本显示为未知。实际媒体参数和设备负载仍可能影响可用性。',
       'probing_capabilities': '正在检测真实的编解码器与下载引擎...',
       'available': '可用',
       'not_available': '不可用',
@@ -503,7 +503,7 @@ class AppLocalizations {
       'capability_no_ffmpeg': '設定目錄、應用程式目錄及系統路徑中均未找到 FFmpeg。',
       'capability_ytdlp_on_demand': '尚未安裝 yt-dlp；桌面下載工作會按需安裝經過驗證的官方程式。',
       'capability_ios_probe':
-          '已透過初始化 H.264 工作階段檢查 VideoToolbox 硬體能力；實際媒體參數及裝置負載仍可能影響可用性。',
+          '已檢查 H.264 工作階段初始化；iOS 17.4 及以上檢查硬體選擇，更早版本顯示為未知。實際媒體參數及裝置負載仍可能影響可用性。',
       'probing_capabilities': '正在偵測真實的編解碼器與下載引擎...',
       'available': '可用',
       'not_available': '不可用',

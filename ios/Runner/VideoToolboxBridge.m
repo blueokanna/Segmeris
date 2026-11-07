@@ -61,9 +61,6 @@ static NSDictionary *segmeris_h264_settings(CGSize size, int videoBitrateKbps) {
     settings[AVVideoCodecKey] = AVVideoCodecTypeH264;
     settings[AVVideoWidthKey] = @(width);
     settings[AVVideoHeightKey] = @(height);
-    settings[AVVideoEncoderSpecificationKey] = @{
-        (__bridge NSString *)kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder : @YES,
-    };
     NSMutableDictionary *compression = [@{
         AVVideoProfileLevelKey : AVVideoProfileLevelH264HighAutoLevel,
         AVVideoAllowFrameReorderingKey : @NO,
@@ -579,9 +576,12 @@ static BOOL segmeris_merge_segments_impl(NSString *dir,
 int segmeris_videotoolbox_available(void) {
     @autoreleasepool {
         VTCompressionSessionRef session = NULL;
-        NSDictionary *specification = @{
-            (__bridge NSString *)kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder : @YES,
-        };
+        NSDictionary *specification = nil;
+        if (@available(iOS 17.4, *)) {
+            specification = @{
+                (__bridge NSString *)kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder : @YES,
+            };
+        }
         OSStatus status = VTCompressionSessionCreate(
             kCFAllocatorDefault, 1280, 720, kCMVideoCodecType_H264,
             (__bridge CFDictionaryRef)specification, NULL, NULL,

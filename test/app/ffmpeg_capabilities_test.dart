@@ -42,6 +42,7 @@ void main() {
       );
       expect(report.available.single.label, 'Linux V4L2 M2M');
       expect(arguments['h264_v4l2m2m'], contains('format=nv12'));
+      expect(arguments['h264_rkmpp'], contains('format=nv12'));
       expect(
         arguments['h264_qsv'],
         contains('format=nv12,hwupload=extra_hw_frames=64'),

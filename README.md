@@ -75,16 +75,17 @@ Bilibili 系列按顺序处理，每集开始前重新解析地址。登录只�
 | Windows / Linux，AMD | FFmpeg `h264_amf`；Linux 也可使用 `h264_vaapi` | AMF 运行时或 VAAPI 驱动可用 |
 | Windows / Linux，Intel | FFmpeg `h264_qsv`；Linux 也可使用 `h264_vaapi` | Intel 媒体驱动可用 |
 | Linux SoC | FFmpeg `h264_v4l2m2m` | 内核驱动提供有状态 V4L2 M2M H.264 **编码器**，进程可访问对应 `/dev/video*` 节点 |
+| Linux，Rockchip MPP | FFmpeg `h264_rkmpp` | FFmpeg 构建包含 MPP 编码器，MPP 库和设备访问权限匹配 |
 | Android | 原生 MediaCodec + MediaMuxer | 固件提供兼容的 H.264 Surface 编码能力 |
 | macOS，包括 Apple 芯片 | FFmpeg `h264_videotoolbox` | VideoToolbox 编码器可用，硬件探测禁止软件回退 |
-| iOS / iPadOS | 原生 AVFoundation + VideoToolbox | H.264 硬件会话初始化成功 |
+| iOS / iPadOS | 原生 AVFoundation + VideoToolbox | H.264 会话初始化成功；iOS 17.4 及以上可检查硬件选择 |
 | HarmonyOS NEXT | 尚未实现 | 需要独立原生工程、HarmonyOS SDK 接入及真机验证 |
 
 Android 不按厂商品牌设置白名单。Amlogic、Allwinner、Qualcomm、Rockchip、MediaTek 和华为 Kirin 设备使用其 Android 兼容固件公开的编解码器。Android 10 及以上读取系统硬件标志，更早版本需要通过编码器名称判断。两者都不等于某个分辨率或码率一定可用：管线会检查格式能力、尝试初始化，必要时回退到兼容的软件编码器。能够运行 Android APK 的 HarmonyOS 设备走 Android 路径，不代表已经完成 HarmonyOS NEXT 原生移植。
 
-Linux 是否可用由内核和用户态接口决定，不能仅凭芯片品牌判断。只有解码能力的驱动、无状态 V4L2 解码接口和 Rockchip MPP 等厂商 SDK，都不能直接当作 V4L2 M2M 编码器使用。项目当前没有接入厂商专用 MPP、CedarX 或 OpenMAX 后端。VAAPI 当前使用 `/dev/dri/renderD128`。容器还需要显式开放设备节点并配置匹配驱动；默认 Docker 镜像没有自动配置 GPU 透传。
+Linux 是否可用由内核和用户态接口决定，不能仅凭芯片品牌判断。只有解码能力的驱动、无状态 V4L2 解码接口和 Rockchip MPP 等厂商 SDK，都不能直接当作 V4L2 M2M 编码器使用。MPP 编码通过用户配置的 FFmpeg 构建接入，该构建必须提供 `h264_rkmpp` 编码器，例如 [ffmpeg-rockchip](https://github.com/nyanmisaka/ffmpeg-rockchip/wiki/Encoder)；只有 MPP 解码器并不够。项目不捆绑该构建，也没有直接链接厂商 MPP、CedarX 或 OpenMAX 库。VAAPI 当前使用 `/dev/dri/renderD128`。容器还需要显式开放设备节点并配置匹配驱动；默认 Docker 镜像没有自动配置 GPU 透传。
 
-桌面能力面板会按选择顺序列出所有通过三帧 720p 测试的编码器，并单独展示未通过项。探测失败可能源于硬件、驱动、FFmpeg 构建、设备权限或临时资源占用，不能据此判断应用只支持列表中第一个厂商。Android 展示系统声明的能力，iOS 检查硬件会话初始化结果。这些检查不能代替目标设备上的完整转码测试，项目不声称已完成所有芯片的真机验证。
+桌面能力面板会按选择顺序列出所有通过三帧 720p 测试的编码器，并单独展示未通过项。探测失败可能源于硬件、驱动、FFmpeg 构建、设备权限或临时资源占用，不能据此判断应用只支持列表中第一个厂商。Android 展示系统声明的能力，iOS 检查会话初始化结果，早于 iOS 17.4 的系统将硬件能力标为未知；实际 iOS 导出由 AVFoundation 管理编码器选择。这些检查不能代替目标设备上的完整转码测试，项目不声称已完成所有芯片的真机验证。
 
 平台接口参考：[Android MediaCodecInfo](https://developer.android.com/reference/android/media/MediaCodecInfo)、[Apple 硬件编码器选择](https://developer.apple.com/documentation/videotoolbox/kvtvideoencoderspecification_requirehardwareacceleratedvideoencoder)、[HarmonyOS 原生视频编码](https://developer.huawei.com/consumer/en/doc/harmonyos-guides/video-encoding/)。
 

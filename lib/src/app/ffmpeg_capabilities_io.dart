@@ -59,6 +59,10 @@ Future<FfmpegEncoderReport> probeFfmpegEncoders(
         '-vf',
         'format=nv12',
       ]),
+      const FfmpegEncoder('Rockchip MPP', 'h264_rkmpp', true, [
+        '-vf',
+        'format=nv12',
+      ]),
     ],
     if (operatingSystem == 'macos')
       const FfmpegEncoder('Apple VideoToolbox', 'h264_videotoolbox', true, [

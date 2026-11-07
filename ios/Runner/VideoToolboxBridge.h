@@ -9,8 +9,8 @@
 extern "C" {
 #endif
 
-/// Returns 1 when the native H.264 hardware encoder pipeline is usable,
-/// 0 otherwise. Initializes and releases a 720p H.264 compression session.
+/// Initializes a 720p H.264 session; requires hardware on iOS 17.4 and newer.
+/// Returns 1 on success, 0 otherwise. Earlier iOS versions cannot report hardware selection.
 int segmeris_videotoolbox_available(void);
 
 /// Transcode a single input file (MPEG-TS, MP4, ...) into an MP4 container.

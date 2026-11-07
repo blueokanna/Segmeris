@@ -9,6 +9,7 @@ pub(super) enum AccelType {
     IntelQuickSync,
     LinuxVaapi,
     LinuxV4l2M2m,
+    RockchipMpp,
     AppleVideoToolbox,
     Cpu,
 }
@@ -21,6 +22,7 @@ impl AccelType {
             Self::IntelQuickSync => "Intel Quick Sync",
             Self::LinuxVaapi => "Linux VAAPI",
             Self::LinuxV4l2M2m => "Linux V4L2 M2M",
+            Self::RockchipMpp => "Rockchip MPP",
             Self::AppleVideoToolbox => "Apple VideoToolbox",
             Self::Cpu => "CPU libx264",
         }
@@ -33,6 +35,7 @@ impl AccelType {
             Self::IntelQuickSync => "h264_qsv",
             Self::LinuxVaapi => "h264_vaapi",
             Self::LinuxV4l2M2m => "h264_v4l2m2m",
+            Self::RockchipMpp => "h264_rkmpp",
             Self::AppleVideoToolbox => "h264_videotoolbox",
             Self::Cpu => "libx264",
         }
@@ -58,6 +61,8 @@ pub(super) fn detect_acceleration(ffmpeg_path: &Path) -> Result<AccelType> {
         AccelType::LinuxVaapi,
         #[cfg(target_os = "linux")]
         AccelType::LinuxV4l2M2m,
+        #[cfg(target_os = "linux")]
+        AccelType::RockchipMpp,
         #[cfg(target_os = "macos")]
         AccelType::AppleVideoToolbox,
     ];
@@ -134,7 +139,9 @@ pub(super) fn push_accel_encode_args(args: &mut Vec<String>, accel: AccelType) {
             "-vf".to_string(),
             "format=nv12,hwupload=extra_hw_frames=64".to_string(),
         ]),
-        AccelType::LinuxV4l2M2m => args.extend(["-vf".to_string(), "format=nv12".to_string()]),
+        AccelType::LinuxV4l2M2m | AccelType::RockchipMpp => {
+            args.extend(["-vf".to_string(), "format=nv12".to_string()])
+        }
         AccelType::AppleVideoToolbox => args.extend(["-allow_sw".to_string(), "0".to_string()]),
         AccelType::Amd => {}
     }
@@ -161,6 +168,7 @@ mod tests {
             AccelType::IntelQuickSync,
             AccelType::LinuxVaapi,
             AccelType::LinuxV4l2M2m,
+            AccelType::RockchipMpp,
             AccelType::AppleVideoToolbox,
             AccelType::Cpu,
         ] {

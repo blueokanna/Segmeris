@@ -972,17 +972,7 @@ object MediaTranscoder {
             encoder = encoderSession.codec
             encoderSurface = encoderSession.surface
 
-            val decoderInfo = selectCodec(vMime, encoder = false, hardwareOnly = false)
-            decoder =
-                    if (decoderInfo != null) {
-                        Log.i(TAG, "Using decoder ${decoderInfo.name}")
-                        MediaCodec.createByCodecName(decoderInfo.name)
-                    } else {
-                        Log.w(TAG, "No preferred decoder found for $vMime, using system default")
-                        MediaCodec.createDecoderByType(vMime)
-                    }
-            decoder.configure(vFmt, encoderSurface, null, 0)
-            decoder.start()
+            decoder = createDecoder(vMime, vFmt, encoderSession.surface)
 
             muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
 
@@ -1754,20 +1744,7 @@ object MediaTranscoder {
             encoderSurface = encoderSession.surface
 
             // ── Decoder ──
-            val decoderInfo = selectCodec(vMime, encoder = false, hardwareOnly = false)
-            decoder =
-                    if (decoderInfo != null) {
-                        Log.i(TAG, "Using decoder ${decoderInfo.name}")
-                        MediaCodec.createByCodecName(decoderInfo.name)
-                    } else {
-                        Log.w(
-                                TAG,
-                                "No preferred hardware decoder found for $vMime, using system default"
-                        )
-                        MediaCodec.createDecoderByType(vMime)
-                    }
-            decoder.configure(vFmt, encoderSurface, null, 0)
-            decoder.start()
+            decoder = createDecoder(vMime, vFmt, encoderSession.surface)
 
             // ── Muxer ──
             muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
@@ -2144,19 +2121,23 @@ object MediaTranscoder {
         }
     }
 
-    private fun selectCodec(
-            mime: String,
-            encoder: Boolean,
-            hardwareOnly: Boolean
-    ): MediaCodecInfo? {
-        val selected = codecCandidates(mime, encoder, hardwareOnly).firstOrNull()
-        if (selected != null) {
-            Log.i(
-                    TAG,
-                    "Selected ${if (encoder) "encoder" else "decoder"} ${selected.name} for $mime"
-            )
+    private fun createDecoder(mime: String, format: MediaFormat, surface: Surface): MediaCodec {
+        var lastError: Exception? = null
+        for (candidate in codecCandidates(mime, encoder = false, hardwareOnly = false)) {
+            var codec: MediaCodec? = null
+            try {
+                codec = MediaCodec.createByCodecName(candidate.name)
+                codec.configure(format, surface, null, 0)
+                codec.start()
+                Log.i(TAG, "Using decoder ${candidate.name}")
+                return codec
+            } catch (error: Exception) {
+                lastError = error
+                Log.w(TAG, "Decoder ${candidate.name} rejected the format: ${error.message}")
+                runCatching { codec?.release() }
+            }
         }
-        return selected
+        throw IOException("No decoder accepted $mime with the encoder Surface", lastError)
     }
 
     private fun codecCandidates(

@@ -23,7 +23,13 @@ import VideoToolbox
         return
       }
       DispatchQueue.global(qos: .utility).async {
-        let hardware = segmeris_videotoolbox_available() != 0
+        let available = segmeris_videotoolbox_available() != 0
+        let hardware: Any
+        if #available(iOS 17.4, *) {
+          hardware = available
+        } else {
+          hardware = NSNull()
+        }
         var decoders: [String] = []
         if VTIsHardwareDecodeSupported(kCMVideoCodecType_H264) {
           decoders.append("Apple VideoToolbox | video/avc")
@@ -34,7 +40,7 @@ import VideoToolbox
         let report: [String: Any] = [
           "transcoderBackend": "Apple AVFoundation / VideoToolbox",
           "hardwareAccelerated": hardware,
-          "videoEncoders": hardware ? ["Apple VideoToolbox | video/avc"] : [],
+          "videoEncoders": available ? ["Apple VideoToolbox | video/avc"] : [],
           "videoDecoders": decoders,
           "ffmpegAvailable": false,
           "ytdlpAvailable": false,
