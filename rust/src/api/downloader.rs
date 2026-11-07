@@ -54,10 +54,9 @@ enum TranscoderKind {
     IosVideoToolbox,
 }
 
-// FFI into the native iOS transcoder (`ios/Runner/VideoToolboxBridge.m`).
+// FFI into the native iOS transcoder (`rust_builder/ios/Classes/VideoToolboxBridge.m`).
 //
-// The symbols are provided by the Runner app target, which links the Rust
-// static library; they only exist on iOS, hence the `cfg` gate.
+// The iOS CocoaPods target links the bridge and the Rust static library together.
 #[cfg(target_os = "ios")]
 unsafe extern "C" {
     fn segmeris_videotoolbox_available() -> i32;

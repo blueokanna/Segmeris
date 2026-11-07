@@ -1,2 +1,2 @@
 #import "GeneratedPluginRegistrant.h"
-#import "VideoToolboxBridge.h"
+#import <rust_lib_segmeris/VideoToolboxBridge.h>
