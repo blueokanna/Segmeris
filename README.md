@@ -23,6 +23,8 @@ Segmeris 是一个 Flutter 视频下载器，使用 Rust 处理媒体解析、�
 
 源码构建使用 Flutter 3.47.9（Dart 3.13.7）、Rust 1.89 或更新的 stable，以及目标平台的构建工具链。桌面端请将 FFmpeg 和 ffprobe 放入 PATH；Android 不需要 FFmpeg。Linux 的安全存储还需要 Secret Service，编译时安装 libsecret-1-dev。
 
+内置授权浏览器固定为稳定版 `flutter_inappwebview 6.1.5`。其 Android 插件仍引用 AGP 9 已移除的 ProGuard 默认文件；构建时在项目 `build/plugin-gradle` 中生成兼容脚本，仅替换这两个文件引用，不修改 Pub 缓存。上游脚本变化会触发检查失败，更新依赖时需要复核这项兼容处理。
+
 Android 构建使用 JDK 17、AGP 9.1.1 和 Gradle 9.3.1，以识别 API 37.0 的 SDK 元数据。前台服务遵守系统后台运行时限；收到超时回调后停止服务并释放唤醒锁，不承诺无限后台运行。
 
 Windows 使用 `powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1` 构建。脚本从 NuGet 官方包接口获取固定版本的 CLI，失败时尝试微软公开 .NET 包源；每次下载有超时限制，并验证 SHA-256 与 Authenticode 签名。工具缓存在 `build/tools/nuget`，只修改当前进程的 PATH。CI 与本地使用同一脚本，PR 也会构建 Windows 包。

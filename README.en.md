@@ -23,6 +23,8 @@ Published binaries are available from [Releases](https://github.com/blueokanna/S
 
 Build with Flutter 3.47.9 (Dart 3.13.7), Rust 1.89 or newer and the toolchain for the target platform. Desktop media processing needs FFmpeg and ffprobe on PATH. Android does not need FFmpeg. Linux secure storage needs a Secret Service implementation and libsecret-1-dev at build time.
 
+The embedded authorization browser stays on stable `flutter_inappwebview 6.1.5`. Its Android plugin references a default ProGuard file removed by AGP 9. The build generates a compatible script under `build/plugin-gradle`, replacing only those two references without modifying the Pub cache. An upstream script change fails the compatibility check and requires review when updating the dependency.
+
 Android builds use JDK 17, AGP 9.1.1 and Gradle 9.3.1 to read API 37.0 SDK metadata. Foreground services respect system background time limits: the timeout callback stops the service and releases its wake lock. Indefinite background execution is not guaranteed.
 
 On Windows, run `powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1`. The script downloads a pinned NuGet CLI from the official package endpoint, with Microsoft's public .NET feed as a fallback. Downloads have timeouts; SHA-256 and Authenticode signatures are verified. The tool is cached under `build/tools/nuget` and added only to the current process PATH. CI uses the same script, including Windows builds for pull requests.
