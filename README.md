@@ -1,6 +1,8 @@
-# Segmeris
+# Segmeris 1.0.8 - [English](README.en.md)
 
-[English](README.en.md)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/blueokanna/Segmeris/main/assets/playstore.png" width="20%" />
+</p>
 
 Segmeris 是一个 Flutter 视频下载器，使用 Rust 处理媒体解析、网络传输和下载任务。支持 HLS、媒体直链与 Bilibili 页面，输出 MP4；Android 通过系统 MediaCodec / MediaMuxer 处理媒体并导出到公共存储。
 
@@ -11,21 +13,24 @@ Segmeris 是一个 Flutter 视频下载器，使用 Rust 处理媒体解析、�
 - **任务控制**：传输阶段可以暂停、继续并复制下载链接。分离音视频会复制两条链接；已完成分片和可安全续传的文件数据可复用。
 - **媒体处理**：优先转封装，按需转码。桌面端使用 FFmpeg；Android 使用 MediaMuxer / MediaCodec；iOS 使用 AVFoundation / VideoToolbox。
 - **登录**：支持 Bilibili 扫码、内置授权浏览器和手动请求头。原生客户端通过系统安全存储保存会话，旧版明文凭据在成功迁移后删除。
+- **界面**：Material 3 组件、2021 字体排版规范、动态配色与 AMOLED 主题。下载参数按需展开，窄屏与大字体采用单列布局，宽屏限制内容宽度；动画适配系统“减少动画”设置。
 
 ## 安装与构建
 
-从 [Releases](https://github.com/blueokanna/FerrisLoadDownloader/releases) 获取已发布版本。
+从 [Releases](https://github.com/blueokanna/Segmeris/releases) 获取已发布版本。
 
-源码构建需要 Flutter、Rust 1.89 或更新的 stable，以及目标平台的 Flutter 构建工具链。桌面端请将 FFmpeg 和 ffprobe 放入 PATH；Android 不需要 FFmpeg。Linux 的安全存储还需要 Secret Service，编译时安装 libsecret-1-dev。
+源码构建使用 Flutter 3.47.9（Dart 3.13.7）、Rust 1.89 或更新的 stable，以及目标平台的构建工具链。桌面端请将 FFmpeg 和 ffprobe 放入 PATH；Android 不需要 FFmpeg。Linux 的安全存储还需要 Secret Service，编译时安装 libsecret-1-dev。
 
-    flutter pub get
+Windows 构建还需要将 [NuGet CLI](https://www.nuget.org/downloads) 加入 PATH，用于获取 WebView2 等原生插件依赖。CI 会显式安装；本地缺少 NuGet 时，CMake 会立即提示。
+
+    flutter pub get --enforce-lockfile
     flutter run
 
 Rust 库由 Cargokit 随 Flutter 构建。修改 Rust 对外接口后，使用与 rust/Cargo.toml 一致的 flutter_rust_bridge_codegen 版本重新生成绑定：
 
     flutter_rust_bridge_codegen generate
 
-HTTP / TLS 依赖使用 crates.io 的 Courierust 版本，不在本项目内维护 vendor 副本。开发中的 Courierust 修复需先在其独立仓库验证并发布，发行构建必须移除本机 Cargo 补丁，并使用已发布版本重新生成锁文件。
+Courierust 固定为 crates.io 发布的 **1.1.1**，仓库不维护 vendor 副本或本机路径补丁。提交 `rust/Cargo.lock` 与 `pubspec.lock`，CI 使用锁文件构建。应用、Rust core 和 Flutter 桥接包统一为 **1.0.8**；第三方依赖保留各自版本。发布标签必须为 `v1.0.8`，`scripts/check_versions.py` 会检查包版本与标签是否一致。
 
 ## 使用
 
@@ -45,12 +50,14 @@ Bilibili 系列按顺序处理，每集开始前重新解析地址。登录只�
 | 完整 VOD 播放列表 | 下载至 ENDLIST；主列表选择可用的最高带宽变体 |
 | AES-128 | 按密钥和 IV 解密；解密失败终止，不保存为成功产物 |
 | EXT-X-MAP | 缓存初始化段；保留声明时的密钥，每个 fMP4 分片可独立读取 |
-| BYTERANGE | 检查范围与长度；支持连续省略偏移的范围 |
+| BYTERANGE | 核对 206 响应的 Content-Range 和实际长度；支持连续省略偏移的范围 |
 | DISCONTINUITY | 保留分段边界；Android 转封装重建连续时间轴 |
 | 直播 / EVENT 未结束 | 明确拒绝；目前不提供持续录制 |
 | SAMPLE-AES / DRM | 不支持 |
 
 普通大文件以 64 KiB 块写盘，不受元数据读取的 64 MiB 内存上限限制。不支持 Range 的服务器从头传输；跨请求续传需要 ETag 或 Last-Modified 等校验信息。播放列表解析上限为 16 MiB，单个内存资源读取上限为 64 MiB。
+
+分片请求保留底层错误信息。408、429 和服务端错误可重试，其他 4xx 直接失败；收到不匹配的字节区间、缺失的 Content-Range 或错误的分片长度时，不写入成功缓存。
 
 ## 转封装与 Android 时长
 
@@ -80,6 +87,22 @@ API 默认阻止私有、回环、链路本地及保留地址，包括 IPv4 映�
 
 TLS 保持证书验证。受管控网络可用 SEGMERIS_EXTRA_CA_FILE 指定额外 PEM / DER 根证书；多个路径使用操作系统的路径分隔符。
 
+## 网络错误排查
+
+播放列表下载和 FFmpeg 处理是两个阶段。播放列表尚未取得时，切换“FFmpeg stream copy”不能修复 HTTP 或 TLS 错误。日志会保留 TLS 错误链；HTTP 401、403、404 等确定性失败直接返回，408、429 和 5xx 仍允许重试。
+
+可用同一套网络实现检查响应，不需要启动 Flutter：
+
+```sh
+cargo run --manifest-path rust/Cargo.toml --locked --bin http_probe -- "https://example.com/video.m3u8"
+```
+
+`http_probe` 输出状态码、响应大小、主机和少量响应头，不输出 Cookie、响应正文或 URL 查询参数。非 2xx 响应以失败退出。
+
+TLS 默认使用 Mozilla 根证书。Courierust 无法锚定交叉签名链时，客户端以相同信任集重新执行 rustls / WebPKI 验证；仍检查签名、主机名和有效期，重连使用已经通过地址策略的 IP。不会通过关闭验证或恢复已退役根证书解决兼容问题。`SEGMERIS_EXTRA_CA_FILE` 仅用于部署方明确配置的额外信任。
+
+2026-11-08 复核的 `oss-hqwx-video.hqwx.com` issue 链接，在修复证书链兼容问题后仍返回 **HTTP 404**。网络修复不能恢复源站删除或失效的文件；需使用当前有效的播放列表验证完整下载。
+
 ## 工程与验证
 
     lib/src/app/                  下载后端、平台桥接、设置与凭据
@@ -95,13 +118,14 @@ TLS 保持证书验证。受管控网络可用 SEGMERIS_EXTRA_CA_FILE 指定额�
     android/app/src/main/kotlin/  Android 媒体处理与公共存储
     rust/fuzz/                    HLS 解析器模糊测试
 
+    python scripts/check_versions.py
     flutter analyze
     flutter test
     cd rust
     cargo fmt --all --check
-    cargo clippy --workspace --all-targets --features api-server -- -D warnings
-    cargo test --workspace --features api-server
-    cargo check -p segmeris-core --no-default-features
+    cargo clippy --workspace --all-targets --features api-server --locked -- -D warnings
+    cargo test --workspace --features api-server --locked
+    cargo check -p segmeris-core --no-default-features --locked
     # 使用本机 FFmpeg 验证三段 fMP4 的完整时长
     cargo test fmp4_vod_remux_preserves_all_three_segments -- --ignored
     # Android 真机或模拟器：在 android 目录运行 gradlew connectedDebugAndroidTest

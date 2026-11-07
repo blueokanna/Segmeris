@@ -27,27 +27,27 @@ class HomeDownloadTasksCard extends StatelessWidget {
       subtitle: '${l.text('running_downloads')}: $runningCount',
       icon: Icons.downloading_rounded,
       child: AnimatedSwitcher(
-        duration: SegmerisMotion.slow,
+        duration: SegmerisMotion.duration(context, SegmerisMotion.slow),
         switchInCurve: SegmerisMotion.decelerate,
         switchOutCurve: SegmerisMotion.accelerate,
         transitionBuilder: segmerisFadeScaleTransition,
         child: tasks.isEmpty
             ? _EmptyDownloadTasks(key: const ValueKey('empty-download-tasks'))
             : Column(
-                key: ValueKey(
-                  'download-tasks-${tasks.length}-${tasks.first.id}',
-                ),
+                key: const ValueKey('download-tasks'),
                 children: [
                   for (final entry in tasks.indexed)
                     Padding(
+                      key: ValueKey(entry.$2.id),
                       padding: EdgeInsets.only(
                         bottom: entry.$1 == tasks.length - 1 ? 0 : 10,
                       ),
-                      child: _DownloadTaskTile(
-                        key: ValueKey(entry.$2.id),
-                        task: entry.$2,
-                        onRetry: onRetry,
-                        onTogglePause: onTogglePause,
+                      child: RepaintBoundary(
+                        child: _DownloadTaskTile(
+                          task: entry.$2,
+                          onRetry: onRetry,
+                          onTogglePause: onTogglePause,
+                        ),
                       ),
                     ),
                 ],
@@ -75,10 +75,7 @@ class _EmptyDownloadTasks extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.download_for_offline_outlined,
-            color: cs.onSurfaceVariant,
-          ),
+          Icon(Icons.download_for_offline_outlined, color: cs.onSurfaceVariant),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -96,7 +93,6 @@ class _EmptyDownloadTasks extends StatelessWidget {
 
 class _DownloadTaskTile extends StatelessWidget {
   const _DownloadTaskTile({
-    super.key,
     required this.task,
     required this.onRetry,
     this.onTogglePause,
@@ -117,19 +113,19 @@ class _DownloadTaskTile extends StatelessWidget {
     final (tone, foreground, icon) = failed
         ? (cs.errorContainer, cs.onErrorContainer, Icons.error_outline_rounded)
         : completed
-            ? (
-                cs.secondaryContainer,
-                cs.onSecondaryContainer,
-                Icons.check_circle_outline_rounded,
-              )
-            : (
-                cs.primaryContainer.withValues(alpha: 0.74),
-                cs.onPrimaryContainer,
-                Icons.downloading_rounded,
-              );
+        ? (
+            cs.secondaryContainer,
+            cs.onSecondaryContainer,
+            Icons.check_circle_outline_rounded,
+          )
+        : (
+            cs.primaryContainer.withValues(alpha: 0.74),
+            cs.onPrimaryContainer,
+            Icons.downloading_rounded,
+          );
 
     return AnimatedContainer(
-      duration: SegmerisMotion.medium,
+      duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
       curve: SegmerisMotion.emphasized,
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -144,9 +140,10 @@ class _DownloadTaskTile extends StatelessWidget {
           Row(
             children: [
               StatusPulseDot(
-                  active: task.running && !task.paused,
-                  color: foreground,
-                  size: 10),
+                active: task.running && !task.paused,
+                color: foreground,
+                size: 10,
+              ),
               const SizedBox(width: 10),
               Icon(icon, size: 18, color: foreground),
               const SizedBox(width: 8),
@@ -236,13 +233,17 @@ class _DownloadTaskTile extends StatelessWidget {
             children: [
               if (onTogglePause != null && task.canPause)
                 TextButton.icon(
-                  onPressed:
-                      task.controlBusy ? null : () => onTogglePause!(task.id),
-                  icon: Icon(task.paused
-                      ? Icons.play_arrow_rounded
-                      : Icons.pause_rounded),
-                  label: Text(l.text(
-                      task.paused ? 'resume_download' : 'pause_download')),
+                  onPressed: task.controlBusy
+                      ? null
+                      : () => onTogglePause!(task.id),
+                  icon: Icon(
+                    task.paused
+                        ? Icons.play_arrow_rounded
+                        : Icons.pause_rounded,
+                  ),
+                  label: Text(
+                    l.text(task.paused ? 'resume_download' : 'pause_download'),
+                  ),
                 ),
               TextButton.icon(
                 onPressed: () async {
@@ -251,8 +252,9 @@ class _DownloadTaskTile extends StatelessWidget {
                       : task.downloadUrls;
                   await Clipboard.setData(ClipboardData(text: urls.join('\n')));
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(l.text('download_links_copied'))));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(l.text('download_links_copied'))),
+                    );
                   }
                 },
                 icon: const Icon(Icons.link_rounded),

@@ -2,6 +2,12 @@
 cmake_minimum_required(VERSION 3.14)
 project(segmeris LANGUAGES CXX)
 
+find_program(NUGET nuget)
+if(NOT NUGET)
+  message(FATAL_ERROR
+    "Windows plugins require nuget.exe on PATH. Install the NuGet CLI from https://www.nuget.org/downloads and run the build again.")
+endif()
+
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
 set(BINARY_NAME "segmeris")

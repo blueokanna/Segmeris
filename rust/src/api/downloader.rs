@@ -3119,13 +3119,10 @@ pub(crate) fn run_hls_pipeline(
 
 fn playlist_base_url(playlist_url: &Url) -> Url {
     let mut base = playlist_url.clone();
-    base.set_query(None);
     base.set_fragment(None);
-    let mut path = base.path().to_string();
-    if let Some(position) = path.rfind('/') {
-        path.truncate(position + 1);
-        base.set_path(&path);
-    }
+    // Resolve against the complete effective URL. Removing the filename breaks
+    // query-only references such as `?segment=1`; Url::join already handles
+    // ordinary relative paths without inheriting the playlist's query string.
     base
 }
 
@@ -4338,13 +4335,19 @@ mod tests {
     }
 
     #[test]
-    fn uses_effective_playlist_directory_as_base() {
-        let url = Url::parse("https://cdn.example/live/quality/index.m3u8?token=abc")
+    fn resolves_resources_against_the_complete_effective_playlist_url() {
+        let url = Url::parse("https://cdn.example/live/quality/index.m3u8?token=abc#player")
             .expect("playlist URL should parse");
+        let base = playlist_base_url(&url);
         assert_eq!(
-            playlist_base_url(&url).as_str(),
-            "https://cdn.example/live/quality/"
+            base.join("segment.ts").unwrap().as_str(),
+            "https://cdn.example/live/quality/segment.ts"
         );
+        assert_eq!(
+            base.join("?segment=1").unwrap().as_str(),
+            "https://cdn.example/live/quality/index.m3u8?segment=1"
+        );
+        assert_eq!(base.fragment(), None);
     }
 
     #[test]
@@ -4668,13 +4671,18 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *yt-dlp.exe\n";
     #[test]
     fn slices_full_responses_when_a_server_ignores_range() {
         assert_eq!(
-            hls_response_bytes(200, &[0, 1, 2, 3, 4, 5], Some((2, 4)))
+            hls_response_bytes(200, &[], vec![0, 1, 2, 3, 4, 5], Some((2, 4)))
                 .expect("full response should be sliced"),
             vec![2, 3, 4]
         );
         assert_eq!(
-            hls_response_bytes(206, &[7, 8, 9], Some((100, 102)),)
-                .expect("partial response should already represent the range"),
+            hls_response_bytes(
+                206,
+                &[("Content-Range".into(), "bytes 100-102/200".into())],
+                vec![7, 8, 9],
+                Some((100, 102)),
+            )
+            .expect("partial response should already represent the range"),
             vec![7, 8, 9]
         );
     }
@@ -5692,6 +5700,9 @@ fn download_playlist_with_url(
             Ok(((status, _, body), effective_url)) => {
                 if !(200..300).contains(&status) {
                     last_error = Some(anyhow!("Failed to download playlist: HTTP {}", status));
+                    if !matches!(status, 408 | 429 | 500..=599) {
+                        break;
+                    }
                     if attempt < 3 {
                         let delay = retry_backoff_delay(attempt, Some(status));
                         std::thread::sleep(delay);
@@ -5701,7 +5712,7 @@ fn download_playlist_with_url(
                 return Ok((body, effective_url));
             }
             Err(error) => {
-                last_error = Some(anyhow!("Failed to download playlist: {}", error));
+                last_error = Some(anyhow!("Failed to download playlist: {error:#}"));
                 if attempt < 3 {
                     let delay = retry_backoff_delay(attempt, None);
                     std::thread::sleep(delay);

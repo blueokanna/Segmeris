@@ -111,25 +111,14 @@ pub(crate) fn validate_public_http_url(url: &str) -> Result<()> {
         .host_str()
         .ok_or_else(|| anyhow!("URL has no host: {url}"))?;
 
-    // IP literal: check directly.
-    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-        if is_private_ip(ip) {
-            bail!("Refusing private/loopback network target: {url}");
-        }
-        return Ok(());
-    }
-
     // Hostname: resolve and reject any private address (best effort; the
     // network layer also checks the actual address immediately before connecting).
-    let addresses = (host, 443)
+    let port = parsed.port_or_known_default().context("URL has no port")?;
+    let addresses: Vec<_> = (host, port)
         .to_socket_addrs()
-        .with_context(|| format!("Failed to resolve host: {host}"))?;
-    for address in addresses {
-        if is_private_ip(address.ip()) {
-            bail!("Refusing target that resolves to a private address: {url}");
-        }
-    }
-    Ok(())
+        .with_context(|| format!("Failed to resolve host: {host}"))?
+        .collect();
+    crate::network_policy::validate_addresses(&addresses, true)
 }
 
 use crate::network_policy::is_private_ip;

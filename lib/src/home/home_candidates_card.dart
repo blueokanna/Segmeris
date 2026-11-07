@@ -138,7 +138,8 @@ class HomeCandidatesCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(bottom: 14),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 280),
+                duration: SegmerisMotion.duration(
+                    context, const Duration(milliseconds: 280)),
                 curve: Curves.easeOutCubic,
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -193,7 +194,7 @@ class HomeCandidatesCard extends StatelessWidget {
               ),
             ),
           AnimatedSwitcher(
-            duration: SegmerisMotion.slow,
+            duration: SegmerisMotion.duration(context, SegmerisMotion.slow),
             switchInCurve: SegmerisMotion.decelerate,
             switchOutCurve: SegmerisMotion.accelerate,
             transitionBuilder: segmerisFadeScaleTransition,
@@ -267,7 +268,7 @@ class HomeCandidatesCard extends StatelessWidget {
                   ),
           ),
           AnimatedSwitcher(
-            duration: SegmerisMotion.slow,
+            duration: SegmerisMotion.duration(context, SegmerisMotion.slow),
             switchInCurve: SegmerisMotion.decelerate,
             switchOutCurve: SegmerisMotion.accelerate,
             transitionBuilder: segmerisFadeScaleTransition,
@@ -345,7 +346,7 @@ class _SubtitleChoicePill extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           child: AnimatedContainer(
-            duration: SegmerisMotion.fast,
+            duration: SegmerisMotion.duration(context, SegmerisMotion.fast),
             curve: SegmerisMotion.emphasized,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
@@ -362,7 +363,8 @@ class _SubtitleChoicePill extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 AnimatedSwitcher(
-                  duration: SegmerisMotion.fast,
+                  duration:
+                      SegmerisMotion.duration(context, SegmerisMotion.fast),
                   transitionBuilder: segmerisFadeScaleTransition,
                   child: selected
                       ? Icon(

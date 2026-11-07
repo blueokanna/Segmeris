@@ -4,29 +4,12 @@ import 'package:segmeris/src/app/app_localizations.dart';
 import 'package:segmeris/src/home/home_widgets.dart';
 import 'package:segmeris/src/rust/api/downloader.dart';
 
-/// Warning code the engine emits when the session can only reach a `试看`
-/// preview fragment instead of the whole episode.
 const previewOnlyWarningCode = 'bilibili-preview-only';
 
-/// Whether an analysis reported that the server will only hand out a preview
-/// fragment for this session (a membership / purchase / region gate).
-///
-/// The engine decides this from the API's own `is_preview` flag, so the UI can
-/// state it plainly instead of leaving the user to wonder why a download came
-/// out six minutes long.
-bool inspectionOffersPreviewOnly(MediaInspectionResult inspection) =>
-    inspection.warnings.any(
-      (warning) => warning.contains(previewOnlyWarningCode),
-    );
+bool inspectionOffersPreviewOnly(MediaInspectionResult inspection) => inspection
+    .warnings
+    .any((warning) => warning.contains(previewOnlyWarningCode));
 
-/// Ask which stream to download, returning the choice or `null` when the user
-/// backs out.
-///
-/// The analysis already lists every stream the server is willing to hand this
-/// session, so the decision belongs at the moment the download starts:
-/// browsing the card can stay exploratory, but starting a download should say
-/// what is about to be fetched — and when the only thing on offer is a preview
-/// fragment, that must be impossible to miss.
 Future<MediaCandidate?> showDownloadOptionsDialog(
   BuildContext context, {
   required MediaInspectionResult inspection,
@@ -166,7 +149,10 @@ class _DownloadOptionsDialogState extends State<_DownloadOptionsDialog> {
                           Navigator.of(context).pop();
                           widget.onOpenAuthBrowser!();
                         },
-                        icon: const Icon(Icons.open_in_browser_rounded, size: 18),
+                        icon: const Icon(
+                          Icons.open_in_browser_rounded,
+                          size: 18,
+                        ),
                         label: Text(l.text('auth_browser_open')),
                       ),
                   ],

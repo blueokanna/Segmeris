@@ -6,7 +6,7 @@ rust-version = "1.89"
 license-file = "../LICENSE"
 authors = ["blueokanna"]
 description = "Segmeris application runtime and Flutter bridge for video downloading"
-repository = "https://github.com/blueokanna/FerrisLoadDownloader"
+repository = "https://github.com/blueokanna/Segmeris"
 
 [workspace]
 members = ["core"]
@@ -18,7 +18,7 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 anyhow = "1.0.104"
-segmeris-core = { path = "core", version = "1.0.6", features = ["std"] }
+segmeris-core = { path = "core", version = "=1.0.8", features = ["std"] }
 flutter_rust_bridge = "=2.13.0"
 
 hex = "0.4.3"
@@ -33,14 +33,13 @@ tzcraft = { version = "0.1.2", default-features = false, features = [
     "std",
     "serde",
 ] }
-courierust = { version = "1.1.0", default-features = false, features = [
-    "std",
-] }
+courierust = { version = "=1.1.1", default-features = false, features = ["std"] }
 webpki-root-certs = "1.0.11"
+rustls = { version = "0.23.46", default-features = false, features = ["std", "ring", "tls12"] }
 url = "2.5.8"
 dashmap = "6.2.1"
 indicatif = "0.18.6"
-uuid = { version = "1.29.0", features = ["v4"] }
+uuid = { version = "1.29.1", features = ["v4"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15.1"

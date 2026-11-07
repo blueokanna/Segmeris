@@ -10,14 +10,13 @@ class SegmerisMotion {
   static const Duration slow = Duration(milliseconds: 500);
   static const Curve linear = Curves.linear;
 
-  /// Material 3 easing tokens (motion spec §Easing and duration):
-  /// standard `cubic-bezier(0.2, 0, 0, 1)`, emphasized
-  /// `cubic-bezier(0.4, 0, 0.2, 1)` and the asymmetric
-  /// decelerate/accelerate pair used when a surface enters or leaves.
+  static Duration duration(BuildContext context, Duration value) =>
+      MediaQuery.disableAnimationsOf(context) ? Duration.zero : value;
+
   static const Curve standard = Cubic(0.2, 0, 0, 1);
   static const Curve standardDecelerate = Cubic(0, 0, 0, 1);
   static const Curve standardAccelerate = Cubic(0.3, 0, 1, 1);
-  static const Curve emphasized = Cubic(0.4, 0, 0.2, 1);
+  static const Curve emphasized = Curves.easeInOutCubicEmphasized;
   static const Curve emphasizedDecelerate = Cubic(0.05, 0.7, 0.1, 1);
   static const Curve emphasizedAccelerate = Cubic(0.3, 0, 0.8, 0.15);
   static const Curve decelerate = emphasizedDecelerate;
@@ -25,34 +24,22 @@ class SegmerisMotion {
 }
 
 Widget segmerisFadeScaleTransition(Widget child, Animation<double> animation) {
-  final curved = CurvedAnimation(
-    parent: animation,
-    curve: SegmerisMotion.standardDecelerate,
-    reverseCurve: SegmerisMotion.standardAccelerate,
-  );
   return FadeTransition(
-    opacity: curved,
+    opacity: animation,
     child: ScaleTransition(
-      scale: Tween<double>(begin: 0.985, end: 1).animate(curved),
+      scale: Tween<double>(begin: 0.985, end: 1).animate(animation),
       child: child,
     ),
   );
 }
 
 Widget segmerisSharedAxisTransition(Widget child, Animation<double> animation) {
-  final fade = CurvedAnimation(
-    parent: animation,
-    curve: SegmerisMotion.standardDecelerate,
-    reverseCurve: SegmerisMotion.standardAccelerate,
-  );
   final slide = Tween<Offset>(
     begin: const Offset(0, 0.045),
     end: Offset.zero,
-  ).animate(
-    CurvedAnimation(parent: animation, curve: SegmerisMotion.emphasized),
-  );
+  ).animate(animation);
   return FadeTransition(
-    opacity: fade,
+    opacity: animation,
     child: SlideTransition(position: slide, child: child),
   );
 }
@@ -80,7 +67,7 @@ class SectionCard extends StatelessWidget {
     final shapes = SegmerisShapes.of(context);
     final spacing = SegmerisSpacing.of(context);
     return AnimatedContainer(
-      duration: SegmerisMotion.medium,
+      duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
       curve: SegmerisMotion.emphasized,
       decoration: BoxDecoration(
         borderRadius: shapes.card,
@@ -107,7 +94,7 @@ class SectionCard extends StatelessWidget {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
+                      borderRadius: shapes.sm,
                       color: cs.primaryContainer,
                     ),
                     child: Icon(icon, color: cs.onPrimaryContainer),
@@ -120,7 +107,7 @@ class SectionCard extends StatelessWidget {
                         Text(
                           title,
                           style: t.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -174,11 +161,11 @@ class CandidateTile extends StatelessWidget {
     final codec = candidate.codec.trim();
     final title = candidate.title.trim();
     return AnimatedSlide(
-      duration: SegmerisMotion.medium,
+      duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
       curve: SegmerisMotion.emphasized,
       offset: selected ? Offset.zero : const Offset(0, 0.018),
       child: AnimatedScale(
-        duration: SegmerisMotion.medium,
+        duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
         curve: SegmerisMotion.emphasized,
         scale: selected ? 1 : 0.986,
         child: Material(
@@ -188,7 +175,7 @@ class CandidateTile extends StatelessWidget {
           child: InkWell(
             onTap: onTap,
             child: AnimatedContainer(
-              duration: SegmerisMotion.medium,
+              duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
               curve: SegmerisMotion.emphasized,
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
               decoration: BoxDecoration(
@@ -199,8 +186,9 @@ class CandidateTile extends StatelessWidget {
                       : cs.outlineVariant.withValues(alpha: 0.62),
                   width: selected ? 2 : 1,
                 ),
-                color:
-                    selected ? cs.secondaryContainer : cs.surfaceContainerHigh,
+                color: selected
+                    ? cs.secondaryContainer
+                    : cs.surfaceContainerHigh,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -229,7 +217,10 @@ class CandidateTile extends StatelessWidget {
                         ),
                       ),
                       AnimatedSwitcher(
-                        duration: SegmerisMotion.fast,
+                        duration: SegmerisMotion.duration(
+                          context,
+                          SegmerisMotion.fast,
+                        ),
                         transitionBuilder: segmerisFadeScaleTransition,
                         child: selected
                             ? Icon(
@@ -266,10 +257,12 @@ class CandidateTile extends StatelessWidget {
                       MiniChip(label: candidate.container.toUpperCase()),
                       if (candidate.width > 0 && candidate.height > 0)
                         MiniChip(
-                            label: '${candidate.width}x${candidate.height}'),
+                          label: '${candidate.width}x${candidate.height}',
+                        ),
                       if (candidate.durationSeconds > 0)
                         MiniChip(
-                            label: '${candidate.durationSeconds.round()}s'),
+                          label: '${candidate.durationSeconds.round()}s',
+                        ),
                       if (candidate.segmentCount > 0)
                         MiniChip(
                           label:
@@ -375,27 +368,28 @@ class _RevealMotionState extends State<RevealMotion>
   late Animation<double> _opacity;
   late Animation<double> _scale;
   late Animation<Offset> _slide;
-  int _ticket = 0;
+  bool? _reducedMotion;
 
   @override
   void initState() {
     super.initState();
-    _controller =
-        AnimationController(vsync: this, duration: SegmerisMotion.slow);
+    _controller = AnimationController(
+      vsync: this,
+      duration: SegmerisMotion.slow,
+    );
     _configureAnimations();
-    _schedule();
   }
 
   void _configureAnimations() {
-    final curve = CurvedAnimation(
-      parent: _controller,
-      curve: SegmerisMotion.emphasizedDecelerate,
-      reverseCurve: SegmerisMotion.emphasizedAccelerate,
-    );
-    _opacity = CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0, 0.72, curve: Curves.easeOut),
-    );
+    final duration = widget.delay + SegmerisMotion.slow;
+    final start = widget.delay.inMicroseconds / duration.inMicroseconds;
+    _controller.duration = duration;
+    final curve = CurveTween(
+      curve: Interval(start, 1, curve: SegmerisMotion.emphasizedDecelerate),
+    ).animate(_controller);
+    _opacity = CurveTween(
+      curve: Interval(start, start + (1 - start) * 0.72, curve: Curves.easeOut),
+    ).animate(_controller);
     _scale = Tween<double>(begin: 0.985, end: 1).animate(curve);
     _slide = Tween<Offset>(
       begin: widget.offset,
@@ -403,14 +397,22 @@ class _RevealMotionState extends State<RevealMotion>
     ).animate(curve);
   }
 
-  void _schedule() {
-    final ticket = ++_ticket;
-    Future<void>.delayed(widget.delay, () {
-      if (!mounted || ticket != _ticket) {
-        return;
-      }
+  void _play() {
+    if (_reducedMotion == true) {
+      _controller.value = 1;
+    } else {
       _controller.forward(from: 0);
-    });
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    if (_reducedMotion != reducedMotion) {
+      _reducedMotion = reducedMotion;
+      _play();
+    }
   }
 
   @override
@@ -418,20 +420,21 @@ class _RevealMotionState extends State<RevealMotion>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.delay != widget.delay || oldWidget.offset != widget.offset) {
       _configureAnimations();
-      _controller.value = 0;
-      _schedule();
+      _play();
     }
   }
 
   @override
   void dispose() {
-    _ticket++;
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return widget.child;
+    }
     return FadeTransition(
       opacity: _opacity,
       child: SlideTransition(
@@ -469,8 +472,9 @@ class MiniChip extends StatelessWidget {
           ],
           Text(
             label,
-            style:
-                t.textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
+            style: t.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -479,10 +483,7 @@ class MiniChip extends StatelessWidget {
 }
 
 class RuntimeCapabilitiesPanel extends StatelessWidget {
-  const RuntimeCapabilitiesPanel({
-    super.key,
-    required this.capabilities,
-  });
+  const RuntimeCapabilitiesPanel({super.key, required this.capabilities});
 
   final Future<PlatformCapabilitySnapshot> capabilities;
 
@@ -506,11 +507,11 @@ class RuntimeCapabilitiesPanel extends StatelessWidget {
         builder: (context, snapshot) {
           final report = snapshot.data;
           return AnimatedSize(
-            duration: SegmerisMotion.medium,
+            duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
             curve: SegmerisMotion.emphasized,
             alignment: Alignment.topCenter,
             child: AnimatedSwitcher(
-              duration: SegmerisMotion.medium,
+              duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
               switchInCurve: SegmerisMotion.emphasizedDecelerate,
               switchOutCurve: SegmerisMotion.emphasizedAccelerate,
               transitionBuilder: segmerisSharedAxisTransition,
@@ -548,10 +549,7 @@ class RuntimeCapabilitiesPanel extends StatelessWidget {
 }
 
 class _RuntimeCapabilityContent extends StatelessWidget {
-  const _RuntimeCapabilityContent({
-    super.key,
-    required this.report,
-  });
+  const _RuntimeCapabilityContent({super.key, required this.report});
 
   final PlatformCapabilitySnapshot report;
 
@@ -617,9 +615,7 @@ class _RuntimeCapabilityContent extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             l.text('video_encoders'),
-            style: t.textTheme.labelLarge?.copyWith(
-              color: cs.onSurfaceVariant,
-            ),
+            style: t.textTheme.labelLarge?.copyWith(color: cs.onSurfaceVariant),
           ),
           const SizedBox(height: 6),
           for (final encoder in encoders)
@@ -630,9 +626,7 @@ class _RuntimeCapabilityContent extends StatelessWidget {
                 children: [
                   Icon(Icons.check_circle_rounded, size: 16, color: cs.primary),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(encoder, style: t.textTheme.bodySmall),
-                  ),
+                  Expanded(child: Text(encoder, style: t.textTheme.bodySmall)),
                 ],
               ),
             ),
@@ -675,10 +669,7 @@ class _RuntimeCapabilityContent extends StatelessWidget {
 }
 
 class _CapabilityIndicator extends StatelessWidget {
-  const _CapabilityIndicator({
-    required this.label,
-    required this.available,
-  });
+  const _CapabilityIndicator({required this.label, required this.available});
 
   final String label;
   final bool? available;
@@ -698,7 +689,7 @@ class _CapabilityIndicator extends StatelessWidget {
       null => cs.onSurfaceVariant,
     };
     return AnimatedContainer(
-      duration: SegmerisMotion.fast,
+      duration: SegmerisMotion.duration(context, SegmerisMotion.fast),
       curve: SegmerisMotion.standard,
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
       decoration: BoxDecoration(
@@ -727,10 +718,8 @@ class _CapabilityIndicator extends StatelessWidget {
               })}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: foreground,
-                    fontWeight: FontWeight.w800,
-                  ),
+              style: Theme.of(context).textTheme.labelSmall
+                  ?.copyWith(color: foreground, fontWeight: FontWeight.w800),
             ),
           ),
         ],
@@ -753,14 +742,15 @@ class DisplayPreviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final brightness =
-        mode == ThemeMode.dark ? Brightness.dark : Brightness.light;
+    final brightness = mode == ThemeMode.dark
+        ? Brightness.dark
+        : Brightness.light;
     final previewTheme = buildAppTheme(profile, brightness);
     final cs = previewTheme.colorScheme;
     final isDark = brightness == Brightness.dark;
 
     return AnimatedContainer(
-      duration: SegmerisMotion.slow,
+      duration: SegmerisMotion.duration(context, SegmerisMotion.slow),
       curve: SegmerisMotion.emphasized,
       height: 234,
       padding: const EdgeInsets.all(16),
@@ -786,7 +776,7 @@ class DisplayPreviewCard extends StatelessWidget {
                 ),
               ),
               AnimatedSwitcher(
-                duration: SegmerisMotion.fast,
+                duration: SegmerisMotion.duration(context, SegmerisMotion.fast),
                 transitionBuilder: segmerisFadeScaleTransition,
                 child: Icon(
                   isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
@@ -861,18 +851,18 @@ class ThemePaletteCard extends StatelessWidget {
     final cs = t.colorScheme;
     final shapes = SegmerisShapes.of(context);
     return AnimatedSlide(
-      duration: SegmerisMotion.medium,
+      duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
       curve: SegmerisMotion.emphasized,
       offset: selected ? Offset.zero : const Offset(0, 0.02),
       child: AnimatedScale(
-        duration: SegmerisMotion.medium,
+        duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
         curve: SegmerisMotion.emphasized,
         scale: selected ? 1 : 0.972,
         child: InkWell(
           borderRadius: shapes.md,
           onTap: onTap,
           child: AnimatedContainer(
-            duration: SegmerisMotion.medium,
+            duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
             curve: SegmerisMotion.emphasized,
             width: 172,
             padding: const EdgeInsets.all(14),
@@ -901,7 +891,10 @@ class ThemePaletteCard extends StatelessWidget {
                       ThemeDot(color: profile.accent),
                       const Spacer(),
                       AnimatedSwitcher(
-                        duration: SegmerisMotion.fast,
+                        duration: SegmerisMotion.duration(
+                          context,
+                          SegmerisMotion.fast,
+                        ),
                         transitionBuilder: segmerisFadeScaleTransition,
                         child: selected
                             ? Icon(
@@ -952,7 +945,7 @@ class InspectionWarningTile extends StatelessWidget {
     final t = Theme.of(context);
     final parsed = InspectionWarningData.parse(warning, t.colorScheme);
     return AnimatedContainer(
-      duration: SegmerisMotion.medium,
+      duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
       curve: SegmerisMotion.emphasized,
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -1119,10 +1112,11 @@ class StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final shapes = SegmerisShapes.of(context);
     final brightness = ThemeData.estimateBrightnessForColor(color);
-    final foreground =
-        brightness == Brightness.dark ? Colors.white : Colors.black87;
+    final foreground = brightness == Brightness.dark
+        ? Colors.white
+        : Colors.black87;
     return AnimatedContainer(
-      duration: SegmerisMotion.fast,
+      duration: SegmerisMotion.duration(context, SegmerisMotion.fast),
       curve: SegmerisMotion.emphasized,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -1134,10 +1128,8 @@ class StatusBadge extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: foreground,
-              fontWeight: FontWeight.w700,
-            ),
+        style: Theme.of(context).textTheme.labelMedium
+            ?.copyWith(color: foreground, fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -1190,7 +1182,7 @@ class SmoothLinearProgressIndicator extends StatelessWidget {
 
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(end: target),
-      duration: SegmerisMotion.medium,
+      duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
       curve: SegmerisMotion.linear,
       builder: (context, animatedValue, _) => ClipRRect(
         borderRadius: radius,
@@ -1213,8 +1205,8 @@ class _StatusPulseDotState extends State<StatusPulseDot>
   );
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     _sync();
   }
 
@@ -1227,7 +1219,7 @@ class _StatusPulseDotState extends State<StatusPulseDot>
   }
 
   void _sync() {
-    if (widget.active) {
+    if (widget.active && !MediaQuery.disableAnimationsOf(context)) {
       _controller.repeat(reverse: true);
     } else {
       _controller.stop();
@@ -1314,7 +1306,7 @@ class BatteryBanner extends StatelessWidget {
     final shapes = SegmerisShapes.of(context);
     final spacing = SegmerisSpacing.of(context);
     return AnimatedContainer(
-      duration: SegmerisMotion.medium,
+      duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
       curve: SegmerisMotion.emphasized,
       decoration: BoxDecoration(
         borderRadius: shapes.md,

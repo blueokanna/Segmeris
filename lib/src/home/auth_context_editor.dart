@@ -44,7 +44,8 @@ class AuthorizationSettingsPanel extends StatelessWidget {
     final cs = t.colorScheme;
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 280),
+      duration:
+          SegmerisMotion.duration(context, const Duration(milliseconds: 280)),
       curve: Curves.easeOutCubic,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -91,7 +92,7 @@ class AuthorizationSettingsPanel extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           AnimatedContainer(
-            duration: SegmerisMotion.medium,
+            duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
             curve: SegmerisMotion.emphasized,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -126,7 +127,7 @@ class AuthorizationSettingsPanel extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Switch.adaptive(
+                Switch(
                   value: autoOpenAuthBrowser,
                   onChanged: enabled ? onAutoOpenChanged : null,
                 ),
@@ -206,7 +207,7 @@ class AuthorizationSettingsPanel extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           AnimatedContainer(
-            duration: SegmerisMotion.medium,
+            duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
             curve: SegmerisMotion.emphasized,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(

@@ -10,7 +10,7 @@ only when standard error integration is required.
 
 ```toml
 [dependencies]
-segmeris-core = { version = "0.1.2", default-features = false }
+segmeris-core = { path = "rust/core", version = "=1.0.8", default-features = false }
 ```
 
 ```rust

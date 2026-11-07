@@ -1,9 +1,3 @@
-// Page transitions are configured through the platform default builders.
-// `CupertinoPageTransitionsBuilder` deliberately is NOT referenced here: it
-// moved from `flutter/material.dart` to `flutter/cupertino.dart` upstream, so
-// naming it directly breaks `flutter analyze` on whichever Flutter version
-// does not export it from the imported library. Omitting the iOS entry keeps
-// the framework default (the Cupertino transition) and stays version-proof.
 import 'package:flutter/material.dart';
 
 class AppThemeProfile {
@@ -126,10 +120,11 @@ ThemeData buildAppTheme(
   final canvas = profile.useAmoledSurface && isDark
       ? const Color(0xFF000000)
       : isDark
-          ? profile.canvasDark
-          : profile.canvasLight;
-  final surface =
-      profile.useAmoledSurface && isDark ? const Color(0xFF000000) : canvas;
+      ? profile.canvasDark
+      : profile.canvasLight;
+  final surface = profile.useAmoledSurface && isDark
+      ? const Color(0xFF000000)
+      : canvas;
   final surfaceLow = profile.useAmoledSurface && isDark
       ? const Color(0xFF050505)
       : Color.alphaBlend(
@@ -168,24 +163,12 @@ ThemeData buildAppTheme(
     surfaceContainerHigh: surfaceHigh,
     surfaceContainerHighest: surfaceHighest,
   );
-  final baseTextTheme = ThemeData(brightness: brightness).textTheme;
-  final textTheme = baseTextTheme.copyWith(
-    displayLarge: baseTextTheme.displayLarge?.copyWith(letterSpacing: 0),
-    displayMedium: baseTextTheme.displayMedium?.copyWith(letterSpacing: 0),
-    displaySmall: baseTextTheme.displaySmall?.copyWith(letterSpacing: 0),
-    headlineLarge: baseTextTheme.headlineLarge?.copyWith(letterSpacing: 0),
-    headlineMedium: baseTextTheme.headlineMedium?.copyWith(letterSpacing: 0),
-    headlineSmall: baseTextTheme.headlineSmall?.copyWith(letterSpacing: 0),
-    titleLarge: baseTextTheme.titleLarge?.copyWith(letterSpacing: 0),
-    titleMedium: baseTextTheme.titleMedium?.copyWith(letterSpacing: 0),
-    titleSmall: baseTextTheme.titleSmall?.copyWith(letterSpacing: 0),
-    bodyLarge: baseTextTheme.bodyLarge?.copyWith(letterSpacing: 0),
-    bodyMedium: baseTextTheme.bodyMedium?.copyWith(letterSpacing: 0),
-    bodySmall: baseTextTheme.bodySmall?.copyWith(letterSpacing: 0),
-    labelLarge: baseTextTheme.labelLarge?.copyWith(letterSpacing: 0),
-    labelMedium: baseTextTheme.labelMedium?.copyWith(letterSpacing: 0),
-    labelSmall: baseTextTheme.labelSmall?.copyWith(letterSpacing: 0),
-  );
+  final textTheme = ThemeData(
+    useMaterial3: true,
+    colorScheme: scheme,
+    brightness: brightness,
+    typography: Typography.material2021(colorScheme: scheme),
+  ).textTheme;
 
   return ThemeData(
     useMaterial3: true,
@@ -201,11 +184,9 @@ ThemeData buildAppTheme(
       scrolledUnderElevation: 0,
       elevation: 0,
       centerTitle: false,
-      titleTextStyle: TextStyle(
+      titleTextStyle: textTheme.titleLarge?.copyWith(
         color: scheme.onSurface,
-        fontSize: 20,
         fontWeight: FontWeight.w700,
-        letterSpacing: 0,
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
@@ -240,16 +221,14 @@ ThemeData buildAppTheme(
       surfaceTintColor: Colors.transparent,
       margin: EdgeInsets.zero,
       elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: SegmerisShapes.standard.card,
-      ),
+      shape: RoundedRectangleBorder(borderRadius: SegmerisShapes.standard.card),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: const Size.fromHeight(54),
         animationDuration: const Duration(milliseconds: 220),
         shape: const StadiumBorder(),
-        textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+        textStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
@@ -268,9 +247,7 @@ ThemeData buildAppTheme(
     segmentedButtonTheme: SegmentedButtonThemeData(
       style: ButtonStyle(
         shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(
-            borderRadius: SegmerisShapes.standard.md,
-          ),
+          RoundedRectangleBorder(borderRadius: SegmerisShapes.standard.md),
         ),
       ),
     ),
@@ -286,12 +263,11 @@ ThemeData buildAppTheme(
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
       backgroundColor: scheme.surfaceContainerHigh,
-      contentTextStyle: TextStyle(color: scheme.onSurface),
-      shape: RoundedRectangleBorder(
-        borderRadius: SegmerisShapes.standard.md,
-      ),
+      contentTextStyle: textTheme.bodyMedium?.copyWith(color: scheme.onSurface),
+      shape: RoundedRectangleBorder(borderRadius: SegmerisShapes.standard.md),
     ),
     bottomSheetTheme: BottomSheetThemeData(
+      showDragHandle: true,
       backgroundColor: scheme.surface,
       modalBackgroundColor: scheme.surface,
       surfaceTintColor: Colors.transparent,
@@ -302,18 +278,22 @@ ThemeData buildAppTheme(
     dialogTheme: DialogThemeData(
       backgroundColor: scheme.surface,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: SegmerisShapes.standard.xl,
-      ),
+      shape: RoundedRectangleBorder(borderRadius: SegmerisShapes.standard.xl),
     ),
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: scheme.surface,
       indicatorColor: scheme.primaryContainer,
       labelTextStyle: WidgetStatePropertyAll(
-        TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w700),
+        textTheme.labelMedium?.copyWith(
+          color: scheme.onSurface,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     ),
     progressIndicatorTheme: ProgressIndicatorThemeData(
+      // Flutter still requires this opt-in for the current M3 indicators.
+      // ignore: deprecated_member_use
+      year2023: false,
       color: scheme.primary,
       linearTrackColor: scheme.surfaceContainerHighest,
       circularTrackColor: scheme.surfaceContainerHighest,
@@ -323,16 +303,14 @@ ThemeData buildAppTheme(
       selectedColor: scheme.primaryContainer,
       shape: const StadiumBorder(),
       side: BorderSide.none,
-      labelStyle: TextStyle(color: scheme.onSurface),
+      labelStyle: textTheme.labelLarge?.copyWith(color: scheme.onSurface),
     ),
     listTileTheme: ListTileThemeData(
       iconColor: scheme.onSurfaceVariant,
       tileColor: elevatedSurface.withValues(
         alpha: brightness == Brightness.dark ? 0.7 : 0.56,
       ),
-      shape: RoundedRectangleBorder(
-        borderRadius: SegmerisShapes.standard.md,
-      ),
+      shape: RoundedRectangleBorder(borderRadius: SegmerisShapes.standard.md),
     ),
     textSelectionTheme: TextSelectionThemeData(
       cursorColor: scheme.primary,
@@ -341,19 +319,19 @@ ThemeData buildAppTheme(
     ),
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
-        // Only Android is overridden (predictive back). iOS/macOS use the
-        // framework default, which already is the Cupertino page transition.
         TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+        TargetPlatform.iOS: FadeForwardsPageTransitionsBuilder(),
+        TargetPlatform.macOS: FadeForwardsPageTransitionsBuilder(),
+        TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
+        TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
+        TargetPlatform.fuchsia: FadeForwardsPageTransitionsBuilder(),
       },
     ),
     splashFactory: InkSparkle.splashFactory,
     dividerTheme: DividerThemeData(
       color: scheme.outlineVariant.withValues(alpha: 0.35),
     ),
-    extensions: [
-      SegmerisShapes.standard,
-      SegmerisSpacing.standard,
-    ],
+    extensions: [SegmerisShapes.standard, SegmerisSpacing.standard],
   );
 }
 
@@ -405,7 +383,7 @@ class SegmerisShapes extends ThemeExtension<SegmerisShapes> {
     md: BorderRadius.all(Radius.circular(12)),
     lg: BorderRadius.all(Radius.circular(16)),
     xl: BorderRadius.all(Radius.circular(28)),
-    card: BorderRadius.all(Radius.circular(16)),
+    card: BorderRadius.all(Radius.circular(24)),
     input: BorderRadius.all(Radius.circular(12)),
     pill: BorderRadius.all(Radius.circular(999)),
   );

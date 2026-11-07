@@ -21,7 +21,6 @@ final class SubtitleOffPreference extends SubtitlePreference {
   const SubtitleOffPreference();
 }
 
-/// Prefer one concrete track the inspection listed.
 final class SubtitleTrackPreference extends SubtitlePreference {
   const SubtitleTrackPreference(this.track);
 
@@ -37,28 +36,24 @@ final class SubtitleTrackPreference extends SubtitlePreference {
   int get hashCode => Object.hash(track.language, track.url);
 }
 
-/// Map this preference onto the engine contract for a single download:
-/// the exact track URL is valid here, because the download is the episode
-/// the pick was made on.
 (SubtitleMode, String) subtitleChoiceForSingle(SubtitlePreference preference) {
   return switch (preference) {
     SubtitleAutoPreference() => (SubtitleMode.auto, ''),
     SubtitleOffPreference() => (SubtitleMode.off, ''),
-    SubtitleTrackPreference(:final track) => track.url.trim().isEmpty
-        ? (SubtitleMode.auto, '')
-        : (SubtitleMode.track, track.url.trim()),
+    SubtitleTrackPreference(:final track) =>
+      track.url.trim().isEmpty
+          ? (SubtitleMode.auto, '')
+          : (SubtitleMode.track, track.url.trim()),
   };
 }
 
-/// Map this preference onto the engine contract for a series queue: an
-/// exact URL only addresses the episode it came from, so the language tag
-/// travels instead and every episode resolves its own matching track.
 (SubtitleMode, String) subtitleChoiceForSeries(SubtitlePreference preference) {
   return switch (preference) {
     SubtitleAutoPreference() => (SubtitleMode.auto, ''),
     SubtitleOffPreference() => (SubtitleMode.off, ''),
-    SubtitleTrackPreference(:final track) => track.language.trim().isEmpty
-        ? (SubtitleMode.auto, '')
-        : (SubtitleMode.language, track.language.trim()),
+    SubtitleTrackPreference(:final track) =>
+      track.language.trim().isEmpty
+          ? (SubtitleMode.auto, '')
+          : (SubtitleMode.language, track.language.trim()),
   };
 }

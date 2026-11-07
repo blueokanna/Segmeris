@@ -225,7 +225,6 @@ impl<'a> Parser<'a> {
                 return Err(xml_error(format!("unterminated element <{name}>")));
             }
             if self.input[self.pos..].starts_with("</") {
-                // End tag.
                 let end_start = self.pos;
                 self.pos += 2;
                 let end_name = self.parse_name()?;
@@ -264,7 +263,6 @@ impl<'a> Parser<'a> {
                 continue;
             }
             if self.input[self.pos..].starts_with("<!") {
-                // Reject any other declaration (DOUBLE defense).
                 return Err(xml_error("XML declarations are not allowed"));
             }
             if self.peek() == Some('<') {
@@ -272,7 +270,6 @@ impl<'a> Parser<'a> {
                 children.push(child);
                 continue;
             }
-            // Text content (up to the next '<').
             let text_start = self.pos;
             while self.pos < self.input.len() && !self.input[self.pos..].starts_with('<') {
                 let ch = self.input[self.pos..].chars().next().unwrap();

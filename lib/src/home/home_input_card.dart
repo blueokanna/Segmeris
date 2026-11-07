@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
 import 'package:segmeris/src/app/app_theme.dart';
 import 'package:segmeris/src/home/home_widgets.dart';
+import 'package:segmeris/src/home/home_download_tuning.dart';
 import 'package:segmeris/src/home/source_input.dart';
 
 class HomeInputCard extends StatelessWidget {
@@ -90,6 +91,9 @@ class HomeInputCard extends StatelessWidget {
                                 final clipboard = await Clipboard.getData(
                                   Clipboard.kTextPlain,
                                 );
+                                if (!context.mounted) {
+                                  return;
+                                }
                                 final text = clipboard?.text?.trim();
                                 if (text == null || text.isEmpty) {
                                   return;
@@ -148,7 +152,10 @@ class HomeInputCard extends StatelessWidget {
                 child: Row(
                   children: [
                     AnimatedRotation(
-                      duration: const Duration(milliseconds: 260),
+                      duration: SegmerisMotion.duration(
+                        context,
+                        const Duration(milliseconds: 260),
+                      ),
                       turns: chosenDir == null ? 0 : 0.02,
                       child: Icon(Icons.folder_open_rounded, color: cs.primary),
                     ),
@@ -166,7 +173,10 @@ class HomeInputCard extends StatelessWidget {
                       ),
                     ),
                     AnimatedSwitcher(
-                      duration: SegmerisMotion.fast,
+                      duration: SegmerisMotion.duration(
+                        context,
+                        SegmerisMotion.fast,
+                      ),
                       transitionBuilder: segmerisFadeScaleTransition,
                       child: chosenDir != null
                           ? IconButton(
@@ -189,7 +199,10 @@ class HomeInputCard extends StatelessWidget {
               builder: (context, constraints) {
                 final compact = constraints.maxWidth < 420;
                 final analyzeButton = AnimatedScale(
-                  duration: SegmerisMotion.medium,
+                  duration: SegmerisMotion.duration(
+                    context,
+                    SegmerisMotion.medium,
+                  ),
                   curve: SegmerisMotion.emphasized,
                   scale: analyzing ? 0.98 : 1,
                   child: OutlinedButton.icon(
@@ -205,7 +218,10 @@ class HomeInputCard extends StatelessWidget {
                   ),
                 );
                 final downloadButton = AnimatedScale(
-                  duration: SegmerisMotion.medium,
+                  duration: SegmerisMotion.duration(
+                    context,
+                    SegmerisMotion.medium,
+                  ),
                   curve: SegmerisMotion.emphasized,
                   scale: running ? 0.98 : 1,
                   child: FilledButton.icon(
@@ -254,146 +270,14 @@ class HomeInputCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 18),
-            AnimatedContainer(
-              duration: SegmerisMotion.medium,
-              curve: SegmerisMotion.emphasized,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                borderRadius: SegmerisShapes.of(context).md,
-                color: cs.surfaceContainer,
-                border: Border.all(
-                  color: cs.outlineVariant.withValues(alpha: 0.6),
-                ),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.tune_rounded, color: cs.primary),
-                      const SizedBox(width: 8),
-                      Text(
-                        l.text('download_options'),
-                        style: t.textTheme.titleSmall?.copyWith(
-                          color: cs.primary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final compact = constraints.maxWidth < 420;
-                      final concurrencyField = TextFormField(
-                        controller: concurrencyController,
-                        enabled: !analyzing,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: l.text('concurrency'),
-                        ),
-                        validator: (value) {
-                          final number = int.tryParse(value?.trim() ?? '');
-                          return number != null && number >= 1 && number <= 64
-                              ? null
-                              : '1-64';
-                        },
-                      );
-                      final retriesField = TextFormField(
-                        controller: retriesController,
-                        enabled: !analyzing,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: l.text('retries'),
-                        ),
-                        validator: (value) {
-                          final number = int.tryParse(value?.trim() ?? '');
-                          return number != null && number >= 0 && number <= 10
-                              ? null
-                              : '0-10';
-                        },
-                      );
-
-                      if (compact) {
-                        return Column(
-                          children: [
-                            concurrencyField,
-                            const SizedBox(height: 12),
-                            retriesField,
-                          ],
-                        );
-                      }
-
-                      return Row(
-                        children: [
-                          Expanded(child: concurrencyField),
-                          const SizedBox(width: 12),
-                          Expanded(child: retriesField),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final compact = constraints.maxWidth < 420;
-                      final videoBitrateField = TextFormField(
-                        controller: videoBitrateController,
-                        enabled: !analyzing,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: l.text('video_bitrate'),
-                        ),
-                        validator: (value) {
-                          final number = int.tryParse(value?.trim() ?? '');
-                          return number != null && number >= 0 ? null : '>=0';
-                        },
-                      );
-                      final audioBitrateField = TextFormField(
-                        controller: audioBitrateController,
-                        enabled: !analyzing,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: l.text('audio_bitrate'),
-                        ),
-                        validator: (value) {
-                          final number = int.tryParse(value?.trim() ?? '');
-                          return number != null && number >= 0 ? null : '>=0';
-                        },
-                      );
-
-                      if (compact) {
-                        return Column(
-                          children: [
-                            videoBitrateField,
-                            const SizedBox(height: 12),
-                            audioBitrateField,
-                          ],
-                        );
-                      }
-
-                      return Row(
-                        children: [
-                          Expanded(child: videoBitrateField),
-                          const SizedBox(width: 12),
-                          Expanded(child: audioBitrateField),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  Material(
-                    type: MaterialType.transparency,
-                    child: SwitchListTile.adaptive(
-                      value: keepTemp,
-                      contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 12),
-                      title: Text(l.text('keep_temp')),
-                      subtitle: Text(l.text('keep_temp_hint')),
-                      onChanged: analyzing ? null : onKeepTempChanged,
-                    ),
-                  ),
-                ],
-              ),
+            HomeDownloadTuning(
+              concurrencyController: concurrencyController,
+              retriesController: retriesController,
+              videoBitrateController: videoBitrateController,
+              audioBitrateController: audioBitrateController,
+              enabled: !analyzing,
+              keepTemp: keepTemp,
+              onKeepTempChanged: onKeepTempChanged,
             ),
           ],
         ),

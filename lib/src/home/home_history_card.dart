@@ -4,10 +4,7 @@ import 'package:segmeris/src/app/app_theme.dart';
 import 'package:segmeris/src/home/home_widgets.dart';
 
 class HomeHistoryCard extends StatelessWidget {
-  const HomeHistoryCard({
-    super.key,
-    required this.history,
-  });
+  const HomeHistoryCard({super.key, required this.history});
 
   final List<DownloadRecord> history;
 
@@ -22,14 +19,14 @@ class HomeHistoryCard extends StatelessWidget {
       subtitle: '${history.length}',
       icon: Icons.history_rounded,
       child: AnimatedSwitcher(
-        duration: SegmerisMotion.slow,
+        duration: SegmerisMotion.duration(context, SegmerisMotion.slow),
         switchInCurve: SegmerisMotion.decelerate,
         switchOutCurve: SegmerisMotion.accelerate,
         transitionBuilder: segmerisFadeScaleTransition,
         child: history.isEmpty
             ? Text(
                 key: const ValueKey('empty-history'),
-                l.text('no_candidates'),
+                l.text('no_history'),
                 style: t.textTheme.bodyMedium?.copyWith(
                   color: cs.onSurfaceVariant,
                 ),
@@ -44,14 +41,18 @@ class HomeHistoryCard extends StatelessWidget {
                         key: ValueKey('${entry.$2.path}-${entry.$1}'),
                         delay: Duration(milliseconds: 34 * entry.$1),
                         child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 240),
+                          duration: SegmerisMotion.duration(
+                            context,
+                            const Duration(milliseconds: 240),
+                          ),
                           curve: Curves.easeOutCubic,
                           width: double.infinity,
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
                             borderRadius: SegmerisShapes.of(context).md,
-                            color: cs.surfaceContainerHighest
-                                .withValues(alpha: 0.45),
+                            color: cs.surfaceContainerHighest.withValues(
+                              alpha: 0.45,
+                            ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,

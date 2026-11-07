@@ -72,7 +72,9 @@ class _SegmerisAppState extends State<SegmerisApp> {
             GlobalCupertinoLocalizations.delegate,
           ],
           themeMode: _settings.themeMode,
-          themeAnimationDuration: const Duration(milliseconds: 420),
+          themeAnimationDuration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 420),
           themeAnimationCurve: Curves.easeInOutCubicEmphasized,
           theme: buildAppTheme(
             _settings.themeProfile,

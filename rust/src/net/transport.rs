@@ -16,7 +16,10 @@ use courierust::courierust_tls::{TlsConnector, TlsStream};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 
-type TlsSocket = TlsStream<Arc<TcpStream>, Arc<TcpStream>>;
+enum TlsSocket {
+    Courierust(Box<TlsStream<Arc<TcpStream>, Arc<TcpStream>>>),
+    Rustls(Box<rustls::StreamOwned<rustls::ClientConnection, TcpStream>>),
+}
 struct Socket {
     tcp: Arc<TcpStream>,
     tls: Option<TlsSocket>,
@@ -32,6 +35,12 @@ impl Read for Socket {
         let Some(tls) = &mut self.tls else {
             return self.tcp.read(buf);
         };
+        let tls = match tls {
+            TlsSocket::Courierust(tls) => tls,
+            TlsSocket::Rustls(tls) => {
+                return std::io::Read::read(tls, buf).map_err(|e| Error::io(e.to_string()));
+            }
+        };
         if self.offset == self.pending.len() {
             self.pending = tls.read_record().map_err(|e| Error::io(e.to_string()))?;
             self.offset = 0;
@@ -46,14 +55,20 @@ impl Read for Socket {
 impl Write for Socket {
     fn write(&mut self, data: &[u8]) -> courierust::Result<usize> {
         match &mut self.tls {
-            Some(tls) => {
+            Some(TlsSocket::Courierust(tls)) => {
                 tls.write_all(data).map_err(|e| Error::io(e.to_string()))?;
                 Ok(data.len())
+            }
+            Some(TlsSocket::Rustls(tls)) => {
+                std::io::Write::write(tls, data).map_err(|e| Error::io(e.to_string()))
             }
             None => self.tcp.write(data),
         }
     }
     fn flush(&mut self) -> courierust::Result<()> {
+        if let Some(TlsSocket::Rustls(tls)) = &mut self.tls {
+            return std::io::Write::flush(tls).map_err(|e| Error::io(e.to_string()));
+        }
         self.tcp.flush()
     }
 }
@@ -133,13 +148,10 @@ impl Client {
         let host = host.trim_matches(['[', ']']);
         let port = url.port_or_known_default().context("URL has no port")?;
         let addresses: Vec<_> = (host, port).to_socket_addrs()?.collect();
-        if addresses.is_empty()
-            || addresses
-                .iter()
-                .any(|addr| !crate::network_policy::address_allowed(*addr))
-        {
-            bail!("Network destination blocked by address policy");
-        }
+        crate::network_policy::validate_addresses(
+            &addresses,
+            crate::network_policy::public_only(),
+        )?;
         let key = url.origin().ascii_serialization();
         let pooled = {
             let mut pool = self.pool.lock().unwrap_or_else(|e| e.into_inner());
@@ -150,7 +162,7 @@ impl Client {
         let connect = || -> Result<Reader> {
             let mut last_error = None;
             for addr in &addresses {
-                let tcp = match TcpStream::connect_timeout(
+                let mut tcp = match TcpStream::connect_timeout(
                     addr,
                     self.config
                         .connect_timeout
@@ -166,13 +178,41 @@ impl Client {
                 tcp.set_write_timeout(self.config.read_timeout)?;
                 tcp.set_nodelay(true)?;
                 let tls = if url.scheme() == "https" {
-                    Some(
-                        self.tls
-                            .as_ref()
-                            .context("TLS is not configured")?
-                            .connect(host, tcp.clone(), tcp.clone())
-                            .map_err(|e| anyhow::anyhow!("TLS handshake failed: {e}"))?,
-                    )
+                    let mut settings = self
+                        .tls
+                        .as_ref()
+                        .context("TLS is not configured")?
+                        .config()
+                        .clone();
+                    settings.now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)?
+                        .as_secs()
+                        .try_into()?;
+                    let connector = TlsConnector::new(settings);
+                    let stream = match connector.connect(host, tcp.clone(), tcp.clone()) {
+                        Ok(stream) => TlsSocket::Courierust(Box::new(stream)),
+                        Err(courierust::courierust_tls::TlsError::Certificate(reason))
+                            if reason == "no trusted root found" =>
+                        {
+                            let config = super::tls::config(
+                                self.config.tls.as_ref().context("TLS is not configured")?,
+                            )?;
+                            let (handle, stream) = super::tls::connect(
+                                config,
+                                host,
+                                *addr,
+                                self.config
+                                    .connect_timeout
+                                    .unwrap_or(std::time::Duration::from_secs(10)),
+                                self.config.handshake_timeout,
+                                self.config.read_timeout,
+                            )?;
+                            tcp = handle;
+                            TlsSocket::Rustls(Box::new(stream))
+                        }
+                        Err(error) => return Err(anyhow::anyhow!("TLS handshake failed: {error}")),
+                    };
+                    Some(stream)
                 } else {
                     None
                 };
@@ -204,7 +244,9 @@ impl Client {
         if !request.headers.contains_key("user-agent") {
             request.headers.insert(
                 HeaderName::from_lowercase("user-agent"),
-                HeaderValue::from_bytes(b"Segmeris/1.0")?,
+                HeaderValue::from_bytes(
+                    concat!("Segmeris/", env!("CARGO_PKG_VERSION")).as_bytes(),
+                )?,
             );
         }
         let mut wire = Vec::new();
@@ -229,6 +271,14 @@ impl Client {
             }
             bail!("Too many informational responses")
         };
+        // A client can outlive API policy initialization. A pooled connection
+        // must satisfy the current policy even if today's DNS answer is public.
+        if let Some(reader) = &pooled {
+            let socket = reader.socket.0.lock().unwrap_or_else(|e| e.into_inner());
+            if !crate::network_policy::address_allowed(socket.tcp.peer_addr()?) {
+                bail!("Pooled network destination blocked by address policy");
+            }
+        }
         let reused = pooled.is_some();
         let mut reader = match pooled {
             Some(reader) => reader,
@@ -292,7 +342,16 @@ impl ResponseBody {
                 *left -= n;
                 n
             }
-            BodyLen::None => reader.read_more(&mut bytes)?,
+            BodyLen::None => {
+                // read_more treats EOF as an error and can consume bytes before
+                // reporting it. For a close-delimited response, clean EOF is
+                // the framing boundary; return each buffered slice first.
+                let buffered = reader.fill_buf()?;
+                let n = buffered.len().min(bytes.len());
+                bytes[..n].copy_from_slice(&buffered[..n]);
+                reader.consume(n);
+                n
+            }
             BodyLen::Chunked => {
                 if self.chunk_left == 0 {
                     if self.needs_crlf && reader.read_exact(2)? != b"\r\n" {

@@ -1,6 +1,11 @@
 //! HLS resource planning, decryption, cache verification and segment assembly.
 use super::*;
 
+struct HlsInitialization {
+    bytes: Vec<u8>,
+    digest: String,
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct SegmentInput {
     pub(super) dir: PathBuf,
@@ -119,11 +124,18 @@ pub(super) fn resolve_hls_byte_range(
 
 pub(super) fn hls_response_bytes(
     status: u16,
-    data: &[u8],
+    headers: &[(String, String)],
+    mut data: Vec<u8>,
     byte_range: Option<(u64, u64)>,
 ) -> Result<Vec<u8>> {
+    if status != 200 && status != 206 {
+        bail!("Unexpected HLS resource HTTP status {status}");
+    }
     let Some((start, end)) = byte_range else {
-        return Ok(data.to_vec());
+        if status == 206 {
+            bail!("Unsolicited partial HLS response");
+        }
+        return Ok(data);
     };
     let expected_length = end
         .checked_sub(start)
@@ -133,14 +145,18 @@ pub(super) fn hls_response_bytes(
         .context("HLS byte range is too large for this platform")?;
 
     if status == 206 {
-        if data.len() < expected_length {
+        let range = parse_content_range(headers).context("Invalid HLS range response")?;
+        if range.start != Some(start) || range.end != Some(end) {
+            bail!("HLS Content-Range does not match requested bytes {start}-{end}");
+        }
+        if data.len() != expected_length {
             bail!(
-                "HLS range response was truncated: expected {} bytes, received {}",
+                "HLS range response length mismatch: expected {} bytes, received {}",
                 expected_length,
                 data.len()
             );
         }
-        return Ok(data[..expected_length].to_vec());
+        return Ok(data);
     }
 
     let start = usize::try_from(start).context("HLS byte range offset is too large")?;
@@ -155,7 +171,9 @@ pub(super) fn hls_response_bytes(
             end
         );
     }
-    Ok(data[start..end_exclusive].to_vec())
+    data.copy_within(start..end_exclusive, 0);
+    data.truncate(expected_length);
+    Ok(data)
 }
 
 pub(super) fn download_hls_resource(
@@ -164,82 +182,37 @@ pub(super) fn download_hls_resource(
     headers: &[(String, String)],
     retries: u8,
 ) -> Result<Vec<u8>> {
-    let mut saw_truncation = false;
+    let retries = retries.max(1);
+    let mut last_error = None;
     for attempt in 1..=retries {
         let result = match request.byte_range {
             Some((start, end)) => client.get_range(&request.url, headers, start, end),
             None => client.get(&request.url, headers),
         };
 
-        match result {
-            Ok((status, response_headers, body)) if (200..300).contains(&status) => {
-                let compressed = response_headers.iter().any(|(name, value)| {
-                    name.eq_ignore_ascii_case("content-encoding")
-                        && (value.contains("gzip")
-                            || value.contains("deflate")
-                            || value.contains("br")
-                            || value.contains("zstd"))
-                });
-                let declared = response_headers
-                    .iter()
-                    .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
-                    .and_then(|(_, value)| value.trim().parse::<usize>().ok());
-                let truncated = !compressed
-                    && request.byte_range.is_none()
-                    && declared.is_some_and(|expected| body.len() < expected);
-                if truncated {
-                    saw_truncation = true;
-                    let expected = declared.unwrap_or(0);
-                    warn!(
-                        "Attempt {attempt}: truncated body for {} (declared {expected} bytes, got {}). Retrying.",
-                        request.url,
-                        body.len()
-                    );
-                } else {
-                    match hls_response_bytes(status, &body, request.byte_range) {
-                        Ok(data) => return Ok(data),
-                        Err(error) => {
-                            warn!(
-                                "Attempt {} returned an invalid HLS resource {}: {}",
-                                attempt, request.url, error
-                            );
-                        }
-                    }
-                }
-            }
-            Ok((status, _, _)) => {
-                warn!(
-                    "Attempt {} failed: {} HTTP {}",
-                    attempt, request.url, status
-                );
-                if attempt < retries {
-                    let delay = retry_backoff_delay(attempt, Some(status));
-                    std::thread::sleep(delay);
-                }
-                continue;
-            }
+        let status = result.as_ref().ok().map(|(status, _, _)| *status);
+        let result = result.and_then(|(status, response_headers, body)| {
+            hls_response_bytes(status, &response_headers, body, request.byte_range)
+        });
+        let error = match result {
+            Ok(data) => return Ok(data),
             Err(error) => {
-                warn!(
-                    "Attempt {} request error: {} - {}",
-                    attempt, request.url, error
-                );
+                error.context(format!("Failed to download HLS resource: {}", request.url))
             }
+        };
+        if status.is_some_and(|status| (400..500).contains(&status) && !matches!(status, 408 | 429))
+        {
+            return Err(error);
         }
-
+        warn!("HLS resource attempt {attempt}/{retries}: {error:#}");
+        last_error = Some(error);
         if attempt < retries {
-            let delay = retry_backoff_delay(attempt, None);
+            let delay = retry_backoff_delay(attempt, status);
             std::thread::sleep(delay);
         }
     }
-
-    if saw_truncation {
-        bail!(
-            "Failed after {} attempts (server repeatedly returned truncated bodies): {}",
-            retries,
-            request.url
-        );
-    }
-    bail!("Failed after {} attempts: {}", retries, request.url)
+    Err(last_error.expect("at least one HLS request was attempted"))
+        .with_context(|| format!("HLS resource failed after {retries} attempts"))
 }
 
 pub(super) fn decrypt_hls_resource(
@@ -266,10 +239,11 @@ pub(super) fn download_and_decrypt_segment(
 ) -> Result<Vec<u8>> {
     let data = download_hls_resource(client, segment_request, headers, retries.max(1))?;
     let data = decrypt_hls_resource(data, crypto)?;
-    let mut output = Vec::with_capacity(init.map_or(0, <[u8]>::len) + data.len());
-    if let Some(init) = init {
-        output.extend_from_slice(init);
-    }
+    let Some(init) = init.filter(|init| !init.is_empty()) else {
+        return Ok(data);
+    };
+    let mut output = Vec::with_capacity(init.len() + data.len());
+    output.extend_from_slice(init);
     output.extend_from_slice(&data);
     Ok(output)
 }
@@ -610,7 +584,7 @@ pub(super) fn download_and_merge_once(
     let mut map_range_cursor = None;
     let mut previous_map = None;
     let mut current_init = None;
-    let mut init_cache: HashMap<String, Arc<Vec<u8>>> = HashMap::new();
+    let mut init_cache: HashMap<String, Arc<HlsInitialization>> = HashMap::new();
     let mut init_bytes = Vec::with_capacity(total);
     let mut init_cache_size = 0usize;
     let mut segment_requests = Vec::with_capacity(total);
@@ -696,7 +670,10 @@ pub(super) fn download_and_merge_once(
                 if init_cache_size > crate::net::MAX_MEMORY_BODY {
                     bail!("HLS initialization sections exceed cache limit");
                 }
-                let data = Arc::new(data);
+                let data = Arc::new(HlsInitialization {
+                    digest: hex::encode(sha256(&data)),
+                    bytes: data,
+                });
                 init_cache.insert(cache_key, data.clone());
                 Some(data)
             }
@@ -777,7 +754,7 @@ pub(super) fn download_and_merge_once(
 
                         let init_hash = init_bytes[idx]
                             .as_ref()
-                            .map(|data| hex::encode(sha256(data)))
+                            .map(|data| data.digest.as_str())
                             .unwrap_or_default();
                         let cache_key =
                             hex::encode(sha256(format!("{resource_key}:{init_hash}").as_bytes()));
@@ -796,7 +773,7 @@ pub(super) fn download_and_merge_once(
                             &client,
                             &headers,
                             &segment_request,
-                            init_bytes[idx].as_ref().map(|data| data.as_slice()),
+                            init_bytes[idx].as_ref().map(|data| data.bytes.as_slice()),
                             key.as_ref(),
                             retries,
                         )?;
@@ -918,6 +895,159 @@ pub(super) fn cleanup_segment_temp_files(temp_dir: &Path, output_file: &str) {
 mod regression_tests {
     use super::*;
     use crate::test_http::{response, serve};
+
+    #[test]
+    fn partial_hls_responses_require_the_requested_range_and_exact_length() {
+        for (range, body, expected_error) in [
+            ("", "abc", "omitted the Content-Range"),
+            ("Content-Range: bytes 0-2/200\r\n", "abc", "does not match"),
+            (
+                "Content-Range: bytes 100-102/200\r\n",
+                "ab",
+                "length mismatch",
+            ),
+            (
+                "Content-Range: bytes 100-102/200\r\n",
+                "abcd",
+                "length mismatch",
+            ),
+        ] {
+            let (url, server) = serve(1, move |_, request, socket| {
+                assert!(request
+                    .to_ascii_lowercase()
+                    .contains("range: bytes=100-102"));
+                write!(socket, "HTTP/1.1 206 Partial Content\r\n{range}Content-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            });
+            let error = download_hls_resource(
+                &SyncHttpClient::new().unwrap(),
+                &HlsResourceRequest {
+                    url,
+                    byte_range: Some((100, 102)),
+                },
+                &[],
+                1,
+            )
+            .unwrap_err();
+            assert!(format!("{error:#}").contains(expected_error), "{error:#}");
+            server.join().unwrap();
+        }
+        assert!(hls_response_bytes(206, &[], vec![1, 2, 3], None).is_err());
+        assert!(hls_response_bytes(204, &[], Vec::new(), None).is_err());
+    }
+
+    #[test]
+    fn transient_hls_failure_retries_and_recovers() {
+        let (url, server) = serve(2, |index, _, socket| {
+            if index == 0 {
+                socket.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+            } else {
+                response(socket, b"segment");
+            }
+        });
+        let data = download_hls_resource(
+            &SyncHttpClient::new().unwrap(),
+            &HlsResourceRequest {
+                url,
+                byte_range: None,
+            },
+            &[],
+            2,
+        )
+        .unwrap();
+        assert_eq!(data, b"segment");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn missing_segment_preserves_http_error_without_retrying() {
+        let (url, server) = serve(1, |_, _, socket| {
+            socket
+                .write_all(
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
+        });
+        let error = download_hls_resource(
+            &SyncHttpClient::new().unwrap(),
+            &HlsResourceRequest {
+                url,
+                byte_range: None,
+            },
+            &[],
+            3,
+        )
+        .unwrap_err();
+        assert!(
+            format!("{error:#}").contains("HTTP status 404"),
+            "{error:#}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn missing_playlist_reports_http_status_without_retrying() {
+        let (url, server) = serve(1, |_, _, socket| {
+            socket
+                .write_all(
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
+        });
+        let error = download_playlist_with_url(&url, &RequestContext::default()).unwrap_err();
+        assert_eq!(error.to_string(), "Failed to download playlist: HTTP 404");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn redirected_master_and_media_resolve_keys_maps_and_segments() {
+        let (url, server) = serve(7, |_, request, socket| {
+            match request.split_whitespace().nth(1).unwrap() {
+                "/entry" => write!(socket, "HTTP/1.1 302 Found\r\nLocation: /catalog/master.m3u8\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap(),
+                "/catalog/master.m3u8" => response(socket, b"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nmedia/index.m3u8\n"),
+                "/catalog/media/index.m3u8" => write!(socket, "HTTP/1.1 307 Temporary Redirect\r\nLocation: /assets/final/stream?playlist=1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap(),
+                "/assets/final/stream?playlist=1" => response(socket, b"#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"?asset=key\",IV=0x00000000000000000000000000000000\n#EXT-X-MAP:URI=\"?asset=init\"\n#EXTINF:6,\nsegments/1.m4s\n#EXT-X-ENDLIST\n"),
+                "/assets/final/stream?asset=key" => response(socket, &[0; 16]),
+                "/assets/final/stream?asset=init" | "/assets/final/segments/1.m4s" => {
+                    response(socket, &hex::decode("c3af71addfe4fcac6941286a76ddedc2d873029f04adebdf8920b262bfa0d6d7").unwrap());
+                }
+                path => panic!("resource resolved against the wrong playlist: {path}"),
+            }
+        });
+        let context = RequestContext::default();
+        let (bytes, effective_master) =
+            download_playlist_with_url(&format!("{url}/entry"), &context).unwrap();
+        let (_, Playlist::MasterPlaylist(master)) = parse_playlist(&bytes).unwrap() else {
+            panic!("expected master")
+        };
+        let media_url = playlist_base_url(&effective_master)
+            .join(&select_best_hls_variant(&master).unwrap().uri)
+            .unwrap();
+        let (bytes, effective_media) =
+            download_playlist_with_url(media_url.as_str(), &context).unwrap();
+        let (_, Playlist::MediaPlaylist(media)) = parse_playlist(&bytes).unwrap() else {
+            panic!("expected media")
+        };
+        let dir = crate::test_http::TestDirectory::new("hls-redirect");
+        let output = dir.path().join("assembled.bin");
+        download_and_merge_once(
+            media,
+            Some(playlist_base_url(&effective_media)),
+            1,
+            1,
+            output.to_str().unwrap(),
+            dir.path(),
+            "v",
+            &MultiProgress::new(),
+            noop_progress_reporter(),
+            context,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read(output).unwrap(),
+            b"abcdefghijklmnopabcdefghijklmnop"
+        );
+        server.join().unwrap();
+    }
 
     #[test]
     fn initialization_is_fetched_once_and_every_fragment_is_readable() {

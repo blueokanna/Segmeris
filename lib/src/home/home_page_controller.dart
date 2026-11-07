@@ -46,26 +46,26 @@ class HomePageViewModel {
   });
 
   const HomePageViewModel.initial()
-      : keepTemp = false,
-        running = false,
-        analyzing = false,
-        ignoringBattery = false,
-        autoOpeningAuthBrowser = false,
-        progress = 0,
-        status = null,
-        error = null,
-        chosenDir = null,
-        resultPath = null,
-        inspection = null,
-        selectedCandidate = null,
-        downloadTasks = const [],
-        history = const [],
-        stage = HomeWorkflowStage.idle,
-        stageRevision = 0,
-        selectionRevision = 0,
-        recoveryRevision = 0,
-        recoveryMessage = null,
-        retryAction = HomeRetryAction.none;
+    : keepTemp = false,
+      running = false,
+      analyzing = false,
+      ignoringBattery = false,
+      autoOpeningAuthBrowser = false,
+      progress = 0,
+      status = null,
+      error = null,
+      chosenDir = null,
+      resultPath = null,
+      inspection = null,
+      selectedCandidate = null,
+      downloadTasks = const [],
+      history = const [],
+      stage = HomeWorkflowStage.idle,
+      stageRevision = 0,
+      selectionRevision = 0,
+      recoveryRevision = 0,
+      recoveryMessage = null,
+      retryAction = HomeRetryAction.none;
 
   final bool keepTemp;
   final bool running;
@@ -363,6 +363,18 @@ class HomePageController extends ChangeNotifier {
     return tasks.any((task) => task.running);
   }
 
+  HomeDownloadTask? _runningTask(String id) {
+    for (final task in _value.downloadTasks) {
+      if (task.id == id && task.running) {
+        return task;
+      }
+    }
+    return null;
+  }
+
+  double _validProgress(double progress, double fallback) =>
+      progress.isFinite ? progress.clamp(0.0, 1.0) : fallback;
+
   void setIgnoringBattery(bool value) {
     _apply(_value.copyWith(ignoringBattery: value));
   }
@@ -509,7 +521,7 @@ class HomePageController extends ChangeNotifier {
           downloadTasks: [
             task,
             ..._value.downloadTasks.where((task) => task.running),
-            ..._value.downloadTasks.where((task) => !task.running).take(7)
+            ..._value.downloadTasks.where((task) => !task.running).take(7),
           ],
         ),
       ),
@@ -520,31 +532,50 @@ class HomePageController extends ChangeNotifier {
 
   void updateProgress(String status, double progress) {
     _apply(
-      _value.copyWith(status: status, progress: progress.clamp(0.0, 1.0)),
+      _value.copyWith(
+        status: status,
+        progress: _validProgress(progress, _value.progress),
+      ),
       stage: _classifyProgressStage(status),
     );
   }
 
-  void setTaskControl(String id,
-      {bool? paused, bool? busy, List<String>? urls}) {
-    _apply(_value.copyWith(
+  void setTaskControl(
+    String id, {
+    bool? paused,
+    bool? busy,
+    List<String>? urls,
+  }) {
+    _apply(
+      _value.copyWith(
         downloadTasks: _replaceTask(
-            id,
-            (task) => task.copyWith(
-                  paused: task.running ? paused : false,
-                  controlBusy: task.running ? busy : false,
-                  downloadUrls: urls,
-                ))));
+          id,
+          (task) => task.copyWith(
+            paused: task.running ? paused : false,
+            controlBusy: task.running ? busy : false,
+            downloadUrls: urls,
+          ),
+        ),
+      ),
+    );
   }
 
   void updateDownloadTask(String id, String status, double progress) {
+    final current = _runningTask(id);
+    if (current == null) {
+      return;
+    }
+    final safeProgress = _validProgress(progress, current.progress);
+    if (current.status == status && current.progress == safeProgress) {
+      return;
+    }
     final stage = _classifyProgressStage(status);
     final backend = _backendFromStatus(status);
     final tasks = _replaceTask(
       id,
       (task) => task.copyWith(
         status: status,
-        progress: progress.clamp(0.0, 1.0),
+        progress: safeProgress,
         stage: stage,
         backend: backend ?? task.backend,
       ),
@@ -553,7 +584,7 @@ class HomePageController extends ChangeNotifier {
       _value.copyWith(
         running: _hasRunningTasks(tasks),
         status: status,
-        progress: progress.clamp(0.0, 1.0),
+        progress: safeProgress,
         downloadTasks: tasks,
       ),
       stage: stage,
@@ -593,6 +624,9 @@ class HomePageController extends ChangeNotifier {
     required String sourcePage,
     required String completedStatus,
   }) {
+    if (_runningTask(id) == null) {
+      return;
+    }
     final tasks = _replaceTask(
       id,
       (task) => task.copyWith(
@@ -623,8 +657,9 @@ class HomePageController extends ChangeNotifier {
           ),
           ..._value.history,
         ],
-        retryAction:
-            hasRunningTasks ? _value.retryAction : HomeRetryAction.none,
+        retryAction: hasRunningTasks
+            ? _value.retryAction
+            : HomeRetryAction.none,
       ),
       stage: HomeWorkflowStage.completed,
     );
@@ -636,11 +671,16 @@ class HomePageController extends ChangeNotifier {
     String? status,
     double progress = 0,
   }) {
+    final current = _runningTask(id);
+    if (current == null) {
+      return;
+    }
+    final safeProgress = _validProgress(progress, current.progress);
     final tasks = _replaceTask(
       id,
       (task) => task.copyWith(
         status: status ?? error,
-        progress: progress,
+        progress: safeProgress,
         stage: HomeWorkflowStage.failed,
         running: false,
         paused: false,
@@ -653,7 +693,7 @@ class HomePageController extends ChangeNotifier {
         running: _hasRunningTasks(tasks),
         error: error,
         status: status,
-        progress: progress,
+        progress: safeProgress,
         recoveryMessage: null,
         downloadTasks: tasks,
       ),

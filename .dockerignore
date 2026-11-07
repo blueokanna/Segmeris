@@ -2,7 +2,7 @@
 build/
 .dart_tool/
 .packages
-pubspec.lock
+.dart_cli_state/
 
 # Rust构建文件
 **/target/

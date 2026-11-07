@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
 import 'package:segmeris/src/app/app_settings.dart';
+import 'package:segmeris/src/app/app_theme.dart';
 import 'package:segmeris/src/app/auth_context_store.dart';
 import 'package:segmeris/src/app/auth_entry.dart';
 import 'package:segmeris/src/app/bilibili_qr_login.dart';
@@ -240,11 +241,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   String _suggestFileName(MediaCandidate candidate) {
-    final raw =
-        candidate.title.trim().isEmpty ? 'video' : candidate.title.trim();
+    final raw = candidate.title.trim().isEmpty
+        ? 'video'
+        : candidate.title.trim();
     final sanitized = raw.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-    final quality =
-        candidate.qualityLabel.trim().replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final quality = candidate.qualityLabel.trim().replaceAll(
+      RegExp(r'[\\/:*?"<>|]'),
+      '_',
+    );
     final withQuality = quality.isEmpty || sanitized.contains(quality)
         ? sanitized
         : '$sanitized [$quality]';
@@ -289,9 +293,9 @@ class _HomePageState extends State<HomePage> {
 
   /// The inverse of [_parseHeaderEntries], so a restored session re-enters the
   /// editor in the format it is edited in.
-  String _serializeHeaderEntries(List<HeaderEntry> headers) => [
-        for (final header in headers) '${header.name}: ${header.value}',
-      ].join('\n');
+  String _serializeHeaderEntries(List<HeaderEntry> headers) =>
+      [for (final header in headers) '${header.name}: ${header.value}']
+          .join('\n');
 
   List<HeaderEntry> _parseHeaderEntries(String text) {
     final entries = <HeaderEntry>[];
@@ -492,8 +496,9 @@ class _HomePageState extends State<HomePage> {
       if (inspection.pageUrl.isNotEmpty) {
         _replaceSourceText(inspection.pageUrl);
       }
-      final selectedCandidate =
-          inspection.candidates.isNotEmpty ? inspection.candidates.first : null;
+      final selectedCandidate = inspection.candidates.isNotEmpty
+          ? inspection.candidates.first
+          : null;
       _pageController.completeAnalyze(
         inspection,
         selectedCandidate: selectedCandidate,
@@ -578,13 +583,16 @@ class _HomePageState extends State<HomePage> {
     }
 
     final selectedCandidate = selection ?? vm.selectedCandidate;
-    final candidateMatchesInput = selectedCandidate != null &&
+    final candidateMatchesInput =
+        selectedCandidate != null &&
         (selectedCandidate.pageUrl == enteredUrl ||
             selectedCandidate.mediaUrl == enteredUrl);
-    final pageUrl =
-        candidateMatchesInput ? selectedCandidate.pageUrl : enteredUrl;
-    final mediaUrl =
-        candidateMatchesInput ? selectedCandidate.mediaUrl : enteredUrl;
+    final pageUrl = candidateMatchesInput
+        ? selectedCandidate.pageUrl
+        : enteredUrl;
+    final mediaUrl = candidateMatchesInput
+        ? selectedCandidate.mediaUrl
+        : enteredUrl;
     final mediaFallbackUrls = candidateMatchesInput
         ? selectedCandidate.mediaFallbackUrls
         : const <String>[];
@@ -598,19 +606,19 @@ class _HomePageState extends State<HomePage> {
     final chosenDir = vm.chosenDir;
     final keepTemp = vm.keepTemp;
     final output = await _tempOutputPathFor(fileName, chosenDir);
-    // Sanity-clamp the numeric knobs before they reach the native engine so a
-    // stray/typoed value can never cause pathological resource use. The Rust
-    // downloader shares one connection pool of 4 per host, so a concurrency
-    // above 4 only adds worker contention and timeouts, never more speed.
-    final concurrency =
-        int.parse(_concurrencyCtrl.text.trim()).clamp(1, 16).toInt();
+    // Keep the native request within the same bounds as the form.
+    final concurrency = int.parse(_concurrencyCtrl.text.trim())
+        .clamp(1, 16)
+        .toInt();
     final retries = int.parse(_retriesCtrl.text.trim()).clamp(1, 10).toInt();
-    final vBitrate =
-        int.parse(_vBitrateCtrl.text.trim()).clamp(0, 20000).toInt();
+    final vBitrate = int.parse(_vBitrateCtrl.text.trim())
+        .clamp(0, 20000)
+        .toInt();
     final aBitrate = int.parse(_aBitrateCtrl.text.trim()).clamp(0, 512).toInt();
 
-    final (subtitleMode, subtitleValue) =
-        subtitleChoiceForSingle(_subtitlePreference);
+    final (subtitleMode, subtitleValue) = subtitleChoiceForSingle(
+      _subtitlePreference,
+    );
     final request = _DownloadTaskRequest(
       pageUrl: pageUrl,
       mediaUrl: mediaUrl,
@@ -638,8 +646,9 @@ class _HomePageState extends State<HomePage> {
       status: l.text('preparing'),
     );
     _retryRequests[taskId] = request;
-    final visibleTaskIds =
-        _pageController.value.downloadTasks.map((task) => task.id).toSet();
+    final visibleTaskIds = _pageController.value.downloadTasks
+        .map((task) => task.id)
+        .toSet();
     _retryRequests.removeWhere((id, _) => !visibleTaskIds.contains(id));
 
     await _runDownloadTask(taskId, request);
@@ -737,16 +746,19 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    final concurrency =
-        int.parse(_concurrencyCtrl.text.trim()).clamp(1, 16).toInt();
+    final concurrency = int.parse(_concurrencyCtrl.text.trim())
+        .clamp(1, 16)
+        .toInt();
     final retries = int.parse(_retriesCtrl.text.trim()).clamp(1, 10).toInt();
-    final vBitrate =
-        int.parse(_vBitrateCtrl.text.trim()).clamp(0, 20000).toInt();
+    final vBitrate = int.parse(_vBitrateCtrl.text.trim())
+        .clamp(0, 20000)
+        .toInt();
     final aBitrate = int.parse(_aBitrateCtrl.text.trim()).clamp(0, 512).toInt();
     // One queue, many episodes: an exact track URL would only be valid for
     // the episode the pick was made on, so the language tag travels.
-    final (seriesSubtitleMode, seriesSubtitleValue) =
-        subtitleChoiceForSeries(_subtitlePreference);
+    final (seriesSubtitleMode, seriesSubtitleValue) = subtitleChoiceForSeries(
+      _subtitlePreference,
+    );
     final requestContext = _requestContext();
     final chosenDir = vm.chosenDir;
     final keepTemp = vm.keepTemp;
@@ -851,11 +863,12 @@ class _HomePageState extends State<HomePage> {
     final combined = episode.isEmpty
         ? series
         : (series.isEmpty || episode.startsWith(series))
-            ? episode
-            : '$series - $episode';
+        ? episode
+        : '$series - $episode';
     final runes = combined.runes.toList();
-    final capped =
-        runes.length > 100 ? String.fromCharCodes(runes.take(100)) : combined;
+    final capped = runes.length > 100
+        ? String.fromCharCodes(runes.take(100))
+        : combined;
     return _normalizeOutputName(capped.isEmpty ? 'video' : capped);
   }
 
@@ -902,16 +915,19 @@ class _HomePageState extends State<HomePage> {
   Future<void> _toggleDownloadPause(String taskId) async {
     final engine = _engine;
     if (engine is! PausableDownloadEngine) return;
-    final tasks =
-        _pageController.value.downloadTasks.where((task) => task.id == taskId);
+    final tasks = _pageController.value.downloadTasks.where(
+      (task) => task.id == taskId,
+    );
     final request = _retryRequests[taskId];
     if (tasks.isEmpty || request == null) return;
     final task = tasks.first;
     if (!task.canPause || task.controlBusy) return;
     _pageController.setTaskControl(taskId, busy: true);
     try {
-      final accepted = await (engine as PausableDownloadEngine)
-          .setPaused(output: request.output, paused: !task.paused);
+      final accepted = await (engine as PausableDownloadEngine).setPaused(
+        output: request.output,
+        paused: !task.paused,
+      );
       if (mounted && accepted) {
         _pageController.setTaskControl(taskId, paused: !task.paused);
       }
@@ -919,8 +935,10 @@ class _HomePageState extends State<HomePage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text(
-                  '${AppLocalizations.of(context).text("download_control_failed")}: $error')),
+            content: Text(
+              '${AppLocalizations.of(context).text("download_control_failed")}: $error',
+            ),
+          ),
         );
       }
     } finally {
@@ -942,10 +960,14 @@ class _HomePageState extends State<HomePage> {
       }
       effective = request.withResolvedSource(resolved);
     }
-    _pageController.setTaskControl(taskId, paused: false, urls: [
-      effective.mediaUrl,
-      if (effective.audioUrl != null) effective.audioUrl!
-    ]);
+    _pageController.setTaskControl(
+      taskId,
+      paused: false,
+      urls: [
+        effective.mediaUrl,
+        if (effective.audioUrl != null) effective.audioUrl!,
+      ],
+    );
     var shouldAutoOpenAuthBrowser = false;
     var downloadStreamFailed = false;
     await MediaStoreBridge.startForegroundService();
@@ -975,7 +997,8 @@ class _HomePageState extends State<HomePage> {
             progress: 0,
           );
           downloadStreamFailed = true;
-          shouldAutoOpenAuthBrowser = allowAutoAuth &&
+          shouldAutoOpenAuthBrowser =
+              allowAutoAuth &&
               _shouldAutoOpenAuthBrowser(
                 skipAutoAuth: false,
                 errorText: terminalError,
@@ -987,7 +1010,10 @@ class _HomePageState extends State<HomePage> {
           event.message,
           event.progress,
         );
-        final percent = (event.progress * 100).round();
+        final progress = event.progress;
+        final percent = progress.isFinite
+            ? (progress.clamp(0.0, 1.0) * 100).round()
+            : lastNotifiedPercent.clamp(0, 100);
         final isNewMessage = !lastNotifiedMessage.contains(event.message);
         if (isNewMessage || percent - lastNotifiedPercent >= 1) {
           lastNotifiedPercent = percent;
@@ -1067,11 +1093,9 @@ class _HomePageState extends State<HomePage> {
         return;
       }
       final errorText = '$error';
-      shouldAutoOpenAuthBrowser = allowAutoAuth &&
-          _shouldAutoOpenAuthBrowser(
-            skipAutoAuth: false,
-            errorText: errorText,
-          );
+      shouldAutoOpenAuthBrowser =
+          allowAutoAuth &&
+          _shouldAutoOpenAuthBrowser(skipAutoAuth: false, errorText: errorText);
       _pageController.failDownloadTask(
         taskId,
         errorText,
@@ -1146,17 +1170,43 @@ class _HomePageState extends State<HomePage> {
 
         return Scaffold(
           appBar: AppBar(
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            toolbarHeight: 72,
+            title: Row(
               children: [
-                Text(l.text('app_title')),
-                Text(
-                  l.text('app_subtitle'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: t.textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                    fontWeight: FontWeight.w500,
+                ExcludeSemantics(
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: cs.primaryContainer,
+                      borderRadius: SegmerisShapes.of(context).md,
+                    ),
+                    child: Icon(
+                      Icons.downloading_rounded,
+                      color: cs.onPrimaryContainer,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        l.text('app_title'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (MediaQuery.textScalerOf(context).scale(14) <= 20)
+                        Text(
+                          l.text('app_subtitle'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: t.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ],
@@ -1172,72 +1222,90 @@ class _HomePageState extends State<HomePage> {
           body: ColoredBox(
             color: cs.surface,
             child: SafeArea(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  if (constraints.maxWidth >= 1080) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          flex: 7,
-                          child: RevealMotion(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1560),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final textScale =
+                          MediaQuery.textScalerOf(context).scale(14) / 14;
+                      final sideWidth = 380 * textScale.clamp(1.0, 1.5);
+                      if (constraints.maxWidth >= 720 + sideWidth) {
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 7,
+                              child: RevealMotion(
+                                delay: const Duration(milliseconds: 40),
+                                child: _buildPrimaryPane(
+                                  context,
+                                  vm: vm,
+                                  scrollable: true,
+                                  padding: const EdgeInsets.fromLTRB(
+                                    24,
+                                    16,
+                                    0,
+                                    28,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 20),
+                            SizedBox(
+                              width: sideWidth,
+                              child: RevealMotion(
+                                delay: const Duration(milliseconds: 120),
+                                offset: const Offset(0.06, 0),
+                                child: _buildSidePane(
+                                  context,
+                                  vm: vm,
+                                  scrollable: true,
+                                  padding: const EdgeInsets.fromLTRB(
+                                    0,
+                                    16,
+                                    24,
+                                    28,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                      return ListView(
+                        physics: const BouncingScrollPhysics(
+                          parent: AlwaysScrollableScrollPhysics(),
+                        ),
+                        padding: EdgeInsets.fromLTRB(
+                          constraints.maxWidth < 600 ? 16 : 24,
+                          12,
+                          constraints.maxWidth < 600 ? 16 : 24,
+                          28,
+                        ),
+                        children: [
+                          RevealMotion(
                             delay: const Duration(milliseconds: 40),
                             child: _buildPrimaryPane(
                               context,
                               vm: vm,
-                              scrollable: true,
-                              padding: const EdgeInsets.fromLTRB(
-                                16,
-                                10,
-                                16,
-                                28,
-                              ),
+                              scrollable: false,
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        SizedBox(
-                          width: 360,
-                          child: RevealMotion(
+                          const SizedBox(height: 12),
+                          RevealMotion(
                             delay: const Duration(milliseconds: 120),
-                            offset: const Offset(0.06, 0),
                             child: _buildSidePane(
                               context,
                               vm: vm,
-                              scrollable: true,
-                              padding: const EdgeInsets.fromLTRB(0, 10, 16, 28),
+                              scrollable: false,
                             ),
                           ),
-                        ),
-                      ],
-                    );
-                  }
-                  return ListView(
-                    physics: const BouncingScrollPhysics(
-                      parent: AlwaysScrollableScrollPhysics(),
-                    ),
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
-                    children: [
-                      RevealMotion(
-                        delay: const Duration(milliseconds: 40),
-                        child: _buildPrimaryPane(
-                          context,
-                          vm: vm,
-                          scrollable: false,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      RevealMotion(
-                        delay: const Duration(milliseconds: 120),
-                        child: _buildSidePane(
-                          context,
-                          vm: vm,
-                          scrollable: false,
-                        ),
-                      ),
-                    ],
-                  );
-                },
+                        ],
+                      );
+                    },
+                  ),
+                ),
               ),
             ),
           ),
@@ -1348,8 +1416,9 @@ class _HomePageState extends State<HomePage> {
       HomeDownloadTasksCard(
         tasks: vm.downloadTasks,
         onRetry: (taskId) => _retryDownloadTask(taskId),
-        onTogglePause:
-            _engine is PausableDownloadEngine ? _toggleDownloadPause : null,
+        onTogglePause: _engine is PausableDownloadEngine
+            ? _toggleDownloadPause
+            : null,
       ),
       const SizedBox(height: 12),
       HomeHistoryCard(history: vm.history),

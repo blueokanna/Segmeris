@@ -1,25 +1,11 @@
-//! Synchronous network helpers for the downloader.
-//!
-//! The `courierust` client is a blocking engine, so every network call
-//! here is synchronous. These helpers mirror the small `reqwest` surface
-//! the downloader previously used: per-request headers, retries, Range
-//! support, and streaming to disk.
-//!
-//! Courierust handles HTTP and TLS directly, including TLS 1.2 and 1.3.
-//!
-//! ## Trust anchors
-//!
-//! The default trust set is the Mozilla root set compiled into this
-//! binary plus [`COMPATIBILITY_ANCHORS`] (see below). Managed networks
-//! with TLS inspection (corporate proxies, anti-virus products) re-sign
-//! every connection with a private root; deployments like that can
-//! install their private root through `SEGMERIS_EXTRA_CA_FILE` — a
-//! PEM/DER certificate file, or a platform-separated list of them. The
-//! setting is opt-in and audit-able: whoever controls the process
-//! environment can already control the process, and an unset variable
-//! keeps the default trust set exactly.
+//! Synchronous HTTP streaming with Courierust and verified TLS path building.
+//! Metadata reads are bounded; media bodies stream directly to disk.
+//! Trust comes from Mozilla roots and optional PEM/DER files configured through
+//! SEGMERIS_EXTRA_CA_FILE. Cross-signed paths that Courierust cannot anchor are
+//! retried with rustls using the same trust store and certificate validation.
 
 use anyhow::{bail, Context, Result};
+mod tls;
 mod transport;
 use courierust::courierust_client::{ClientConfig, TlsSettings as ClientTls};
 use courierust::courierust_fingerprint::profile::{chrome_tls_profile, TlsProfile};
@@ -35,18 +21,6 @@ use transport::Client;
 
 /// Environment variable naming additional PEM/DER trust-anchor files.
 pub const EXTRA_CA_ENV: &str = "SEGMERIS_EXTRA_CA_FILE";
-
-/// Compiled-in anchors beyond the Mozilla root set.
-///
-/// `GlobalSign Root CA` (R1, 1998) left the Mozilla program, but real
-/// operators still chain to it: `api.bilibili.com` serves
-/// `leaf → GlobalSign RSA OV SSL CA 2018 → GlobalSign Root CA - R3`,
-/// where the final certificate is R3 *cross-signed by R1*. Browsers
-/// rebuild such chains against their local R3 anchor; the TLS engine
-/// here validates the sent chain as-is, so without R1 the service is
-/// unreachable. R1 expires 2028-01-28 — drop this anchor once chains
-/// stop referencing it.
-const COMPATIBILITY_ANCHORS: &[&[u8]] = &[include_bytes!("../assets/GlobalSign-Root-CA-R1.der")];
 
 /// Maximum body accepted for in-memory reads (playlists, keys, JSON).
 pub const MAX_MEMORY_BODY: usize = 64 * 1024 * 1024;
@@ -326,7 +300,7 @@ fn make_client(
         read_timeout: Some(read_timeout),
         handshake_timeout: Some(Duration::from_secs(10)),
         max_redirects,
-        user_agent: Some("Segmeris/1.0".to_string()),
+        user_agent: Some(concat!("Segmeris/", env!("CARGO_PKG_VERSION")).to_string()),
         max_header_list: 1 << 20,
         max_body: MAX_MEMORY_BODY,
         tls: Some(ClientTls {
@@ -348,15 +322,11 @@ fn make_client(
     Ok(Client::with_config(config))
 }
 
-/// The default trust set: the bundled Mozilla roots plus the compiled-in
-/// compatibility anchors.
+/// The Mozilla trust set; retired roots are not restored for CDN compatibility.
 fn default_roots() -> RootStore {
     let mut roots = RootStore::new();
     for certificate in webpki_root_certs::TLS_SERVER_ROOT_CERTS {
         roots.add_der(certificate.as_ref().to_vec());
-    }
-    for anchor in COMPATIBILITY_ANCHORS {
-        roots.add_der(anchor.to_vec());
     }
     roots
 }
@@ -648,32 +618,6 @@ mod tests {
         assert!(
             pem_certificates(b"-----BEGIN CERTIFICATE-----\n\n-----END CERTIFICATE-----").is_err()
         );
-    }
-
-    /// The chain a production CDN actually serves must anchor to the
-    /// default trust set. The fixture is a real capture of what
-    /// `api.bilibili.com` sends: a leaf, its intermediate, and a
-    /// cross-signed `GlobalSign Root CA - R3` whose issuer is the 1998
-    /// `GlobalSign Root CA` in [`COMPATIBILITY_ANCHORS`].
-    #[test]
-    fn anchors_cross_signed_chains_like_the_ones_served_in_production() {
-        use courierust::courierust_tls::x509::validate_chain;
-
-        let pem = include_str!("../tests/data/bilibili-chain.pem");
-        let chain = pem_certificates(pem.as_bytes()).expect("fixture parses");
-        assert_eq!(
-            chain.len(),
-            3,
-            "fixture is leaf + intermediate + cross-signed root"
-        );
-
-        let roots = default_roots();
-
-        // Fixed to the capture day: the fixture is a snapshot, so the
-        // assertion must not depend on when the suite runs.
-        const CAPTURED_AT: i64 = 1_791_072_000; // 2026-10-04T00:00:00Z
-        validate_chain(&roots, &chain, CAPTURED_AT)
-            .expect("the default trust set must anchor the chain served in production");
     }
 
     /// `SEGMERIS_EXTRA_CA_FILE` accepts PEM bundles and DER files; an

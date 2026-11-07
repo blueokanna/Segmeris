@@ -3,6 +3,100 @@ use crate::test_http::{response, serve};
 use std::io::Write;
 
 #[test]
+fn redirects_recheck_address_policy_before_connecting() {
+    const FIXTURE: &str = "SEGMERIS_REDIRECT_POLICY_FIXTURE";
+    if let Ok(case) = std::env::var(FIXTURE) {
+        let (status, host) = case.split_once(',').unwrap();
+        let status: u16 = status.parse().unwrap();
+        let target = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        target.set_nonblocking(true).unwrap();
+        let destination = format!(
+            "http://{host}:{}/private",
+            target.local_addr().unwrap().port()
+        );
+        // Policy is enabled only after two accepted requests, in this isolated
+        // process. This exercises the real redirect loop and socket connector
+        // without public-network fixtures or global races with other tests.
+        let (source, server) = serve(2, move |index, _, socket| {
+            let location = if index == 0 {
+                "/second-hop"
+            } else {
+                crate::network_policy::enable_api_policy();
+                &destination
+            };
+            write!(socket, "HTTP/1.1 {status} Redirect\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+        });
+        let client = SyncHttpClient::new().unwrap();
+        let error = client.get(&source, &[]).unwrap_err();
+        assert!(
+            error.to_string().contains("blocked by address policy"),
+            "{error:#}"
+        );
+        assert_eq!(
+            target.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+        server.join().unwrap();
+        return;
+    }
+    for case in [
+        "301,127.0.0.1",
+        "302,[::ffff:127.0.0.1]",
+        "303,localhost",
+        "307,0x7f000001",
+        "308,[::ffff:127.0.0.1]",
+    ] {
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "net::regression_tests::redirects_recheck_address_policy_before_connecting",
+                "--nocapture",
+            ])
+            .env(FIXTURE, case)
+            .env_remove("FERRISLOAD_ALLOW_PRIVATE_NETWORKS");
+        let output = crate::process::command_with_timeout(&mut command, Duration::from_secs(10))
+            .expect("address-policy fixture timed out")
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{case}: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn memory_reads_remain_bounded_for_fixed_and_chunked_bodies() {
+    let (url, server) = serve(2, |index, _, socket| {
+        if index == 0 {
+            write!(
+                socket,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                MAX_MEMORY_BODY + 1
+            )
+            .unwrap();
+        } else {
+            socket.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n9\r\n123456789\r\n0\r\n\r\n").unwrap();
+        }
+    });
+    let client = SyncHttpClient::new().unwrap();
+    assert!(client
+        .get(&url, &[])
+        .unwrap_err()
+        .to_string()
+        .contains("memory limit"));
+    let body = client.stream(&url, &[]).unwrap().body;
+    assert!(body
+        .collect_limited(8)
+        .unwrap_err()
+        .to_string()
+        .contains("memory limit"));
+    server.join().unwrap();
+}
+
+#[test]
 fn redirects_report_effective_url_and_resolve_relative_paths() {
     let (url, server) = serve(2, |i, request, socket| {
         if i == 0 {

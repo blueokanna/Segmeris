@@ -17,6 +17,21 @@ pub(crate) fn address_allowed(address: SocketAddr) -> bool {
     !public_only() || !is_private_ip(address.ip())
 }
 
+/// Reject the complete DNS answer if any address is unsafe. Callers connect
+/// directly to these addresses, without resolving the hostname a second time.
+pub(crate) fn validate_addresses(
+    addresses: &[SocketAddr],
+    public_only: bool,
+) -> anyhow::Result<()> {
+    if addresses.is_empty() {
+        anyhow::bail!("Network destination resolved to no addresses");
+    }
+    if public_only && addresses.iter().any(|address| is_private_ip(address.ip())) {
+        anyhow::bail!("Network destination blocked by address policy");
+    }
+    Ok(())
+}
+
 pub(crate) fn is_private_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
@@ -55,6 +70,11 @@ mod tests {
             "::ffff:127.0.0.1",
             "::ffff:10.1.2.3",
             "::ffff:169.254.169.254",
+            "::ffff:172.16.0.1",
+            "::ffff:192.168.1.1",
+            "::ffff:0.0.0.0",
+            "::ffff:100.64.0.1",
+            "::ffff:224.0.0.1",
             "::1",
             "64:ff9b::7f00:1",
             "2002:7f00:1::",
@@ -67,5 +87,16 @@ mod tests {
         for value in ["8.8.8.8", "::ffff:8.8.8.8", "2606:4700:4700::1111"] {
             assert!(!is_private_ip(value.parse().unwrap()), "{value}");
         }
+    }
+
+    #[test]
+    fn rejects_empty_and_mixed_dns_answers() {
+        let public = "8.8.8.8:443".parse().unwrap();
+        let private = "[::ffff:127.0.0.1]:443".parse().unwrap();
+        assert!(validate_addresses(&[], false).is_err());
+        assert!(validate_addresses(&[public], true).is_ok());
+        assert!(validate_addresses(&[public, private], true).is_err());
+        assert!(validate_addresses(&[private, public], true).is_err());
+        assert!(validate_addresses(&[private], false).is_ok());
     }
 }

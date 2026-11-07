@@ -4,14 +4,14 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'rust_lib_segmeris'
-  s.version          = '0.0.1'
-  s.summary          = 'A new Flutter FFI plugin project.'
+  s.version          = '1.0.8'
+  s.summary          = 'Segmeris Rust download engine and Flutter bridge.'
   s.description      = <<-DESC
-A new Flutter FFI plugin project.
+Builds and links the Segmeris Rust runtime for Flutter.
                        DESC
-  s.homepage         = 'http://example.com'
-  s.license          = { :file => '../LICENSE' }
-  s.author           = { 'Your Company' => 'email@example.com' }
+  s.homepage         = 'https://github.com/blueokanna/Segmeris'
+  s.license          = { :file => '../../LICENSE' }
+  s.author           = 'blueokanna'
   s.source           = { :path => '.' }
   s.source_files     = 'Classes/**/*'
   s.dependency 'FlutterMacOS'

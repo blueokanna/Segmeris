@@ -84,7 +84,7 @@ class _HomeSeriesCardState extends State<HomeSeriesCard> {
             ),
           ),
           AnimatedSize(
-            duration: SegmerisMotion.medium,
+            duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
             curve: SegmerisMotion.emphasized,
             alignment: Alignment.topCenter,
             child: _listOpen && entries.isNotEmpty

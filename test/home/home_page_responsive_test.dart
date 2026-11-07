@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
@@ -19,6 +20,38 @@ const _settings = AppSettings(
   apiToken: '',
 );
 
+ThemeData _captureTheme() {
+  final theme = buildAppTheme(_settings.themeProfile, Brightness.light);
+  if (!Platform.environment.containsKey('SEGMERIS_CAPTURE_FONT')) {
+    return theme;
+  }
+  TextStyle? withFont(TextStyle? style) =>
+      style?.copyWith(fontFamily: 'SegmerisCapture');
+  ButtonStyle? buttonFont(ButtonStyle? style) => style?.copyWith(
+    textStyle: WidgetStateProperty.resolveWith(
+      (states) => withFont(style.textStyle?.resolve(states)),
+    ),
+  );
+  return theme.copyWith(
+    textTheme: theme.textTheme.apply(fontFamily: 'SegmerisCapture'),
+    primaryTextTheme: theme.primaryTextTheme.apply(
+      fontFamily: 'SegmerisCapture',
+    ),
+    appBarTheme: theme.appBarTheme.copyWith(
+      titleTextStyle: withFont(theme.appBarTheme.titleTextStyle),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: buttonFont(theme.filledButtonTheme.style),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: buttonFont(theme.outlinedButtonTheme.style),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: buttonFont(theme.textButtonTheme.style),
+    ),
+  );
+}
+
 Widget _buildApp(Key captureKey) {
   return RepaintBoundary(
     key: captureKey,
@@ -32,7 +65,7 @@ Widget _buildApp(Key captureKey) {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      theme: buildAppTheme(_settings.themeProfile, Brightness.light),
+      theme: _captureTheme(),
       home: HomePage(settings: _settings, onSettingsChanged: (_) {}),
     ),
   );
@@ -50,9 +83,25 @@ Future<void> _capture(Finder finder, String fileName) async {
 }
 
 void main() {
+  setUpAll(() async {
+    for (final entry in {
+      'SEGMERIS_CAPTURE_FONT': 'SegmerisCapture',
+      'SEGMERIS_CAPTURE_ICONS': 'MaterialIcons',
+    }.entries) {
+      final path = Platform.environment[entry.key];
+      if (path != null) {
+        final loader = FontLoader(entry.value)
+          ..addFont(File(path).readAsBytes().then(ByteData.sublistView));
+        await loader.load();
+      }
+    }
+  });
+
   for (final viewport in <(String, Size)>[
+    ('narrow', const Size(320, 740)),
     ('mobile', const Size(390, 844)),
     ('desktop', const Size(1440, 900)),
+    ('ultrawide', const Size(2560, 1440)),
   ]) {
     testWidgets('home page has no overflow at ${viewport.$1} size', (
       tester,
@@ -70,6 +119,22 @@ void main() {
       await _capture(find.byKey(captureKey), 'home_${viewport.$1}.png');
     });
   }
+
+  testWidgets('home supports large accessibility text on mobile', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(_buildApp(GlobalKey()));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('mobile source actions and settings sheet have no overflow', (
     tester,

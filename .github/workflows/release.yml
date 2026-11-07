@@ -1,30 +1,25 @@
 name: Build and Release
 
-# 质量关卡（validate / security-scan）在每次 push 到 main 与每个 PR 上运行；
-# 跨平台产物构建与 Docker 镜像只由 v* tag 或手动触发执行，避免每次提交都
-# 消耗 Windows/macOS runner 分钟数并把镜像推到 GHCR。
-# 手动触发时 iOS 默认跳过（skip_ios 预勾选；取消勾选即可构建），v* tag 发版
-# 仍构建 iOS；跳过或失败的 iOS / Docker 都不会阻塞 Release 的创建。
 on:
   push:
     branches:
       - main
     tags:
-      - 'v*'
+      - "v*"
   pull_request:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release tag name (e.g. v1.0.0). Leave empty to build only.'
+        description: "Release tag name (v1.0.8). Leave empty to build only."
         required: false
-        default: ''
+        default: ""
       skip_docker:
-        description: 'Skip publishing the Docker API image (all app artifacts are still built and released).'
+        description: "Skip publishing the Docker API image (all app artifacts are still built and released)."
         type: boolean
         required: false
         default: false
       skip_ios:
-        description: 'Skip the iOS build on manual runs (untick to build it). v* tag releases always build iOS.'
+        description: "Skip the iOS build on manual runs (untick to build it). v* tag releases always build iOS."
         type: boolean
         required: false
         default: true
@@ -38,7 +33,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  FLUTTER_VERSION: 3.47.2
+  FLUTTER_VERSION: 3.47.9
   PUB_HOSTED_URL: https://pub.dev
   FLUTTER_STORAGE_BASE_URL: https://storage.googleapis.com
 
@@ -49,6 +44,11 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate release versions
+        env:
+          RELEASE_TAG: ${{ inputs.tag_name }}
+        run: python3 scripts/check_versions.py
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -62,7 +62,7 @@ jobs:
       - name: Validate Rust MSRV and no_std core
         working-directory: rust
         run: |
-          cargo check --workspace --all-targets --locked
+          cargo check --workspace --all-targets --features api-server --locked
           cargo check -p segmeris-core --no-default-features --locked
 
       - name: Setup stable Rust toolchain
@@ -71,7 +71,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Flutter pub get
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Validate Rust workspace
         working-directory: rust
@@ -113,7 +113,7 @@ jobs:
           cache: true
 
       - name: Flutter pub get
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Check for outdated Dart dependencies
         run: flutter pub outdated || true
@@ -125,7 +125,7 @@ jobs:
           scan-ref: .
           scanners: vuln,secret,misconfig
           skip-dirs: build,rust/target,.dart_tool,ios/Pods
-          exit-code: '0'
+          exit-code: "0"
 
   build-android:
     name: Build Android APKs
@@ -142,7 +142,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -179,7 +179,7 @@ jobs:
         run: flutter config --no-analytics
 
       - name: Flutter pub get
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Configure Android signing
         id: android_signing
@@ -270,6 +270,11 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      - name: Setup NuGet for Windows plugins
+        uses: nuget/setup-nuget@v3
+        with:
+          nuget-version: latest
+
       - name: Cache Rust dependencies
         uses: actions/cache@v4
         with:
@@ -281,7 +286,7 @@ jobs:
           restore-keys: rust-windows-
 
       - name: Flutter pub get
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Build Windows release bundle
         env:
@@ -345,7 +350,7 @@ jobs:
         run: flutter config --enable-macos-desktop
 
       - name: Flutter pub get
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Build macOS app
         run: flutter build macos --release
@@ -411,7 +416,7 @@ jobs:
         run: flutter config --enable-linux-desktop
 
       - name: Flutter pub get
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Build Linux release bundle
         run: flutter build linux --release
@@ -446,7 +451,7 @@ jobs:
           cache: true
 
       - name: Flutter pub get
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Build Web (JS fallback build)
         run: flutter build web --release
@@ -480,9 +485,6 @@ jobs:
 
   build-ios:
     name: Build iOS arm64 (unsigned)
-    # Manual runs skip iOS by default (`skip_ios` is pre-ticked); untick the
-    # input to build it on demand. Tag pushes always build iOS so a release
-    # ships the sideload archive whenever the build is healthy.
     if: >-
       startsWith(github.ref, 'refs/tags/v')
       || (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_ios != 'true')
@@ -520,7 +522,7 @@ jobs:
         run: cargo check --target aarch64-apple-ios --lib --locked
 
       - name: Flutter pub get
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Build iOS app (unsigned, for sideloading)
         shell: bash
@@ -558,9 +560,6 @@ jobs:
 
   docker-validate:
     name: Validate Docker API image (linux/amd64)
-    # A push should not have to wait for the multi-arch publish to learn that the
-    # image no longer builds; this one shares the publish job's cache scope, runs
-    # amd64 only and never touches GHCR.
     if: github.event_name == 'push'
     needs: validate
     runs-on: ubuntu-latest
@@ -603,13 +602,10 @@ jobs:
 
   docker-api:
     name: Publish Docker API image
-    # Tag pushes always publish the Docker image; a manual dispatch can opt
-    # out by ticking the `skip_docker` input. Skipping this job must not
-    # block the GitHub Release (create-release handles a 'skipped' result).
     if: >-
       startsWith(github.ref, 'refs/tags/v')
       || (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_docker != 'true')
-    needs: validate
+    needs: [validate, security-scan]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -635,14 +631,16 @@ jobs:
       - name: Compute Docker tags
         id: docker_tags
         shell: bash
+        env:
+          MANUAL_TAG: ${{ inputs.tag_name }}
         run: |
           IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/segmeris-api"
           TAGS=("${IMAGE}:sha-${GITHUB_SHA::7}")
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             RELEASE_TAG="${GITHUB_REF#refs/tags/}"
             TAGS+=("${IMAGE}:${RELEASE_TAG}" "${IMAGE}:latest")
-          elif [[ -n "${{ github.event.inputs.tag_name }}" ]]; then
-            RELEASE_TAG="${{ github.event.inputs.tag_name }}"
+          elif [[ -n "$MANUAL_TAG" ]]; then
+            RELEASE_TAG="$MANUAL_TAG"
             TAGS+=("${IMAGE}:${RELEASE_TAG}" "${IMAGE}:manual")
           else
             SAFE_REF="${GITHUB_REF_NAME//\//-}"
@@ -667,14 +665,6 @@ jobs:
 
   create-release:
     name: Create GitHub Release
-    # Runs for a v* tag or a manual dispatch with a tag name, provided the
-    # Android APKs were signed. Docker and iOS are intentionally decoupled:
-    # the app release must not be blocked when they are skipped or fail.
-    # `!cancelled()` removes the implicit success() requirement on the build
-    # jobs; validate/build-android failures are still stopped by the Android
-    # signing gate, the other desktop/Web builds are checked explicitly, and
-    # a missing required artifact fails the publish step loudly. The iOS
-    # archive is attached only when the iOS job actually succeeded.
     if: >-
       ${{ !cancelled()
       && (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.tag_name != '')
@@ -683,11 +673,13 @@ jobs:
       && needs.build-macos.result == 'success'
       && needs.build-linux.result == 'success'
       && needs.build-web.result == 'success'
+      && needs.security-scan.result == 'success'
       && needs.docker-api.result != 'cancelled'
       && needs.build-ios.result != 'cancelled' }}
     permissions:
       contents: write
     needs:
+      - security-scan
       - build-android
       - build-windows
       - build-macos
@@ -701,16 +693,16 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          # docker/build-push-action uploads a build record that is not a
-          # release asset and can make download-artifact fail when fetching all.
-          pattern: '!*.dockerbuild'
+          pattern: "!*.dockerbuild"
 
       - name: Determine release tag
         id: release_tag
         shell: bash
+        env:
+          MANUAL_TAG: ${{ inputs.tag_name }}
         run: |
-          if [[ -n "${{ github.event.inputs.tag_name }}" ]]; then
-            RELEASE_NAME="${{ github.event.inputs.tag_name }}"
+          if [[ -n "$MANUAL_TAG" ]]; then
+            RELEASE_NAME="$MANUAL_TAG"
           else
             RELEASE_NAME="${GITHUB_REF#refs/tags/}"
           fi
@@ -730,10 +722,6 @@ jobs:
       - name: Compute release file list
         id: release_files
         shell: bash
-        # The iOS job can be skipped (`skip_ios`) or fail; its archive is only
-        # listed when the job actually produced one. Every other entry is
-        # unconditional so a missing required artifact still fails the publish
-        # step (fail_on_unmatched_files) instead of being silently dropped.
         run: |
           {
             echo 'files<<EOF'

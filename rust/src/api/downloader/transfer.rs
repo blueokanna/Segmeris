@@ -333,11 +333,14 @@ pub(super) fn stream_media_response_to_file(
             }
             bail!("Media Range request returned HTTP 416 at byte {}", start);
         }
-        if !(200..300).contains(&status) {
+        if !matches!(status, 200 | 206) {
             bail!("Media request returned HTTP {}", status);
         }
+        if status == 206 && !use_range {
+            bail!("Server returned an unrequested partial response");
+        }
 
-        let total = if status == 206 {
+        let (total, expected_length) = if status == 206 {
             let range = parse_content_range(&response_headers)?;
             if range.start != Some(start) {
                 clear_resumable_partial(&partial_path)?;
@@ -351,24 +354,25 @@ pub(super) fn stream_media_response_to_file(
                 .ok_or_else(|| anyhow!("Media Range response omitted its end offset"))?;
             let range_length = range_end
                 .checked_sub(start)
-                .and_then(|length| length.checked_add(1));
-            if range_end > end || range_length.is_none() {
-                bail!(
-                    "Media Range response length mismatch: received {} bytes for {}-{}",
-                    0,
-                    start,
-                    range_end
-                );
+                .and_then(|length| length.checked_add(1))
+                .context("Media Range response length overflow")?;
+            if range_end > end {
+                bail!("Media Range response exceeded the requested end offset");
             }
-            range.total
+            if response_header(&response_headers, "content-length")
+                .is_some_and(|value| value.parse::<u64>().ok() != Some(range_length))
+            {
+                bail!("Media Content-Length disagrees with Content-Range");
+            }
+            (range.total, Some(range_length))
         } else {
-            if start > 0 {
-                downloaded = 0;
-            }
-            response_headers
-                .iter()
-                .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
-                .and_then(|(_, value)| value.trim().parse::<u64>().ok())
+            downloaded = 0;
+            last_reported = 0;
+            let length = response_header(&response_headers, "content-length")
+                .map(str::parse::<u64>)
+                .transpose()
+                .context("Invalid media Content-Length")?;
+            (length, length)
         };
 
         if status == 206
@@ -406,17 +410,10 @@ pub(super) fn stream_media_response_to_file(
                 &next_metadata,
                 start,
                 total,
-                parse_content_range(&response_headers)?
-                    .end
-                    .unwrap_or(start)
-                    .saturating_sub(start)
-                    + 1,
+                expected_length.context("Partial response has no length")?,
             )
         {
             clear_resumable_partial(&partial_path)?;
-            if !use_range {
-                bail!("Server returned an unrequested partial response without validators");
-            }
             use_range = false;
             downloaded = 0;
             resume_metadata = None;
@@ -435,10 +432,20 @@ pub(super) fn stream_media_response_to_file(
         .with_context(|| format!("Failed to create media file: {}", partial_path.display()))?;
         let mut received = 0u64;
         while let Some(chunk) = body.next_chunk()? {
+            let next_received = received
+                .checked_add(chunk.len() as u64)
+                .context("Media response length overflow")?;
+            if expected_length.is_some_and(|length| next_received > length) {
+                drop(output);
+                clear_resumable_partial(&partial_path)?;
+                bail!("Media response exceeded its declared length");
+            }
             output.write_all(&chunk)?;
-            received += chunk.len() as u64;
-            if received.saturating_sub(last_reported) >= 512 * 1024 {
-                let count = downloaded + received;
+            received = next_received;
+            let count = downloaded
+                .checked_add(received)
+                .context("Media download length overflow")?;
+            if count.saturating_sub(last_reported) >= 512 * 1024 {
                 let progress = total
                     .filter(|n| *n > 0)
                     .map(|n| {
@@ -451,24 +458,23 @@ pub(super) fn stream_media_response_to_file(
                     format!("{} [{}]", label, human_bytes(count)),
                     progress,
                 );
-                last_reported = received;
+                last_reported = count;
             }
         }
         if received == 0 {
             bail!("Media response was empty");
         }
-        if status == 206 {
-            let range = parse_content_range(&response_headers)?;
-            if range.end.and_then(|n| n.checked_sub(start)).map(|n| n + 1) != Some(received) {
-                drop(output);
-                clear_resumable_partial(&partial_path)?;
-                bail!("Media Range response length mismatch");
-            }
+        if expected_length.is_some_and(|length| received != length) {
+            drop(output);
+            clear_resumable_partial(&partial_path)?;
+            bail!("Media response length mismatch");
         }
         output.flush()?;
         output.sync_data()?;
         drop(output);
-        downloaded = downloaded.saturating_add(received);
+        downloaded = downloaded
+            .checked_add(received)
+            .context("Media download length overflow")?;
 
         if total.is_some_and(|total| downloaded > total) {
             bail!("Media response exceeded its declared total length");

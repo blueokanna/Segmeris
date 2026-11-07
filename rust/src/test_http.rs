@@ -3,6 +3,26 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::{Duration, Instant};
 
+pub(crate) struct TestDirectory(std::path::PathBuf);
+
+impl TestDirectory {
+    pub(crate) fn new(label: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("segmeris-{label}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+
+    pub(crate) fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+impl Drop for TestDirectory {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 pub(crate) fn serve(
     count: usize,
     handler: impl Fn(usize, String, &mut TcpStream) + Send + 'static,

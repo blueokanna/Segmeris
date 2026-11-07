@@ -181,7 +181,8 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                   ),
                   const SizedBox(height: 10),
                   AnimatedContainer(
-                    duration: const Duration(milliseconds: 260),
+                    duration: SegmerisMotion.duration(
+                        context, const Duration(milliseconds: 260)),
                     curve: Curves.easeOutCubic,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -235,7 +236,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: appThemeProfiles.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 12),
+                      separatorBuilder: (_, _) => const SizedBox(width: 12),
                       itemBuilder: (context, index) {
                         final item = appThemeProfiles[index];
                         return ThemePaletteCard(
@@ -258,7 +259,8 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                     children: [
                       for (final item in appThemeProfiles)
                         AnimatedContainer(
-                          duration: const Duration(milliseconds: 220),
+                          duration: SegmerisMotion.duration(
+                              context, const Duration(milliseconds: 220)),
                           curve: Curves.easeOutCubic,
                           margin: const EdgeInsets.symmetric(horizontal: 3),
                           width: profile.id == item.id ? 20 : 6,
@@ -279,7 +281,8 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
             RevealMotion(
               delay: const Duration(milliseconds: 200),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 260),
+                duration: SegmerisMotion.duration(
+                    context, const Duration(milliseconds: 260)),
                 curve: Curves.easeOutCubic,
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
