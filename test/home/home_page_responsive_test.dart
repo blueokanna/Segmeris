@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
@@ -10,6 +11,8 @@ import 'package:segmeris/src/app/app_theme.dart';
 import 'package:segmeris/src/app/download_engine.dart';
 import 'package:segmeris/src/home/home_page.dart';
 import 'package:segmeris/src/home/home_settings_sheet.dart';
+
+import '../support/capability_fixture.dart';
 
 const _settings = AppSettings(
   themeProfileId: 'monet_flow',
@@ -66,7 +69,11 @@ Widget _buildApp(Key captureKey) {
         GlobalCupertinoLocalizations.delegate,
       ],
       theme: _captureTheme(),
-      home: HomePage(settings: _settings, onSettingsChanged: (_) {}),
+      home: HomePage(
+        settings: _settings,
+        onSettingsChanged: (_) {},
+        capabilityProbe: unknownCapabilities,
+      ),
     ),
   );
 }
@@ -159,6 +166,39 @@ void main() {
     await tester.tap(find.widgetWithIcon(IconButton, Icons.tune_rounded));
     await tester.pumpAndSettle();
     expect(find.byType(HomeSettingsSheet), findsOneWidget);
+    final palette = find.byKey(const ValueKey('theme-palette-scroll'));
+    await tester.ensureVisible(palette);
+    await tester.pumpAndSettle();
+    final list = tester.widget<ListView>(palette);
+    expect(list.controller!.offset, 0);
+    await tester.drag(
+      palette,
+      const Offset(-180, 0),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(list.controller!.offset, greaterThan(0));
+    final beforeWheel = list.controller!.offset;
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: tester.getCenter(palette),
+        scrollDelta: const Offset(0, 80),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(list.controller!.offset, greaterThan(beforeWheel));
+    tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(
+      tester.binding.platformDispatcher.clearAccessibilityFeaturesTestValue,
+    );
+    await tester.pump();
+    final beforeButton = list.controller!.offset;
+    final nextTheme = find.byKey(const ValueKey('theme-next'));
+    await tester.ensureVisible(nextTheme);
+    await tester.tap(nextTheme);
+    await tester.pumpAndSettle();
+    expect(list.controller!.offset, greaterThan(beforeButton));
     expect(tester.takeException(), isNull);
     await _capture(find.byKey(captureKey), 'home_settings_mobile.png');
   });

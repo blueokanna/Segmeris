@@ -1,6 +1,48 @@
 //! HLS resource planning, decryption, cache verification and segment assembly.
 use super::*;
 
+#[derive(Debug)]
+pub(super) struct HlsHttpError {
+    status: u16,
+    missing_object: bool,
+}
+
+impl HlsHttpError {
+    fn is_permanent(&self) -> bool {
+        (400..500).contains(&self.status) && !matches!(self.status, 408 | 429)
+    }
+}
+
+impl std::fmt::Display for HlsHttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HTTP {}", self.status)?;
+        match self.status {
+            404 if self.missing_object => write!(f, ": NoSuchKey; the origin reports that this object does not exist. Obtain a current media URL from the source page"),
+            404 | 410 => write!(f, ": resource not found. Check the URL or obtain a current link from the source page"),
+            401 | 403 => write!(f, ": the server refused access. Check the session, permissions and link validity"),
+            _ => Ok(()),
+        }
+    }
+}
+
+impl std::error::Error for HlsHttpError {}
+
+pub(super) fn hls_http_error(status: u16, body: &[u8]) -> anyhow::Error {
+    let missing_object = status == 404
+        && body.len() <= 16 * 1024
+        && crate::xml::parse_xml(body).is_ok_and(|root| {
+            root.name == "Error"
+                && root
+                    .child("Code")
+                    .is_some_and(|code| code.text.trim() == "NoSuchKey")
+        });
+    HlsHttpError {
+        status,
+        missing_object,
+    }
+    .into()
+}
+
 struct HlsInitialization {
     bytes: Vec<u8>,
     digest: String,
@@ -54,6 +96,13 @@ pub(super) fn download_and_merge(
             request_context.clone(),
         ) {
             Ok(()) => return Ok(()),
+            Err(error)
+                if error
+                    .downcast_ref::<HlsHttpError>()
+                    .is_some_and(HlsHttpError::is_permanent) =>
+            {
+                return Err(error)
+            }
             Err(error) => {
                 warn!(
                     "Multi-thread segment download failed with concurrency {}. Retrying single-threaded: {}",
@@ -129,7 +178,7 @@ pub(super) fn hls_response_bytes(
     byte_range: Option<(u64, u64)>,
 ) -> Result<Vec<u8>> {
     if status != 200 && status != 206 {
-        bail!("Unexpected HLS resource HTTP status {status}");
+        return Err(hls_http_error(status, &data));
     }
     let Some((start, end)) = byte_range else {
         if status == 206 {
@@ -897,6 +946,83 @@ mod regression_tests {
     use crate::test_http::{response, serve};
 
     #[test]
+    fn missing_origin_object_fails_before_selecting_a_transcoder() {
+        let (url, server) = serve(1, |_, _, socket| {
+            let body = b"<?xml version=\"1.0\"?><Error><Code>NoSuchKey</Code><Message>private server detail</Message></Error>";
+            write!(
+                socket,
+                "HTTP/1.1 404 Not Found\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .unwrap();
+            socket.write_all(body).unwrap();
+        });
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = events.clone();
+        let reporter: ProgressReporter =
+            Arc::new(move |event| captured.lock().unwrap().push(event));
+        let directory = crate::test_http::TestDirectory::new("missing-origin");
+        let output = directory.path().join("video.mp4");
+        let error = run_hls_pipeline(
+            &reporter,
+            &url,
+            &RequestContext::default(),
+            4,
+            output.to_str().unwrap(),
+            3,
+            0,
+            0,
+            false,
+        )
+        .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("HTTP 404: NoSuchKey"), "{message}");
+        assert!(!message.contains("private server detail"));
+        assert!(!output.exists());
+        assert!(events
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|event| !event.message.contains("backend")));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn permanent_segment_errors_do_not_restart_in_single_thread_mode() {
+        let (url, server) = serve(1, |_, _, socket| {
+            socket
+                .write_all(
+                    b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
+        });
+        let (_, Playlist::MediaPlaylist(playlist)) =
+            parse_playlist(b"#EXTM3U\n#EXTINF:6,\nsegment.ts\n#EXT-X-ENDLIST\n").unwrap()
+        else {
+            panic!("expected media playlist")
+        };
+        let directory = crate::test_http::TestDirectory::new("permanent-hls-error");
+        let output = directory.path().join("video.ts");
+        let error = download_and_merge(
+            playlist,
+            Some(Url::parse(&url).unwrap()),
+            4,
+            3,
+            output.to_str().unwrap(),
+            directory.path(),
+            "v",
+            &MultiProgress::new(),
+            noop_progress_reporter(),
+            RequestContext::default(),
+        )
+        .unwrap_err();
+        assert!(error.downcast_ref::<HlsHttpError>().is_some(), "{error:#}");
+        assert!(format!("{error:#}").contains("HTTP 403"));
+        assert!(!output.exists());
+        server.join().unwrap();
+    }
+
+    #[test]
     fn partial_hls_responses_require_the_requested_range_and_exact_length() {
         for (range, body, expected_error) in [
             ("", "abc", "omitted the Content-Range"),
@@ -977,10 +1103,7 @@ mod regression_tests {
             3,
         )
         .unwrap_err();
-        assert!(
-            format!("{error:#}").contains("HTTP status 404"),
-            "{error:#}"
-        );
+        assert!(format!("{error:#}").contains("HTTP 404"), "{error:#}");
         server.join().unwrap();
     }
 
@@ -994,7 +1117,7 @@ mod regression_tests {
                 .unwrap();
         });
         let error = download_playlist_with_url(&url, &RequestContext::default()).unwrap_err();
-        assert_eq!(error.to_string(), "Failed to download playlist: HTTP 404");
+        assert!(format!("{error:#}").contains("HTTP 404"), "{error:#}");
         server.join().unwrap();
     }
 

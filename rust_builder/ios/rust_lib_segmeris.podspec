@@ -15,6 +15,7 @@ Builds and links the Segmeris Rust runtime for Flutter.
 
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
+  s.frameworks = 'AVFoundation', 'VideoToolbox', 'CoreMedia', 'CoreVideo'
   s.dependency 'Flutter'
   s.platform = :ios, '11.0'
 

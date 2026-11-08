@@ -8,6 +8,8 @@ use crate::hls::{
 };
 use crate::media_probe::*;
 use crate::net::SyncHttpClient;
+mod acceleration;
+use acceleration::{detect_acceleration, push_accel_encode_args, AccelType};
 mod hls;
 mod transfer;
 use transfer::*;
@@ -44,55 +46,17 @@ use jni::JavaVM;
 
 pub(crate) type ProgressReporter = Arc<dyn Fn(ProgressUpdate) + Send + Sync>;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AccelType {
-    Nvidia,
-    Amd,
-    IntelQuickSync,
-    LinuxVaapi,
-    AppleVideoToolbox,
-    Cpu,
-}
-
-impl AccelType {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Nvidia => "NVIDIA NVENC",
-            Self::Amd => "AMD AMF",
-            Self::IntelQuickSync => "Intel Quick Sync",
-            Self::LinuxVaapi => "Linux VAAPI",
-            Self::AppleVideoToolbox => "Apple VideoToolbox",
-            Self::Cpu => "CPU libx264",
-        }
-    }
-
-    fn encoder(self) -> &'static str {
-        match self {
-            Self::Nvidia => "h264_nvenc",
-            Self::Amd => "h264_amf",
-            Self::IntelQuickSync => "h264_qsv",
-            Self::LinuxVaapi => "h264_vaapi",
-            Self::AppleVideoToolbox => "h264_videotoolbox",
-            Self::Cpu => "libx264",
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 enum TranscoderKind {
     Ffmpeg(AccelType),
     AndroidHardware,
     /// Native iOS AVFoundation / VideoToolbox hardware H.264 pipeline.
-    /// AVAssetWriter selects the hardware encoder automatically on every
-    /// Apple device (A-series and M-series chips); there is no software
-    /// H.264 encoder on iOS, so this is the only correct backend there.
     IosVideoToolbox,
 }
 
-// FFI into the native iOS transcoder (`ios/Runner/VideoToolboxBridge.m`).
+// FFI into the native iOS transcoder (`rust_builder/ios/Classes/VideoToolboxBridge.m`).
 //
-// The symbols are provided by the Runner app target, which links the Rust
-// static library; they only exist on iOS, hence the `cfg` gate.
+// The iOS CocoaPods target links the bridge and the Rust static library together.
 #[cfg(target_os = "ios")]
 unsafe extern "C" {
     fn segmeris_videotoolbox_available() -> i32;
@@ -1103,7 +1067,7 @@ fn media_transcoder_class<'local>(env: &mut JNIEnv<'local>) -> Result<JClass<'lo
         .map_err(|e| anyhow!("Failed to get ClassLoader: {:?}", e))?
         .l()
         .map_err(|e| anyhow!("ClassLoader is not an object: {:?}", e))?;
-    let class_name = jni_string!(env, "com.bluevale.segmeris.MediaTranscoder", "class_name");
+    let class_name = jni_string!(env, "com.blue.segmeris.MediaTranscoder", "class_name");
     let loaded_class = env
         .call_method(
             &class_loader,
@@ -2823,69 +2787,6 @@ pub(crate) fn run_hls_pipeline(
     let audio_bitrate = audio_bitrate.max(0) as u32;
     let multi_progress = MultiProgress::new();
 
-    let check_pb = multi_progress.add(ProgressBar::new_spinner());
-    check_pb.set_style(
-        ProgressStyle::with_template("{spinner:.green} {msg}")?
-            .tick_strings(&["-", "\\", "|", "/"]),
-    );
-    check_pb.set_message("Selecting transcoder backend...");
-    check_pb.enable_steady_tick(Duration::from_millis(100));
-
-    emit_progress(reporter, "Selecting transcoder backend...", 0.01);
-
-    let backend = select_transcoder_backend()?;
-    let requires_reencode = video_bitrate > 0 || audio_bitrate > 0;
-    match backend {
-        TranscoderKind::Ffmpeg(accel) if requires_reencode => {
-            check_pb.finish_with_message(format!("Selected FFmpeg backend ({})", accel.label()));
-            emit_progress(
-                reporter,
-                format!("Selected transcoder backend: {}", accel.label()),
-                0.015,
-            );
-        }
-        TranscoderKind::Ffmpeg(_) => {
-            check_pb.finish_with_message("Selected FFmpeg stream-copy backend");
-            emit_progress(
-                reporter,
-                "Selected FFmpeg stream copy (no re-encoding)",
-                0.015,
-            );
-        }
-        TranscoderKind::AndroidHardware if requires_reencode => {
-            check_pb.finish_with_message("Selected Android MediaCodec backend");
-            emit_progress(
-                reporter,
-                "Selected hardware encoder: Android MediaCodec",
-                0.015,
-            );
-        }
-        TranscoderKind::AndroidHardware => {
-            check_pb.finish_with_message("Selected Android MediaMuxer pipeline");
-            emit_progress(
-                reporter,
-                "Selected Android MediaMuxer (MediaCodec fallback if remux fails)",
-                0.015,
-            );
-        }
-        TranscoderKind::IosVideoToolbox if requires_reencode => {
-            check_pb.finish_with_message("Selected iOS VideoToolbox hardware encoder");
-            emit_progress(
-                reporter,
-                "Selected hardware encoder: Apple VideoToolbox (A/M-series)",
-                0.015,
-            );
-        }
-        TranscoderKind::IosVideoToolbox => {
-            check_pb.finish_with_message("Selected iOS AVFoundation remux");
-            emit_progress(
-                reporter,
-                "Selected iOS AVFoundation (hardware H.264 if re-encoding)",
-                0.015,
-            );
-        }
-    }
-
     info!("M3U8 URL: {}", url);
 
     let download_pb = multi_progress.add(ProgressBar::new_spinner());
@@ -2903,6 +2804,69 @@ pub(crate) fn run_hls_pipeline(
     download_pb.finish_with_message("Parsed M3U8 playlist");
 
     let base_url = Some(playlist_base_url(&effective_playlist_url));
+
+    let check_pb = multi_progress.add(ProgressBar::new_spinner());
+    check_pb.set_style(
+        ProgressStyle::with_template("{spinner:.green} {msg}")?
+            .tick_strings(&["-", "\\", "|", "/"]),
+    );
+    check_pb.set_message("Selecting transcoder backend...");
+    check_pb.enable_steady_tick(Duration::from_millis(100));
+
+    emit_progress(reporter, "Selecting transcoder backend...", 0.025);
+
+    let backend = select_transcoder_backend()?;
+    let requires_reencode = video_bitrate > 0 || audio_bitrate > 0;
+    match backend {
+        TranscoderKind::Ffmpeg(accel) if requires_reencode => {
+            check_pb.finish_with_message(format!("Selected FFmpeg backend ({})", accel.label()));
+            emit_progress(
+                reporter,
+                format!("Selected transcoder backend: {}", accel.label()),
+                0.03,
+            );
+        }
+        TranscoderKind::Ffmpeg(_) => {
+            check_pb.finish_with_message("Selected FFmpeg stream-copy backend");
+            emit_progress(
+                reporter,
+                "Selected FFmpeg stream copy (no re-encoding)",
+                0.03,
+            );
+        }
+        TranscoderKind::AndroidHardware if requires_reencode => {
+            check_pb.finish_with_message("Selected Android MediaCodec backend");
+            emit_progress(
+                reporter,
+                "Selected hardware encoder: Android MediaCodec",
+                0.03,
+            );
+        }
+        TranscoderKind::AndroidHardware => {
+            check_pb.finish_with_message("Selected Android MediaMuxer pipeline");
+            emit_progress(
+                reporter,
+                "Selected Android MediaMuxer (MediaCodec fallback if remux fails)",
+                0.03,
+            );
+        }
+        TranscoderKind::IosVideoToolbox if requires_reencode => {
+            check_pb.finish_with_message("Selected iOS VideoToolbox hardware encoder");
+            emit_progress(
+                reporter,
+                "Selected hardware encoder: Apple VideoToolbox (A/M-series)",
+                0.03,
+            );
+        }
+        TranscoderKind::IosVideoToolbox => {
+            check_pb.finish_with_message("Selected iOS AVFoundation remux");
+            emit_progress(
+                reporter,
+                "Selected iOS AVFoundation (hardware H.264 if re-encoding)",
+                0.03,
+            );
+        }
+    }
 
     let temp_root = if cfg!(target_os = "android") {
         #[cfg(target_os = "android")]
@@ -5016,9 +4980,6 @@ fn merge_media_streams(
 ) -> Result<()> {
     let requires_reencode = video_bitrate > 0 || audio_bitrate > 0;
 
-    // Failure note for the Android merge attempts, surfaced in the final
-    // error when no backend (and no FFmpeg) could package the streams, so
-    // the user sees what actually failed instead of a misleading hint.
     #[cfg(target_os = "android")]
     let mut android_merge_error: Option<String> = None;
 
@@ -5199,9 +5160,6 @@ fn merge_media_streams(
         }
     };
 
-    // Prefer concat demuxer segment lists (written by download_and_merge_once)
-    // over the naively-concatenated TS files, for the same discontinuity reasons
-    // described in convert_to_mp4.
     let video_concat = concat_list_for_input(video_path);
     let audio_concat = concat_list_for_input(audio_path);
 
@@ -5305,12 +5263,6 @@ fn run_ffmpeg_merge(
         "-hide_banner".to_string(),
         "-loglevel".to_string(),
         "error".to_string(),
-        // Generate missing PTS and ignore DTS errors so independently-encoded
-        // HLS segments that were naively concatenated (PTS restarts at zero at
-        // every segment boundary) are re-stamped into a continuous timeline.
-        // `+genpts` alone only fills absent timestamps; `+igndts` additionally
-        // stops ffmpeg from dropping frames when the DTS goes backwards, which
-        // was a second root cause of "only the first few seconds survive".
         "-fflags".to_string(),
         "+genpts+igndts".to_string(),
     ];
@@ -5377,8 +5329,6 @@ fn run_ffmpeg_merge(
     ]);
     args.push(output_path.to_string());
 
-    // Bound the merge/encode run so a hung hardware encoder cannot stall
-    // the download indefinitely; derive the timeout from the input length.
     let input_duration = probe_media_duration(video_path, ffmpeg_path);
     let hardware = requires_reencode && accel != AccelType::Cpu;
     let timeout = ffmpeg_transcode_timeout(input_duration, hardware);
@@ -5481,9 +5431,7 @@ fn score_candidate(
     if candidate.width > 0 {
         score += candidate.width.min(3840) / 24;
     }
-    // A quality label only stands in for the resolution when the stream
-    // itself did not report one (label-only HLS variants); with a real
-    // height the number above is the honest signal.
+
     if candidate.height == 0
         && (lower_quality.contains("1080")
             || lower_quality.contains("720")
@@ -5556,11 +5504,6 @@ pub(crate) fn request_headers(
     request_context: &RequestContext,
 ) -> Result<Vec<(String, String)>> {
     let mut headers: Vec<(String, String)> = Vec::new();
-    // A *complete* browser UA string matters: both reference
-    // downloaders (lanyeeee/bilibili-video-downloader,
-    // Bili23-Downloader) ship a full Chrome/Edge user agent — a
-    // truncated "Mozilla/… AppleWebKit/…" string is a classic bot
-    // marker that risk control flags.
     let user_agent = if request_context.user_agent.trim().is_empty() {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
     } else {
@@ -5597,10 +5540,6 @@ pub(crate) fn request_headers(
         validate_header_value(&cookie, "cookie")?;
         headers.push(("cookie".to_string(), cookie));
     } else if is_bilibili_domain(source_url.domain().unwrap_or_default()) {
-        // Follow lanyeeee/bilibili-video-downloader: even without a
-        // login, send a "SESSDATA=" placeholder cookie. Bilibili's
-        // risk control is markedly stricter towards requests that
-        // carry no cookie at all — a browser always has one.
         headers.push(("cookie".to_string(), "SESSDATA=".to_string()));
     }
 
@@ -5699,7 +5638,8 @@ fn download_playlist_with_url(
         match result {
             Ok(((status, _, body), effective_url)) => {
                 if !(200..300).contains(&status) {
-                    last_error = Some(anyhow!("Failed to download playlist: HTTP {}", status));
+                    last_error =
+                        Some(hls_http_error(status, &body).context("Failed to download playlist"));
                     if !matches!(status, 408 | 429 | 500..=599) {
                         break;
                     }
@@ -5733,8 +5673,7 @@ fn select_transcoder_backend() -> Result<TranscoderKind> {
         return Ok(TranscoderKind::AndroidHardware);
     }
 
-    // iOS has no embedded FFmpeg and no software H.264 encoder: the only
-    // backend is the native AVFoundation / VideoToolbox hardware pipeline.
+    // The iOS runner links the native AVFoundation / VideoToolbox bridge.
     #[cfg(target_os = "ios")]
     if ios_videotoolbox::available() {
         return Ok(TranscoderKind::IosVideoToolbox);
@@ -5762,108 +5701,6 @@ fn select_transcoder_backend() -> Result<TranscoderKind> {
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Identifies a set of HLS segment files on disk that the Android
-/// segment-based transcoder consumes one-by-one (the equivalent of feeding
-/// ffmpeg's concat demuxer). On non-Android platforms this is ignored.
-fn detect_acceleration(ffmpeg_path: &Path) -> Result<AccelType> {
-    let output = run_ffmpeg(
-        ffmpeg_path,
-        &["-hide_banner".to_string(), "-encoders".to_string()],
-        Duration::from_secs(30),
-    )?;
-
-    let list = String::from_utf8_lossy(&output.stdout);
-    let candidates = [
-        AccelType::Nvidia,
-        AccelType::Amd,
-        AccelType::IntelQuickSync,
-        AccelType::LinuxVaapi,
-        AccelType::AppleVideoToolbox,
-    ];
-    for candidate in candidates {
-        if list.contains(candidate.encoder()) && probe_ffmpeg_encoder(ffmpeg_path, candidate) {
-            return Ok(candidate);
-        }
-    }
-    if list.contains(AccelType::Cpu.encoder()) && probe_ffmpeg_encoder(ffmpeg_path, AccelType::Cpu)
-    {
-        return Ok(AccelType::Cpu);
-    }
-    bail!("FFmpeg is installed but no usable H.264 encoder passed the runtime probe")
-}
-
-fn probe_ffmpeg_encoder(ffmpeg_path: &Path, accel: AccelType) -> bool {
-    let mut args = vec![
-        "-hide_banner".to_string(),
-        "-loglevel".to_string(),
-        "error".to_string(),
-        "-f".to_string(),
-        "lavfi".to_string(),
-        "-i".to_string(),
-        "color=c=black:s=64x64:r=1".to_string(),
-        "-frames:v".to_string(),
-        "1".to_string(),
-        "-an".to_string(),
-        "-c:v".to_string(),
-        accel.encoder().to_string(),
-    ];
-    match accel {
-        AccelType::LinuxVaapi => args.extend([
-            "-vaapi_device".to_string(),
-            "/dev/dri/renderD128".to_string(),
-            "-vf".to_string(),
-            "format=nv12,hwupload".to_string(),
-        ]),
-
-        AccelType::IntelQuickSync => args.extend([
-            "-init_hw_device".to_string(),
-            "qsv=hw".to_string(),
-            "-filter_hw_device".to_string(),
-            "hw".to_string(),
-            "-vf".to_string(),
-            "format=nv12,hwupload=extra_hw_frames=64".to_string(),
-        ]),
-
-        AccelType::Nvidia | AccelType::Amd | AccelType::AppleVideoToolbox | AccelType::Cpu => {}
-    }
-    args.extend(["-f".to_string(), "null".to_string(), "-".to_string()]);
-
-    match run_ffmpeg(ffmpeg_path, &args, Duration::from_secs(30)) {
-        Ok(output) => output.status.success(),
-        Err(_) => false,
-    }
-}
-
-/// Appends the hardware-acceleration specific arguments (device init, frame
-/// upload filters, encoder presets) for a real transcode run.
-fn push_accel_encode_args(args: &mut Vec<String>, accel: AccelType) {
-    match accel {
-        AccelType::Nvidia => args.extend([
-            "-preset".to_string(),
-            "p4".to_string(),
-            "-rc".to_string(),
-            "vbr".to_string(),
-        ]),
-        AccelType::Cpu => args.extend(["-preset".to_string(), "medium".to_string()]),
-        AccelType::LinuxVaapi => args.extend([
-            "-vaapi_device".to_string(),
-            "/dev/dri/renderD128".to_string(),
-            "-vf".to_string(),
-            "format=nv12,hwupload".to_string(),
-        ]),
-        AccelType::IntelQuickSync => args.extend([
-            "-init_hw_device".to_string(),
-            "qsv=hw".to_string(),
-            "-filter_hw_device".to_string(),
-            "hw".to_string(),
-            "-vf".to_string(),
-            "format=nv12,hwupload=extra_hw_frames=64".to_string(),
-        ]),
-        // AMF and VideoToolbox accept software frames and upload internally.
-        AccelType::Amd | AccelType::AppleVideoToolbox => {}
-    }
-}
-
 /// Returns the concat-demuxer list file that `download_and_merge_once` writes
 /// next to the merged stream (e.g. `temp_primary.ts.concat.txt`), when present.
 ///
@@ -5996,9 +5833,6 @@ fn convert_to_mp4(
         return Ok(());
     }
 
-    // Mobile HLS must keep the individual segment boundaries available to
-    // the platform muxer. The native TS remuxer rebuilds timing from frame
-    // counts and cannot faithfully preserve per-segment timestamp resets.
     if !requires_reencode
         && is_mpeg_ts_file(Path::new(input_ts))
         && !cfg!(any(target_os = "android", target_os = "ios"))
@@ -6006,12 +5840,6 @@ fn convert_to_mp4(
         emit_progress(&reporter, "Remuxing TS → MP4 (stream copy)", 0.96);
         match crate::remux::remux_ts_to_mp4(Path::new(input_ts), Path::new(output_path)) {
             Ok(summary) => {
-                // Reject a truncated *and* a stretched timeline. The native
-                // remuxer builds the video track by counting pictures on one
-                // fixed interval, so a stream whose declared frame rate lies
-                // would otherwise pass with a video track far longer than the
-                // audio (and than the playlist), drifting seconds out of sync.
-                // A rejected file falls through to the platform transcoder.
                 let duration_ok = expected_duration.is_none_or(|expected| {
                     let shortest = (expected * 0.97).max(expected - 5.0);
                     let longest = expected + (expected * 0.03).max(5.0);

@@ -506,41 +506,43 @@ class RuntimeCapabilitiesPanel extends StatelessWidget {
         future: capabilities,
         builder: (context, snapshot) {
           final report = snapshot.data;
-          return AnimatedSize(
+          final content = AnimatedSwitcher(
             duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
+            switchInCurve: SegmerisMotion.emphasizedDecelerate,
+            switchOutCurve: SegmerisMotion.emphasizedAccelerate,
+            transitionBuilder: segmerisSharedAxisTransition,
+            child: report == null
+                ? Row(
+                    key: const ValueKey('capabilities-loading'),
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          color: cs.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          l.text('probing_capabilities'),
+                          style: t.textTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
+                  )
+                : _RuntimeCapabilityContent(
+                    key: const ValueKey('capabilities-ready'),
+                    report: report,
+                  ),
+          );
+          if (MediaQuery.disableAnimationsOf(context)) return content;
+          return AnimatedSize(
+            duration: SegmerisMotion.medium,
             curve: SegmerisMotion.emphasized,
             alignment: Alignment.topCenter,
-            child: AnimatedSwitcher(
-              duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
-              switchInCurve: SegmerisMotion.emphasizedDecelerate,
-              switchOutCurve: SegmerisMotion.emphasizedAccelerate,
-              transitionBuilder: segmerisSharedAxisTransition,
-              child: report == null
-                  ? Row(
-                      key: const ValueKey('capabilities-loading'),
-                      children: [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.4,
-                            color: cs.primary,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            l.text('probing_capabilities'),
-                            style: t.textTheme.bodyMedium,
-                          ),
-                        ),
-                      ],
-                    )
-                  : _RuntimeCapabilityContent(
-                      key: const ValueKey('capabilities-ready'),
-                      report: report,
-                    ),
-            ),
+            child: content,
           );
         },
       ),
@@ -558,7 +560,7 @@ class _RuntimeCapabilityContent extends StatelessWidget {
     final l = AppLocalizations.of(context);
     final t = Theme.of(context);
     final cs = t.colorScheme;
-    final encoders = report.videoEncoders.take(4).toList();
+    final encoders = report.videoEncoders;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -631,6 +633,40 @@ class _RuntimeCapabilityContent extends StatelessWidget {
               ),
             ),
         ],
+        if (report.unavailableVideoEncoders.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Material(
+            type: MaterialType.transparency,
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(bottom: 8),
+              title: Text(
+                l.text('unavailable_encoders'),
+                style: t.textTheme.labelLarge,
+              ),
+              subtitle: Text(
+                l.text('unavailable_encoders_hint'),
+                style: t.textTheme.bodySmall,
+              ),
+              children: [
+                for (final encoder in report.unavailableVideoEncoders)
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.info_outline_rounded, size: 18),
+                    title: Text(encoder, style: t.textTheme.bodySmall),
+                    subtitle: switch (report.encoderDiagnostics[encoder]) {
+                      final String reason => Text(
+                        l.text(reason),
+                        style: t.textTheme.bodySmall,
+                      ),
+                      _ => null,
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ],
         if (report.videoDecoders.isNotEmpty) ...[
           const SizedBox(height: 10),
           Text(
@@ -654,7 +690,7 @@ class _RuntimeCapabilityContent extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  note,
+                  l.text(note),
                   style: t.textTheme.bodySmall?.copyWith(
                     color: cs.onSurfaceVariant,
                   ),

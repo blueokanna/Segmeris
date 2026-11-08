@@ -12,6 +12,10 @@ cd /D "%CARGOKIT_TOOL_TEMP_DIR%"
 
 SET BUILD_TOOL_PKG_DIR=%BASEDIR%build_tool
 SET DART=%FLUTTER_ROOT%\bin\cache\dart-sdk\bin\dart
+if not exist "%DART%.exe" (
+    echo Flutter Dart SDK was not found. Set FLUTTER_ROOT to the Flutter SDK directory. 1>&2
+    exit /b 1
+)
 
 set BUILD_TOOL_PKG_DIR_POSIX=%BUILD_TOOL_PKG_DIR:\=/%
 
@@ -44,6 +48,8 @@ SET PRECOMPILED=bin\build_tool_runner.dill
 REM To detect changes in package we compare output of DIR /s (recursive)
 set PREV_PACKAGE_INFO=.dart_tool\package_info.prev
 set CUR_PACKAGE_INFO=.dart_tool\package_info.cur
+
+if not exist .dart_tool mkdir .dart_tool
 
 DIR "%BUILD_TOOL_PKG_DIR%" /s > "%CUR_PACKAGE_INFO%_orig"
 
@@ -78,14 +84,21 @@ REM which means  we need to do pub get and precompile
 if not exist "%PRECOMPILED%" (
     echo Running pub get in "%cd%"
     "%DART%" pub get --no-precompile
+    if errorlevel 1 exit /b !ERRORLEVEL!
     "%DART%" compile kernel bin/build_tool_runner.dart
+    if errorlevel 1 exit /b !ERRORLEVEL!
 )
 
 "%DART%" "%PRECOMPILED%" %*
+set BUILD_EXIT_CODE=%ERRORLEVEL%
 
 REM 253 means invalid snapshot version.
-If %ERRORLEVEL% equ 253 (
+If %BUILD_EXIT_CODE% equ 253 (
     "%DART%" pub get --no-precompile
+    if errorlevel 1 exit /b !ERRORLEVEL!
     "%DART%" compile kernel bin/build_tool_runner.dart
+    if errorlevel 1 exit /b !ERRORLEVEL!
     "%DART%" "%PRECOMPILED%" %*
+    exit /b !ERRORLEVEL!
 )
+exit /b %BUILD_EXIT_CODE%

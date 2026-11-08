@@ -1,0 +1,61 @@
+// C interface used by the Rust iOS download engine.
+
+#ifndef VideoToolboxBridge_h
+#define VideoToolboxBridge_h
+
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/// Initializes a 720p H.264 session; requires hardware on iOS 17.4 and newer.
+/// Returns 1 on success, 0 otherwise. Earlier iOS versions cannot report hardware selection.
+int segmeris_videotoolbox_available(void);
+
+/// Transcode a single input file (MPEG-TS, MP4, ...) into an MP4 container.
+/// The video track is re-encoded with the hardware H.264 encoder.
+///
+/// - `video_bitrate`: target video bitrate in kbps; 0 = keep source bitrate
+///   (a sane default is derived from the resolution).
+/// - `audio_bitrate`: target audio bitrate in kbps; 0 = passthrough the
+///   original audio (must be AAC to mux into MP4, otherwise it is encoded).
+/// - `expected_ms`: expected output duration in milliseconds; when > 0 the
+///   produced file is checked for truncation and fails if too short.
+/// - On failure returns 0 and writes a UTF-8 error string into `errbuf`.
+int segmeris_videotoolbox_transcode(const char *input,
+                                      const char *output,
+                                      int video_bitrate,
+                                      int audio_bitrate,
+                                      long long expected_ms,
+                                      char *errbuf,
+                                      size_t errbuf_len);
+
+/// Merge a separate video file and audio file into one MP4, re-encoding the
+/// video with the hardware H.264 encoder and muxing the audio track.
+int segmeris_videotoolbox_mux(const char *video,
+                                const char *audio,
+                                const char *output,
+                                long long expected_ms,
+                                char *errbuf,
+                                size_t errbuf_len);
+
+/// Assemble an ordered set of per-segment media files
+/// (`dir`/`prefix_00000.part` .. `prefix_<count-1>.part`) into one MP4.
+/// Every segment is loaded through its OWN AVURLAsset and laid onto a single
+/// continuous timeline, so the per-segment PTS resets that break a
+/// byte-concatenated TS never reach one reader. Used by the Rust engine for
+/// HLS TS sources (the fMP4 fast path bypasses this entirely).
+int segmeris_videotoolbox_merge_segments(const char *dir,
+                                           const char *prefix,
+                                           int count,
+                                           const char *output,
+                                           long long expected_ms,
+                                           char *errbuf,
+                                           size_t errbuf_len);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* VideoToolboxBridge_h */

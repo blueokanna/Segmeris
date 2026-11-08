@@ -7,65 +7,74 @@ import 'package:segmeris/src/app/runtime_capabilities.dart';
 import 'package:segmeris/src/home/home_widgets.dart';
 
 void main() {
-  testWidgets('renders a completed runtime capability report on narrow screens',
-      (tester) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(320, 640);
-    addTearDown(tester.view.reset);
+  testWidgets(
+    'renders a completed runtime capability report on narrow screens',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 640);
+      addTearDown(tester.view.reset);
 
-    const report = PlatformCapabilitySnapshot(
-      platform: 'windows',
-      transcoderBackend: 'FFmpeg / NVIDIA NVENC',
-      hardwareAccelerated: true,
-      videoEncoders: [
-        'NVIDIA NVENC',
-        'Intel Quick Sync',
-        'AMD AMF',
-        'CPU libx264',
-        'This fifth encoder is intentionally not rendered',
-      ],
-      videoDecoders: ['H.264 hardware decoder', 'HEVC hardware decoder'],
-      ffmpegAvailable: true,
-      ytdlpAvailable: true,
-      notes: ['Capabilities were verified with runtime probes.'],
-    );
-
-    await tester.pumpWidget(
-      MaterialApp(
-        locale: const Locale('en'),
-        supportedLocales: AppLocalizations.supportedLocales,
-        localizationsDelegates: const [
-          AppLocalizations.delegate,
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
+      const report = PlatformCapabilitySnapshot(
+        platform: 'windows',
+        transcoderBackend: 'FFmpeg / NVIDIA NVENC',
+        hardwareAccelerated: true,
+        videoEncoders: [
+          'NVIDIA NVENC',
+          'Intel Quick Sync',
+          'AMD AMF',
+          'CPU libx264',
+          'Linux V4L2 M2M',
         ],
-        theme: buildAppTheme(appThemeProfiles.first, Brightness.light),
-        home: Scaffold(
-          body: SingleChildScrollView(
-            padding: const EdgeInsets.all(12),
-            child: RuntimeCapabilitiesPanel(
-              capabilities: Future.value(report),
+        videoDecoders: ['H.264 hardware decoder', 'HEVC hardware decoder'],
+        unavailableVideoEncoders: ['Rockchip MPP'],
+        ffmpegAvailable: true,
+        ytdlpAvailable: true,
+        notes: ['Capabilities were verified with runtime probes.'],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: const Locale('en'),
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          theme: buildAppTheme(appThemeProfiles.first, Brightness.light),
+          home: Scaffold(
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(12),
+              child: RuntimeCapabilitiesPanel(
+                capabilities: Future.value(report),
+              ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('capabilities-ready')), findsOneWidget);
-    expect(find.text('Runtime capabilities'), findsOneWidget);
-    expect(find.textContaining('FFmpeg / NVIDIA NVENC'), findsOneWidget);
-    expect(find.textContaining('FFmpeg'), findsWidgets);
-    expect(find.textContaining('yt-dlp'), findsOneWidget);
-    expect(find.text('NVIDIA NVENC'), findsOneWidget);
-    expect(find.text('This fifth encoder is intentionally not rendered'),
-        findsNothing);
-    expect(tester.takeException(), isNull);
-  });
+      expect(find.byKey(const ValueKey('capabilities-ready')), findsOneWidget);
+      expect(find.text('Runtime capabilities'), findsOneWidget);
+      expect(find.textContaining('FFmpeg / NVIDIA NVENC'), findsOneWidget);
+      expect(find.textContaining('FFmpeg'), findsWidgets);
+      expect(find.textContaining('yt-dlp'), findsOneWidget);
+      expect(find.text('NVIDIA NVENC'), findsOneWidget);
+      expect(find.text('Linux V4L2 M2M'), findsOneWidget);
+      expect(find.text('Rockchip MPP'), findsNothing);
+      final failedProbes = find.text('Encoders that did not pass the probe');
+      await tester.ensureVisible(failedProbes);
+      await tester.tap(failedProbes);
+      await tester.pumpAndSettle();
+      expect(find.text('Rockchip MPP'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
-  testWidgets('renders unreported runtime capabilities as unknown',
-      (tester) async {
+  testWidgets('renders unreported runtime capabilities as unknown', (
+    tester,
+  ) async {
     const report = PlatformCapabilitySnapshot(
       platform: 'web',
       transcoderBackend: 'API server (not reported)',
@@ -89,9 +98,7 @@ void main() {
         ],
         theme: buildAppTheme(appThemeProfiles.first, Brightness.light),
         home: Scaffold(
-          body: RuntimeCapabilitiesPanel(
-            capabilities: Future.value(report),
-          ),
+          body: RuntimeCapabilitiesPanel(capabilities: Future.value(report)),
         ),
       ),
     );

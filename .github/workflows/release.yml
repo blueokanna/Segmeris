@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - testchain
     tags:
       - "v*"
   pull_request:
@@ -48,7 +49,9 @@ jobs:
       - name: Validate release versions
         env:
           RELEASE_TAG: ${{ inputs.tag_name }}
-        run: python3 scripts/check_versions.py
+        run: |
+          python3 scripts/check_versions.py
+          python3 scripts/check_app_identity.py
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -129,7 +132,7 @@ jobs:
 
   build-android:
     name: Build Android APKs
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -223,25 +226,37 @@ jobs:
           build_apk() {
             local target_platform="$1"
             local artifact_name="$2"
+            local abi="$3"
             local log="build-$target_platform.log"
-            flutter build apk --release --target-platform="$target_platform" 2>&1 | tee "$log"
+            flutter build apk --release --split-per-abi --target-platform="$target_platform" 2>&1 | tee "$log"
             # cargokit logs Rust compile failures and lets Gradle finish anyway, which
             # would ship an APK carrying the previous build's jniLibs.
             if grep -q -E "Cargokit BuildTool failed|failed to run custom build command|could not compile" "$log"; then
               echo "::error::Rust build failed while packaging $artifact_name"
               exit 1
             fi
-            local apk="build/app/outputs/flutter-apk/app-release.apk"
-            if ! unzip -l "$apk" | grep -q "librust_lib_segmeris.so"; then
-              echo "::error::$artifact_name does not embed librust_lib_segmeris.so"
+            local apk="build/app/outputs/flutter-apk/app-$abi-release.apk"
+            local aapt
+            aapt=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)
+            test -n "$aapt"
+            local package_info
+            package_info=$("$aapt" dump badging "$apk")
+            if ! grep -q "^package: name='com.blue.segmeris'.*versionName='1.0.8'" <<< "$package_info"; then
+              echo "::error::$artifact_name has an unexpected package ID or version"
               exit 1
             fi
+            python3 scripts/check_android_apk.py "$apk" "$abi"
+            "$(dirname "$aapt")/zipalign" -c -P 16 4 "$apk"
             cp "$apk" "dist/android/$artifact_name"
           }
-          build_apk android-arm64 Segmeris-android-arm64-v8a.apk
-          build_apk android-arm Segmeris-android-armeabi-v7a.apk
-          build_apk android-x64 Segmeris-android-x86_64.apk
+          build_apk android-arm64 Segmeris-android-arm64-v8a.apk arm64-v8a
+          build_apk android-arm Segmeris-android-armeabi-v7a.apk armeabi-v7a
+          build_apk android-x64 Segmeris-android-x86_64.apk x86_64
           ls -lah dist/android
+
+      - name: Run Android unit tests
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest -Ptarget-platform=android-x64 --console=plain
 
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
@@ -252,7 +267,7 @@ jobs:
 
   build-windows:
     name: Build Windows x64
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
     needs: validate
     runs-on: windows-latest
     timeout-minutes: 45
@@ -270,10 +285,11 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Setup NuGet for Windows plugins
-        uses: nuget/setup-nuget@v3
+      - name: Cache verified NuGet CLI
+        uses: actions/cache@v4
         with:
-          nuget-version: latest
+          path: build/tools/nuget
+          key: windows-nuget-${{ hashFiles('scripts/setup_nuget.ps1') }}
 
       - name: Cache Rust dependencies
         uses: actions/cache@v4
@@ -293,10 +309,10 @@ jobs:
           CMAKE_GENERATOR: Visual Studio 17 2022
           CMAKE_GENERATOR_PLATFORM: x64
         run: |
-          if (Test-Path build\windows) {
-            Remove-Item -Recurse -Force build\windows
-          }
-          flutter build windows --release
+          ./scripts/build_windows.ps1 -NoPub
+
+      - name: Verify the release Rust library through Flutter FFI
+        run: flutter test --no-pub test/native_runtime_test.dart --dart-define=SEGMERIS_NATIVE_LIBRARY=build/windows/x64/runner/Release/rust_lib_segmeris.dll
 
       - name: Package Windows artifact
         run: |
@@ -312,7 +328,7 @@ jobs:
 
   build-macos:
     name: Build macOS ${{ matrix.arch }}
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
     needs: validate
     strategy:
       fail-fast: false
@@ -373,7 +389,7 @@ jobs:
 
   build-linux:
     name: Build Linux x64 bundle
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -437,7 +453,7 @@ jobs:
 
   build-web:
     name: Build Web (JS + WASM)
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -487,6 +503,7 @@ jobs:
     name: Build iOS arm64 (unsigned)
     if: >-
       startsWith(github.ref, 'refs/tags/v')
+      || github.ref == 'refs/heads/testchain'
       || (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_ios != 'true')
     needs: validate
     runs-on: macos-15
@@ -560,7 +577,7 @@ jobs:
 
   docker-validate:
     name: Validate Docker API image (linux/amd64)
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     needs: validate
     runs-on: ubuntu-latest
     permissions:
@@ -586,18 +603,24 @@ jobs:
       - name: Smoke-test the health endpoint
         shell: bash
         run: |
-          docker run -d --name segmeris-api-validate -p 3000:3000 segmeris-api:validate
+          trap 'docker rm -f segmeris-api-validate >/dev/null 2>&1 || true' EXIT
+          docker run -d --name segmeris-api-validate -p 127.0.0.1:3000:3000 segmeris-api:validate
           for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:3000/health > /dev/null; then
+            if [ "$(docker inspect --format '{{.State.Running}}' segmeris-api-validate)" != true ]; then
+              echo '::error::API container exited before becoming healthy'
+              docker inspect --format '{{json .State}}' segmeris-api-validate
+              docker logs segmeris-api-validate
+              exit 1
+            fi
+            if curl -fsS --connect-timeout 1 --max-time 2 http://127.0.0.1:3000/health > health.json; then
+              python3 -c 'import json; h=json.load(open("health.json")); assert h == {"status":"ok","service":"segmeris-api"}, h'
               echo "health endpoint responded after ${attempt}s"
-              docker rm -f segmeris-api-validate
               exit 0
             fi
             sleep 1
           done
           echo "::error::the container never answered /health"
           docker logs segmeris-api-validate || true
-          docker rm -f segmeris-api-validate
           exit 1
 
   docker-api:

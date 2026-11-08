@@ -11,6 +11,8 @@ import 'package:segmeris/src/home/home_settings_sheet.dart';
 import 'package:segmeris/src/rust/api/downloader.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../support/capability_fixture.dart';
+
 const _settings = AppSettings(
   themeProfileId: 'monet_flow',
   themeMode: ThemeMode.light,
@@ -32,7 +34,11 @@ Widget _buildApp() {
       GlobalCupertinoLocalizations.delegate,
     ],
     theme: buildAppTheme(_settings.themeProfile, Brightness.light),
-    home: HomePage(settings: _settings, onSettingsChanged: (_) {}),
+    home: HomePage(
+      settings: _settings,
+      onSettingsChanged: (_) {},
+      capabilityProbe: unknownCapabilities,
+    ),
   );
 }
 
@@ -50,8 +56,8 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'authContext':
           '{"v":1,"ua":"SegmerisTest/1","referer":"https://www.bilibili.com/",'
-              '"origin":"https://www.bilibili.com","cookie":"SESSDATA=stored",'
-              '"headers":[{"name":"X-Trace","value":"1"}]}',
+          '"origin":"https://www.bilibili.com","cookie":"SESSDATA=stored",'
+          '"headers":[{"name":"X-Trace","value":"1"}]}',
     });
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(420, 900);

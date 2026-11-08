@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
 import 'package:segmeris/src/app/app_settings.dart';
 import 'package:segmeris/src/app/app_theme.dart';
@@ -26,6 +27,7 @@ class HomeSettingsSheet extends StatefulWidget {
     required this.headersController,
     this.inspection,
     this.enabled = true,
+    this.capabilityProbe = RuntimeCapabilityProbe.inspect,
   });
 
   final AppSettings settings;
@@ -43,25 +45,69 @@ class HomeSettingsSheet extends StatefulWidget {
   final TextEditingController headersController;
   final MediaInspectionResult? inspection;
   final bool enabled;
+  final Future<PlatformCapabilitySnapshot> Function() capabilityProbe;
 
   @override
   State<HomeSettingsSheet> createState() => _HomeSettingsSheetState();
 }
 
 class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
+  final _themeScroll = ScrollController();
   late AppSettings _draft = widget.settings;
-  late final Future<PlatformCapabilitySnapshot> _capabilities =
-      RuntimeCapabilityProbe.inspect();
-  late final TextEditingController _apiUrlCtrl =
-      TextEditingController(text: widget.settings.apiBaseUrl);
-  late final TextEditingController _apiTokenCtrl =
-      TextEditingController(text: widget.settings.apiToken);
+  late final Future<PlatformCapabilitySnapshot> _capabilities = widget
+      .capabilityProbe();
+  late final TextEditingController _apiUrlCtrl = TextEditingController(
+    text: widget.settings.apiBaseUrl,
+  );
+  late final TextEditingController _apiTokenCtrl = TextEditingController(
+    text: widget.settings.apiToken,
+  );
 
   @override
   void dispose() {
+    _themeScroll.dispose();
     _apiUrlCtrl.dispose();
     _apiTokenCtrl.dispose();
     super.dispose();
+  }
+
+  void _pageThemes(int direction) {
+    if (!_themeScroll.hasClients) return;
+    final position = _themeScroll.position;
+    final target =
+        (position.pixels + direction * position.viewportDimension * .8).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        );
+    final duration = SegmerisMotion.duration(
+      context,
+      const Duration(milliseconds: 220),
+    );
+    if (duration == Duration.zero) {
+      _themeScroll.jumpTo(target);
+    } else {
+      _themeScroll.animateTo(
+        target,
+        duration: duration,
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _scrollThemes(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || !_themeScroll.hasClients) return;
+    final delta = event.scrollDelta.dx != 0
+        ? event.scrollDelta.dx
+        : event.scrollDelta.dy;
+    final position = _themeScroll.position;
+    final target = (position.pixels + delta).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if (target == position.pixels) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (_) {
+      if (_themeScroll.hasClients) _themeScroll.jumpTo(target);
+    });
   }
 
   void _updateDraft(AppSettings next) {
@@ -182,7 +228,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                   const SizedBox(height: 10),
                   AnimatedContainer(
                     duration: SegmerisMotion.duration(
-                        context, const Duration(milliseconds: 260)),
+                      context,
+                      const Duration(milliseconds: 260),
+                    ),
                     curve: Curves.easeOutCubic,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -228,29 +276,73 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                 children: [
                   Padding(
                     padding: const EdgeInsets.only(left: 2),
-                    child: Text(l.text('theme'), style: t.textTheme.labelLarge),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            l.text('theme'),
+                            style: t.textTheme.labelLarge,
+                          ),
+                        ),
+                        IconButton.filledTonal(
+                          key: const ValueKey('theme-previous'),
+                          tooltip: MaterialLocalizations.of(context)
+                              .previousPageTooltip,
+                          onPressed: () => _pageThemes(-1),
+                          icon: const Icon(Icons.chevron_left_rounded),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton.filledTonal(
+                          key: const ValueKey('theme-next'),
+                          tooltip: MaterialLocalizations.of(context)
+                              .nextPageTooltip,
+                          onPressed: () => _pageThemes(1),
+                          icon: const Icon(Icons.chevron_right_rounded),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 10),
                   SizedBox(
-                    height: 172,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: appThemeProfiles.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 12),
-                      itemBuilder: (context, index) {
-                        final item = appThemeProfiles[index];
-                        return ThemePaletteCard(
-                          profile: item,
-                          selected: profile.id == item.id,
-                          onTap: widget.enabled
-                              ? () {
-                                  _updateDraft(
-                                    _draft.copyWith(themeProfileId: item.id),
-                                  );
-                                }
-                              : null,
-                        );
-                      },
+                    height: 186,
+                    child: Listener(
+                      onPointerSignal: _scrollThemes,
+                      child: ScrollConfiguration(
+                        behavior: ScrollConfiguration.of(context).copyWith(
+                          dragDevices: PointerDeviceKind.values.toSet(),
+                          scrollbars: false,
+                        ),
+                        child: Scrollbar(
+                          controller: _themeScroll,
+                          thumbVisibility: true,
+                          trackVisibility: true,
+                          child: ListView.separated(
+                            key: const ValueKey('theme-palette-scroll'),
+                            controller: _themeScroll,
+                            padding: const EdgeInsets.only(bottom: 14),
+                            scrollDirection: Axis.horizontal,
+                            itemCount: appThemeProfiles.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(width: 12),
+                            itemBuilder: (context, index) {
+                              final item = appThemeProfiles[index];
+                              return ThemePaletteCard(
+                                profile: item,
+                                selected: profile.id == item.id,
+                                onTap: widget.enabled
+                                    ? () {
+                                        _updateDraft(
+                                          _draft.copyWith(
+                                            themeProfileId: item.id,
+                                          ),
+                                        );
+                                      }
+                                    : null,
+                              );
+                            },
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -260,7 +352,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                       for (final item in appThemeProfiles)
                         AnimatedContainer(
                           duration: SegmerisMotion.duration(
-                              context, const Duration(milliseconds: 220)),
+                            context,
+                            const Duration(milliseconds: 220),
+                          ),
                           curve: Curves.easeOutCubic,
                           margin: const EdgeInsets.symmetric(horizontal: 3),
                           width: profile.id == item.id ? 20 : 6,
@@ -282,7 +376,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
               delay: const Duration(milliseconds: 200),
               child: AnimatedContainer(
                 duration: SegmerisMotion.duration(
-                    context, const Duration(milliseconds: 260)),
+                  context,
+                  const Duration(milliseconds: 260),
+                ),
                 curve: Curves.easeOutCubic,
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
@@ -329,8 +425,8 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                 autoOpenAuthBrowser: _draft.autoOpenAuthBrowser,
                 onAutoOpenChanged: widget.enabled
                     ? (value) => _updateDraft(
-                          _draft.copyWith(autoOpenAuthBrowser: value),
-                        )
+                        _draft.copyWith(autoOpenAuthBrowser: value),
+                      )
                     : null,
                 onOpenBrowser: widget.onOpenBrowser,
                 onQrLogin: widget.onQrLogin,

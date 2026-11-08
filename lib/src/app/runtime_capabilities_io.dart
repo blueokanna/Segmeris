@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'capability_snapshot.dart';
+import 'ffmpeg_capabilities_io.dart';
 import 'platform_utils.dart';
 
 // References come from the conditional import in `runtime_capabilities.dart`;
@@ -14,26 +15,39 @@ Future<PlatformCapabilitySnapshot> probeDesktopCapabilities() async {
   var backend = 'Unavailable';
   var accelerated = false;
   var encoders = <String>[];
+  var unavailableEncoders = <String>[];
+  var diagnostics = <String, String>{};
 
   if (ffmpeg != null) {
-    final encoder = await _detectEncoder(ffmpeg);
-    if (encoder != null) {
+    final report = await probeFfmpegEncoders(
+      ffmpeg,
+      operatingSystem: SegmerisPlatform.operatingSystem,
+    );
+    encoders = report.available.map((encoder) => encoder.label).toList();
+    unavailableEncoders = report.unavailable
+        .map((encoder) => encoder.label)
+        .toList();
+    diagnostics = report.diagnostics;
+    if (diagnostics['NVIDIA NVENC']?.contains(
+          'Driver does not support the required nvenc API version',
+        ) ??
+        false) {
+      notes.add('capability_nvenc_driver');
+    }
+    notes.add('capability_desktop_probe');
+    if (report.available.isNotEmpty) {
+      final encoder = report.available.first;
       backend = 'FFmpeg / ${encoder.label}';
       accelerated = encoder.hardware;
-      encoders = [encoder.label];
     } else {
       backend = 'FFmpeg / no usable H.264 encoder';
-      notes.add(
-          'FFmpeg was found, but every H.264 encoder runtime probe failed.');
+      notes.add('capability_no_encoder');
     }
   } else {
-    notes.add(
-        'FFmpeg was not found in the configured, bundled, or system paths.');
+    notes.add('capability_no_ffmpeg');
   }
   if (!ytdlpAvailable) {
-    notes.add(
-      'yt-dlp is not installed yet; desktop downloads install the verified official binary on demand.',
-    );
+    notes.add('capability_ytdlp_on_demand');
   }
 
   return PlatformCapabilitySnapshot(
@@ -41,6 +55,8 @@ Future<PlatformCapabilitySnapshot> probeDesktopCapabilities() async {
     transcoderBackend: backend,
     hardwareAccelerated: accelerated,
     videoEncoders: encoders,
+    unavailableVideoEncoders: unavailableEncoders,
+    encoderDiagnostics: diagnostics,
     videoDecoders: const [],
     ffmpegAvailable: ffmpeg != null,
     ytdlpAvailable: ytdlpAvailable,
@@ -59,7 +75,7 @@ Future<String?> _resolveFfmpeg() async {
     executable,
   ];
   for (final candidate in _unique(candidates)) {
-    if (await _commandWorks(candidate, const ['-version'])) {
+    if (await probeCommand(candidate, const ['-version'])) {
       return candidate;
     }
   }
@@ -98,10 +114,10 @@ Future<bool> _resolveYtdlp() async {
       (program: 'python', prefix: const ['-m', 'yt_dlp']),
   ];
   for (final candidate in candidates) {
-    if (await _commandWorks(
-      candidate.program,
-      [...candidate.prefix, '--version'],
-    )) {
+    if (await probeCommand(candidate.program, [
+      ...candidate.prefix,
+      '--version',
+    ])) {
       return true;
     }
   }
@@ -119,91 +135,17 @@ String? _ytdlpCachePath() {
   if (SegmerisPlatform.isMacOS && home != null) {
     return '$home/Library/Application Support/Segmeris/tools/yt-dlp';
   }
-  final root = Platform.environment['XDG_DATA_HOME'] ??
+  final root =
+      Platform.environment['XDG_DATA_HOME'] ??
       (home == null ? null : '$home/.local/share');
   return root == null ? null : '$root/segmeris/tools/yt-dlp';
-}
-
-Future<_EncoderProbe?> _detectEncoder(String ffmpeg) async {
-  final probes = <_EncoderProbe>[
-    const _EncoderProbe('NVIDIA NVENC', 'h264_nvenc', true),
-    const _EncoderProbe('AMD AMF', 'h264_amf', true),
-    const _EncoderProbe('Intel Quick Sync', 'h264_qsv', true),
-    if (SegmerisPlatform.isLinux)
-      const _EncoderProbe(
-        'Linux VAAPI',
-        'h264_vaapi',
-        true,
-        extraArguments: [
-          '-vaapi_device',
-          '/dev/dri/renderD128',
-          '-vf',
-          'format=nv12,hwupload',
-        ],
-      ),
-    if (SegmerisPlatform.isMacOS)
-      const _EncoderProbe('Apple VideoToolbox', 'h264_videotoolbox', true),
-    const _EncoderProbe('CPU libx264', 'libx264', false),
-  ];
-  for (final probe in probes) {
-    if (await _commandWorks(ffmpeg, [
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-f',
-      'lavfi',
-      '-i',
-      'color=c=black:s=64x64:r=1',
-      '-frames:v',
-      '1',
-      '-an',
-      '-c:v',
-      probe.encoder,
-      ...probe.extraArguments,
-      '-f',
-      'null',
-      '-',
-    ])) {
-      return probe;
-    }
-  }
-  return null;
-}
-
-Future<bool> _commandWorks(
-  String executable,
-  List<String> arguments,
-) async {
-  try {
-    final result = await Process.run(executable, arguments)
-        .timeout(const Duration(seconds: 8));
-    return result.exitCode == 0;
-  } catch (_) {
-    return false;
-  }
 }
 
 List<String> _unique(List<String> values) {
   final seen = <String>{};
   return [
     for (final value in values)
-      if (seen.add(
-        SegmerisPlatform.isWindows ? value.toLowerCase() : value,
-      ))
+      if (seen.add(SegmerisPlatform.isWindows ? value.toLowerCase() : value))
         value,
   ];
-}
-
-class _EncoderProbe {
-  const _EncoderProbe(
-    this.label,
-    this.encoder,
-    this.hardware, {
-    this.extraArguments = const [],
-  });
-
-  final String label;
-  final String encoder;
-  final bool hardware;
-  final List<String> extraArguments;
 }

@@ -13,6 +13,7 @@ import 'package:segmeris/src/app/download_engine.dart';
 import 'package:segmeris/src/app/local_file_utils.dart';
 import 'package:segmeris/src/app/platform_bridge.dart';
 import 'package:segmeris/src/app/platform_utils.dart';
+import 'package:segmeris/src/app/runtime_capabilities.dart';
 import 'package:segmeris/src/home/home_candidates_card.dart';
 import 'package:segmeris/src/home/download_options_dialog.dart';
 import 'package:segmeris/src/home/home_download_tasks_card.dart';
@@ -107,10 +108,12 @@ class HomePage extends StatefulWidget {
     super.key,
     required this.settings,
     required this.onSettingsChanged,
+    this.capabilityProbe = RuntimeCapabilityProbe.inspect,
   });
 
   final AppSettings settings;
   final ValueChanged<AppSettings> onSettingsChanged;
+  final Future<PlatformCapabilitySnapshot> Function() capabilityProbe;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -557,10 +560,6 @@ class _HomePageState extends State<HomePage> {
     final enteredUrl = extractSourceUrl(_urlCtrl.text)!;
     _replaceSourceText(enteredUrl);
 
-    // Starting a download from an analyzed page asks which stream to take:
-    // the analysis lists everything the server is willing to hand this
-    // session, and when the only offer is a 试看 preview fragment the user
-    // must see that before the file lands, not after.
     final inspection = vm.inspection;
     var selection = vm.selectedCandidate;
     final candidates = inspection?.candidates ?? const <MediaCandidate>[];
@@ -606,7 +605,6 @@ class _HomePageState extends State<HomePage> {
     final chosenDir = vm.chosenDir;
     final keepTemp = vm.keepTemp;
     final output = await _tempOutputPathFor(fileName, chosenDir);
-    // Keep the native request within the same bounds as the form.
     final concurrency = int.parse(_concurrencyCtrl.text.trim())
         .clamp(1, 16)
         .toInt();
@@ -731,9 +729,6 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    // Scope is confirmed; the tier is the one thing the queue cannot decide
-    // for the user. It is asked once and matched per episode, because a
-    // season can drop a tier partway through.
     final tier = await showDownloadOptionsDialog(
       context,
       inspection: vm.inspection!,
@@ -754,8 +749,6 @@ class _HomePageState extends State<HomePage> {
         .clamp(0, 20000)
         .toInt();
     final aBitrate = int.parse(_aBitrateCtrl.text.trim()).clamp(0, 512).toInt();
-    // One queue, many episodes: an exact track URL would only be valid for
-    // the episode the pick was made on, so the language tag travels.
     final (seriesSubtitleMode, seriesSubtitleValue) = subtitleChoiceForSeries(
       _subtitlePreference,
     );
@@ -778,8 +771,6 @@ class _HomePageState extends State<HomePage> {
         );
         final request = _DownloadTaskRequest(
           pageUrl: entry.pageUrl,
-          // No stream URLs yet: the tier is resolved per attempt so the
-          // queue never carries an expired signature (see `preferredTier`).
           mediaUrl: entry.pageUrl,
           audioUrl: null,
           output: output,
@@ -799,8 +790,6 @@ class _HomePageState extends State<HomePage> {
           preferredTier: tier,
         );
         _retryRequests[taskId] = request;
-        // Auto-opening the auth browser mid-queue would interrupt every
-        // following episode; failures stay per-task and retryable instead.
         await _runDownloadTask(taskId, request, allowAutoAuth: false);
       }
     } finally {
@@ -852,8 +841,6 @@ class _HomePageState extends State<HomePage> {
     return '$base.srt';
   }
 
-  /// Compose the output name for one episode: `{series} - {episode}`,
-  /// dropping the series prefix when the episode title already carries it.
   String _seriesFileName(
     MediaCollection collection,
     MediaCollectionEntry entry,
@@ -1121,6 +1108,7 @@ class _HomePageState extends State<HomePage> {
       useSafeArea: true,
       builder: (context) => HomeSettingsSheet(
         settings: widget.settings,
+        capabilityProbe: widget.capabilityProbe,
         enabled: !_pageController.value.busy,
         inspection: _pageController.value.inspection,
         onSettingsChanged: widget.onSettingsChanged,
