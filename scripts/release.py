@@ -66,17 +66,25 @@ def make_plan(event, ref, manual_tag, skip_ios, skip_docker, root=ROOT):
     }
 
 
-def verify_tag(tag, commit, remote="https://github.com/blueokanna/Segmeris.git"):
+def verify_tag(tag, commit, remote="https://github.com/blueokanna/Segmeris.git", *, allow_missing=False):
     if not TAG_RE.fullmatch(tag) or not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("Invalid release tag or commit")
     ref = f"refs/tags/{tag}"
-    output = subprocess.check_output(
-        ["git", "ls-remote", "--exit-code", remote, ref, ref + "^{}"], text=True
-    )
+    try:
+        output = subprocess.check_output(
+            ["git", "ls-remote", "--exit-code", remote, ref, ref + "^{}"], text=True
+        )
+    except subprocess.CalledProcessError as error:
+        if error.returncode != 2:
+            raise
+        if allow_missing:
+            return False
+        raise ValueError(f"Remote tag {tag} does not exist on {remote}") from None
     refs = dict(line.split()[::-1] for line in output.splitlines())
     actual = refs.get(ref + "^{}", refs.get(ref))
     if actual != commit:
         raise ValueError(f"Remote tag {tag} points to {actual}, expected {commit}; refusing publication")
+    return True
 
 
 def check_gate(needs, ios_enabled, docker_enabled=None):
@@ -280,8 +288,12 @@ def main():
                          os.environ.get("SKIP_IOS", "false") == "true",
                          os.environ.get("SKIP_DOCKER", "false") == "true")
         plan["commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        plan["create_tag"] = False
         if plan["tag"]:
-            verify_tag(plan["tag"], plan["commit"], f"https://github.com/{repository}.git")
+            plan["create_tag"] = not verify_tag(
+                plan["tag"], plan["commit"], f"https://github.com/{repository}.git",
+                allow_missing=os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch",
+            )
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
             for key, value in plan.items():
                 output.write(f"{key}={str(value).lower() if isinstance(value, bool) else value}\n")

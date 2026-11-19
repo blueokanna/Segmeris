@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Existing vMAJOR.MINOR.PATCH tag pointing at the selected commit; empty builds without publishing.'
+        description: 'Release tag (vMAJOR.MINOR.PATCH). Created at the selected commit after checks pass. Leave empty to build only.'
         required: false
         default: ''
       skip_docker:
@@ -40,6 +40,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
+      create_tag: ${{ steps.plan.outputs.create_tag }}
       version: ${{ steps.plan.outputs.version }}
       build_number: ${{ steps.plan.outputs.build_number }}
       commit: ${{ steps.plan.outputs.commit }}
@@ -52,7 +53,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Plan and validate existing release tag
+      - name: Plan release and check the remote tag
         id: plan
         env:
           MANUAL_TAG: ${{ inputs.tag_name }}
@@ -467,6 +468,11 @@ jobs:
     needs: [prepare, validate, security-scan, build-android, build-windows, build-linux, build-macos, build-web, build-ios, docker-validate]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -477,6 +483,17 @@ jobs:
           NEEDS_JSON: ${{ toJSON(needs) }}
           IOS_ENABLED: ${{ needs.prepare.outputs.ios_enabled }}
         run: python3 scripts/release.py gate
+      - name: Create the requested manual release tag
+        if: github.event_name == 'workflow_dispatch' && needs.prepare.outputs.create_tag == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$RELEASE_TAG" -f sha="$RELEASE_COMMIT" --silent; then
+            echo "Tag creation failed. Checking whether the tag already points to the planned commit."
+          fi
+      - name: Verify the remote tag before publishing
+        run: python3 scripts/release.py verify-tag --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT"
 
   docker-api:
     name: Publish verified-source Docker image

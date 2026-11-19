@@ -1,6 +1,6 @@
 # 构建与发布
 
-发布入口是 `.github/workflows/release.yml`。工作流从已存在的版本标签构建，检查签名和运行时依赖，生成清单，将产物上传到草稿，核对每个上传结果后才公开 GitHub Release。本地修改工作流不会自动创建标签或发布版本。
+发布入口是 `.github/workflows/release.yml`。工作流锁定构建提交，检查签名和运行时依赖，生成清单，将产物上传到草稿，核对每个上传结果后才公开 GitHub Release。
 
 ## 触发规则
 
@@ -11,11 +11,11 @@
 | 推送 `testchain` | 构建所有应用产物供 Actions 下载；不创建 Release |
 | 推送 `vMAJOR.MINOR.PATCH` | 构建所有应用、发布容器、公开完整 Release |
 | 手动运行，不填 `tag_name` | 构建产物，不创建 Release |
-| 手动运行，填写 `tag_name` | 仅允许与所选提交完全对应的远端现有标签；可以明确跳过 iOS 归档或容器发布 |
+| 手动运行，填写 `tag_name` | 标签已存在时须指向所选提交。标签缺失时，所有计划内检查和构建通过后，工作流在该提交上创建标签。可以跳过 iOS 归档或容器发布 |
 
 `prepare` 记录实际提交 SHA，其余任务都 checkout 同一个 SHA。发布前还会重新核对远端标签，避免构建期间标签被移动。`pubspec.yaml`、Rust、本地桥接包及平台版本必须一致，标签必须等于 `v<应用版本>`；校验由 `scripts/check_versions.py` 和 `scripts/release.py` 执行。
 
-每次版本发布应更新 `pubspec.yaml` 的版本与正整数构建号，并同步第一方包、平台版本及 lockfile。确认提交已推送后，再为该提交创建标签，例如当前版本对应 `v1.1.0`。不要为同一版本覆盖既有公开 Release 或移动标签。
+每次版本发布应更新 `pubspec.yaml` 的版本与正整数构建号，并同步第一方包、平台版本及 lockfile。提交推送后，可在 **Actions → Validate, build and release → Run workflow** 选择分支并填写 `tag_name`，例如 `v1.1.0`。工作流使用仓库的 `GITHUB_TOKEN` 创建缺失标签，避免再次触发标签推送工作流。不要为同一版本覆盖既有公开 Release 或移动标签。
 
 ## Android 签名
 
@@ -58,7 +58,7 @@ Windows 和 Linux CI 还会通过真实打包后的 Rust 动态库运行 `test/n
 
 ## 发布完整性与权限
 
-普通任务只有 `contents: read`。容器发布任务单独获得 `packages: write`，最终 Release 任务单独获得 `contents: write`。所有 checkout 禁止持久化凭据，发布 API 只向 GitHub 官方 API 域发送 token，拒绝重定向。用户输入先通过严格版本格式和提交检查，不拼进 shell 代码。
+普通任务只有 `contents: read`。`release-gate` 和最终 Release 任务获得 `contents: write`，分别用于创建手动请求的新标签和发布 Release。容器发布任务获得 `packages: write`。所有 checkout 禁止持久化凭据，发布 API 只向 GitHub 官方 API 域发送 token，拒绝重定向。用户输入先通过严格版本格式和提交检查，不拼进 shell 代码。
 
 `release-gate` 要求所有计划内任务成功。失败、取消或意外跳过都会阻止公开 Release；手动明确跳过的 iOS/容器任务有单独的预期状态。产物收集只接受精确的文件名集合，拒绝重复、缺失、额外文件、空文件和符号链接，避免把密钥或其他工作目录内容上传。
 

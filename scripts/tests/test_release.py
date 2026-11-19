@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -60,10 +61,31 @@ class ReleasePlanTests(unittest.TestCase):
         ref = "refs/tags/v1.2.3"
         for result in (f"{commit}\t{ref}\n", f"{'b' * 40}\t{ref}\n{commit}\t{ref}^{{}}\n"):
             with mock.patch.object(release.subprocess, "check_output", return_value=result):
-                release.verify_tag("v1.2.3", commit)
+                self.assertTrue(release.verify_tag("v1.2.3", commit, allow_missing=True))
         with mock.patch.object(release.subprocess, "check_output", return_value=f"{'b' * 40}\t{ref}\n"):
             with self.assertRaises(ValueError):
-                release.verify_tag("v1.2.3", commit)
+                release.verify_tag("v1.2.3", commit, allow_missing=True)
+
+    def test_only_manual_release_can_plan_to_create_a_missing_tag(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "output"
+            env = {"GITHUB_REF": "refs/heads/main", "GITHUB_EVENT_NAME": "workflow_dispatch",
+                   "MANUAL_TAG": "v1.2.3", "GITHUB_OUTPUT": str(output)}
+            missing = subprocess.CalledProcessError(2, "git ls-remote")
+            with mock.patch.object(sys, "argv", ["release.py", "plan"]), mock.patch.dict(os.environ, env), \
+                    mock.patch("sys.stdout", new_callable=io.StringIO), \
+                    mock.patch.object(subprocess, "check_output", side_effect=["a" * 40, missing] * 2):
+                release.main()
+                self.assertIn("create_tag=true", output.read_text().splitlines())
+                os.environ.update(GITHUB_EVENT_NAME="push", GITHUB_REF="refs/tags/v1.2.3")
+                with self.assertRaisesRegex(ValueError, "does not exist"):
+                    release.main()
+
+    def test_remote_access_failure_is_never_treated_as_a_missing_tag(self):
+        failure = subprocess.CalledProcessError(128, "git ls-remote")
+        with mock.patch.object(subprocess, "check_output", side_effect=failure), \
+                self.assertRaises(subprocess.CalledProcessError):
+            release.verify_tag("v1.2.3", "a" * 40, allow_missing=True)
 
     def test_gate_rejects_every_failure_and_unintended_skip(self):
         passed = {name: {"result": "success"} for name in release.REQUIRED_JOBS}
