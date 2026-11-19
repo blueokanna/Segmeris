@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ plays the AVD while the process starts. Its 800ms duration
+         is not a hold: the platform can dismiss it as soon as the app is ready. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">@color/brand_launch_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/brand_splash_motion</item>
+        <item name="android:windowSplashScreenAnimationDuration">800</item>
+    </style>
+</resources>

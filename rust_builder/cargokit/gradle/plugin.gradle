@@ -63,6 +63,15 @@ abstract class CargoKitBuildTask extends DefaultTask {
         def manifestDir = Paths.get(project.buildscript.sourceFile.parent, project.cargokit.manifestDir)
 
         def rootProjectDir = project.rootProject.projectDir
+        def localProperties = new Properties()
+        def localPropertiesFile = new File(rootProjectDir, "local.properties")
+        if (localPropertiesFile.isFile()) {
+            localPropertiesFile.withInputStream { localProperties.load(it) }
+        }
+        def flutterRoot = localProperties.getProperty("flutter.sdk") ?: System.getenv("FLUTTER_ROOT")
+        if (!flutterRoot) {
+            throw new GradleException("Set flutter.sdk in android/local.properties or export FLUTTER_ROOT")
+        }
 
         if (!Os.isFamily(Os.FAMILY_WINDOWS)) {
             execOperations.exec {
@@ -73,8 +82,10 @@ abstract class CargoKitBuildTask extends DefaultTask {
         execOperations.exec {
             executable path
             args "build-gradle"
+            environment "FLUTTER_ROOT", flutterRoot
+            environment "CARGOKIT_PUB_OFFLINE", project.gradle.startParameter.offline.toString()
             environment "CARGOKIT_ROOT_PROJECT_DIR", rootProjectDir
-            environment "CARGOKIT_TOOL_TEMP_DIR", "${buildDir}/build_tool"
+            environment "CARGOKIT_TOOL_TEMP_DIR", "${buildDir}/build_tool_${buildMode}"
             environment "CARGOKIT_MANIFEST_DIR", manifestDir
             environment "CARGOKIT_CONFIGURATION", buildMode
             environment "CARGOKIT_TARGET_TEMP_DIR", buildDir

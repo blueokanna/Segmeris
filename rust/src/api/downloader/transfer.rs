@@ -1,13 +1,126 @@
 //! Streaming media transfers, validator-based resumption and CDN fallback.
-use super::{emit_progress, retry_backoff_delay, ProgressReporter};
+use super::{ProgressReporter, emit_progress, retry_backoff_delay};
 use crate::crypto::Sha256;
 use crate::net::SyncHttpClient;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use log::warn;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use url::Url;
 use uuid::Uuid;
+
+#[path = "parallel.rs"]
+mod parallel;
+
+/// Bilibili signatures expire, but a representation's object path is stable.
+/// Only recognized authorization fields are discarded; arbitrary query fields
+/// (which may select different content) and non-Bilibili URLs retain identity.
+pub(super) fn media_resume_identity(raw: &str) -> String {
+    let Ok(mut url) = Url::parse(raw) else {
+        return raw.to_string();
+    };
+    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    if !(host.ends_with(".bilivideo.com") || host.ends_with(".bilivideo.cn"))
+        || !url.path().starts_with("/upgcxcode/")
+    {
+        return raw.to_string();
+    }
+    let mut query: Vec<(String, String)> = url
+        .query_pairs()
+        .filter(|(name, _)| {
+            !matches!(
+                name.to_ascii_lowercase().as_str(),
+                "deadline"
+                    | "upsig"
+                    | "wssecret"
+                    | "wstime"
+                    | "token"
+                    | "expires"
+                    | "sign"
+                    | "auth_key"
+                    | "uipk"
+                    | "oi"
+                    | "gen"
+                    | "trid"
+                    | "traceid"
+                    | "uparams"
+            )
+        })
+        .map(|(name, value)| (name.into_owned(), value.into_owned()))
+        .collect();
+    query.sort();
+    let _ = url.set_host(Some("media.bilivideo.com"));
+    url.set_fragment(None);
+    url.set_query(None);
+    if !query.is_empty() {
+        url.query_pairs_mut().extend_pairs(query);
+    }
+    url.to_string()
+}
+
+fn completed_receipt(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".completed");
+    path.with_file_name(name)
+}
+
+fn finish_media_partial(partial: &Path, path: &Path) -> Result<()> {
+    let metadata = read_resumable_metadata(partial);
+    let digest = super::hls::hash_file(partial)?;
+    replace_download_output(partial, path)?;
+    if let Some(metadata) = metadata {
+        let receipt = completed_receipt(path);
+        write_resumable_metadata(&receipt, &metadata)?;
+        let temporary = receipt.with_extension("completed.tmp");
+        let mut file = std::fs::File::create(&temporary)?;
+        writeln!(
+            file,
+            "{}\n{}",
+            partial.file_name().unwrap_or_default().to_string_lossy(),
+            digest
+        )?;
+        file.sync_all()?;
+        drop(file);
+        replace_download_output(&temporary, &receipt)?;
+    }
+    let _ = std::fs::remove_file(resumable_metadata_path(partial));
+    Ok(())
+}
+
+fn completed_media_is_valid(
+    client: &SyncHttpClient,
+    url: &str,
+    headers: &[(String, String)],
+    path: &Path,
+) -> Result<bool> {
+    let receipt = completed_receipt(path);
+    let Ok(contents) = std::fs::read_to_string(&receipt) else {
+        return Ok(false);
+    };
+    let mut lines = contents.lines();
+    let partial = resumable_partial_path(path, url, headers);
+    if lines.next() != partial.file_name().and_then(|name| name.to_str()) {
+        return Ok(false);
+    }
+    let Some(expected_hash) = lines.next() else {
+        return Ok(false);
+    };
+    let Some(saved) =
+        read_resumable_metadata(&receipt).filter(ResumableMetadata::has_resume_validator)
+    else {
+        return Ok(false);
+    };
+    if !std::fs::metadata(path)
+        .is_ok_and(|m| m.is_file() && m.len() > 0 && Some(m.len()) == saved.total_length)
+        || super::hls::hash_file(path)? != expected_hash
+    {
+        return Ok(false);
+    }
+    let Some(current) = parallel::probe_range_metadata(client, url, headers)? else {
+        return Ok(false);
+    };
+    Ok(saved == current)
+}
 
 pub(super) fn human_bytes(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
@@ -97,18 +210,16 @@ pub(super) fn resumable_metadata_matches_response(
     }
     if let (Some(saved_etag), Some(response_etag)) =
         (saved.etag.as_deref(), response_header(headers, "etag"))
+        && saved_etag != response_etag
     {
-        if saved_etag != response_etag {
-            return false;
-        }
+        return false;
     }
     if let (Some(saved_last_modified), Some(response_last_modified)) = (
         saved.last_modified.as_deref(),
         response_header(headers, "last-modified"),
-    ) {
-        if saved_last_modified != response_last_modified {
-            return false;
-        }
+    ) && saved_last_modified != response_last_modified
+    {
+        return false;
     }
     true
 }
@@ -179,12 +290,7 @@ pub(super) fn write_resumable_metadata(
         file.write_all(contents.as_bytes())?;
         file.sync_all()?;
         drop(file);
-        match std::fs::remove_file(&metadata_path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
-        std::fs::rename(&temporary_path, &metadata_path)?;
+        replace_download_output(&temporary_path, &metadata_path)?;
         Ok(())
     })();
 
@@ -246,6 +352,31 @@ pub(super) fn stream_media_response_to_file(
     reporter: &ProgressReporter,
     label: &str,
 ) -> Result<()> {
+    stream_media_with_initial_response(
+        client,
+        url,
+        headers,
+        path,
+        progress_start,
+        progress_end,
+        reporter,
+        label,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn stream_media_with_initial_response(
+    client: &SyncHttpClient,
+    url: &str,
+    headers: &[(String, String)],
+    path: &Path,
+    progress_start: f64,
+    progress_end: f64,
+    reporter: &ProgressReporter,
+    label: &str,
+    mut initial_response: Option<crate::net::HttpResponse>,
+) -> Result<()> {
     const CHUNK: u64 = 8 * 1024 * 1024;
 
     let partial_path = resumable_partial_path(path, url, headers);
@@ -269,7 +400,23 @@ pub(super) fn stream_media_response_to_file(
     } else {
         None
     };
-    let mut last_reported = 0u64;
+    if let Some(total) = resume_metadata.as_ref().and_then(|m| m.total_length) {
+        if downloaded > total {
+            clear_resumable_partial(&partial_path)?;
+            downloaded = 0;
+            resume_metadata = None;
+        } else if downloaded == total && downloaded > 0 {
+            downloaded -= 1;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(&partial_path)?
+                .set_len(downloaded)?;
+        }
+    }
+    let clock = std::time::Instant::now();
+    let mut transferred = 0u64;
+    let mut last_report = clock;
+    let mut last_reported = downloaded;
     let mut use_range = true;
     emit_progress(reporter, label, progress_start);
 
@@ -277,16 +424,17 @@ pub(super) fn stream_media_response_to_file(
         let start = downloaded;
         let end = start.saturating_add(CHUNK - 1);
         let mut range_headers = headers.to_vec();
-        if start > 0 {
-            if let Some(if_range) = resume_metadata
+        if start > 0
+            && let Some(if_range) = resume_metadata
                 .as_ref()
                 .and_then(ResumableMetadata::if_range_value)
-            {
-                range_headers.retain(|(name, _)| !name.eq_ignore_ascii_case("if-range"));
-                range_headers.push(("If-Range".to_string(), if_range.to_string()));
-            }
+        {
+            range_headers.retain(|(name, _)| !name.eq_ignore_ascii_case("if-range"));
+            range_headers.push(("If-Range".to_string(), if_range.to_string()));
         }
-        let response = if use_range {
+        let response = if let Some(response) = initial_response.take() {
+            response
+        } else if use_range {
             client.stream_range(url, &range_headers, start, end)?
         } else {
             client.stream(url, headers)?
@@ -303,16 +451,14 @@ pub(super) fn stream_media_response_to_file(
             .iter()
             .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
             .map(|(_, value)| value.to_ascii_lowercase())
-        {
-            if content_type.starts_with("text/html")
+            && (content_type.starts_with("text/html")
                 || content_type.starts_with("application/json")
-                || content_type.starts_with("text/json")
-            {
-                bail!(
-                    "Media request returned non-media content type {}",
-                    content_type
-                );
-            }
+                || content_type.starts_with("text/json"))
+        {
+            bail!(
+                "Media request returned non-media content type {}",
+                content_type
+            );
         }
 
         if status == 416 {
@@ -321,8 +467,7 @@ pub(super) fn stream_media_response_to_file(
                 resumable_metadata_matches_response(saved, &response_headers, range.total)
             });
             if is_complete_unsatisfied_range(range, downloaded) && validators_match {
-                replace_download_output(&partial_path, path)?;
-                let _ = std::fs::remove_file(resumable_metadata_path(&partial_path));
+                finish_media_partial(&partial_path, path)?;
                 break;
             }
             if start > 0 {
@@ -343,7 +488,6 @@ pub(super) fn stream_media_response_to_file(
         let (total, expected_length) = if status == 206 {
             let range = parse_content_range(&response_headers)?;
             if range.start != Some(start) {
-                clear_resumable_partial(&partial_path)?;
                 bail!(
                     "Media Range response did not start at requested byte {}",
                     start
@@ -419,8 +563,9 @@ pub(super) fn stream_media_response_to_file(
             resume_metadata = None;
             continue;
         }
-        write_resumable_metadata(&partial_path, &next_metadata)?;
-        resume_metadata = Some(next_metadata);
+        if status == 200 {
+            clear_resumable_partial(&partial_path)?;
+        }
         let mut output = if status == 200 {
             std::fs::File::create(&partial_path)
         } else {
@@ -430,6 +575,8 @@ pub(super) fn stream_media_response_to_file(
                 .open(&partial_path)
         }
         .with_context(|| format!("Failed to create media file: {}", partial_path.display()))?;
+        write_resumable_metadata(&partial_path, &next_metadata)?;
+        resume_metadata = Some(next_metadata);
         let mut received = 0u64;
         while let Some(chunk) = body.next_chunk()? {
             let next_received = received
@@ -437,15 +584,24 @@ pub(super) fn stream_media_response_to_file(
                 .context("Media response length overflow")?;
             if expected_length.is_some_and(|length| next_received > length) {
                 drop(output);
-                clear_resumable_partial(&partial_path)?;
+                if downloaded == 0 {
+                    clear_resumable_partial(&partial_path)?;
+                } else {
+                    let rollback = std::fs::OpenOptions::new()
+                        .write(true)
+                        .open(&partial_path)?;
+                    rollback.set_len(downloaded)?;
+                    rollback.sync_data()?;
+                }
                 bail!("Media response exceeded its declared length");
             }
             output.write_all(&chunk)?;
+            transferred += chunk.len() as u64;
             received = next_received;
             let count = downloaded
                 .checked_add(received)
                 .context("Media download length overflow")?;
-            if count.saturating_sub(last_reported) >= 512 * 1024 {
+            if last_report.elapsed().as_millis() >= 250 {
                 let progress = total
                     .filter(|n| *n > 0)
                     .map(|n| {
@@ -455,9 +611,17 @@ pub(super) fn stream_media_response_to_file(
                     .unwrap_or(progress_start);
                 emit_progress(
                     reporter,
-                    format!("{} [{}]", label, human_bytes(count)),
+                    format!(
+                        "{} [{}, {}/s]",
+                        label,
+                        human_bytes(count),
+                        human_bytes(
+                            (transferred as f64 / clock.elapsed().as_secs_f64().max(0.001)) as u64
+                        )
+                    ),
                     progress,
                 );
+                last_report = std::time::Instant::now();
                 last_reported = count;
             }
         }
@@ -465,8 +629,7 @@ pub(super) fn stream_media_response_to_file(
             bail!("Media response was empty");
         }
         if expected_length.is_some_and(|length| received != length) {
-            drop(output);
-            clear_resumable_partial(&partial_path)?;
+            output.sync_data()?;
             bail!("Media response length mismatch");
         }
         output.flush()?;
@@ -480,8 +643,7 @@ pub(super) fn stream_media_response_to_file(
             bail!("Media response exceeded its declared total length");
         }
         if total.is_some_and(|total| downloaded == total) {
-            replace_download_output(&partial_path, path)?;
-            let _ = std::fs::remove_file(resumable_metadata_path(&partial_path));
+            finish_media_partial(&partial_path, path)?;
             break;
         }
         if status == 200 {
@@ -492,8 +654,7 @@ pub(super) fn stream_media_response_to_file(
                     downloaded
                 );
             }
-            replace_download_output(&partial_path, path)?;
-            let _ = std::fs::remove_file(resumable_metadata_path(&partial_path));
+            finish_media_partial(&partial_path, path)?;
             break;
         }
         if total.is_none() && received < CHUNK {
@@ -592,7 +753,8 @@ pub(super) fn resumable_partial_path(
         .and_then(|name| name.to_str())
         .unwrap_or("download");
     let mut hasher = Sha256::new();
-    for value in std::iter::once(url).chain(
+    let identity_url = media_resume_identity(url);
+    for value in std::iter::once(identity_url.as_str()).chain(
         headers
             .iter()
             .flat_map(|(name, value)| [name.as_str(), value.as_str()]),
@@ -605,30 +767,16 @@ pub(super) fn resumable_partial_path(
 }
 
 pub(super) fn replace_download_output(partial_path: &Path, output_path: &Path) -> Result<()> {
-    if output_path.exists() {
-        let filename = output_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("download");
-        let backup_path =
-            output_path.with_file_name(format!(".{}.{}.backup", filename, Uuid::new_v4().simple()));
-        std::fs::rename(output_path, &backup_path).with_context(|| {
-            format!(
-                "Failed to preserve existing output: {}",
-                output_path.display()
-            )
-        })?;
-        if let Err(error) = std::fs::rename(partial_path, output_path) {
-            let _ = std::fs::rename(&backup_path, output_path);
-            return Err(error).with_context(|| {
-                format!("Failed to finalize media output: {}", output_path.display())
-            });
-        }
-        let _ = std::fs::remove_file(backup_path);
-        return Ok(());
-    }
+    // std::fs::rename replaces an existing regular file on Unix and Windows.
+    // Keeping this a single operation avoids a missing destination if the
+    // process exits between moving an old file away and publishing the new one.
     std::fs::rename(partial_path, output_path)
-        .with_context(|| format!("Failed to finalize media output: {}", output_path.display()))
+        .with_context(|| format!("Failed to finalize media output: {}", output_path.display()))?;
+    #[cfg(unix)]
+    if let Some(parent) = output_path.parent() {
+        std::fs::File::open(parent)?.sync_all()?;
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -638,34 +786,64 @@ pub(super) fn download_with_retries(
     headers: &[(String, String)],
     path: &Path,
     reuse_completed_file: bool,
+    concurrency: usize,
     retries: u8,
     progress_start: f64,
     progress_end: f64,
     reporter: &ProgressReporter,
     label: &str,
 ) -> Result<()> {
-    if reuse_completed_file
-        && std::fs::metadata(path)
-            .map(|metadata| metadata.is_file() && metadata.len() > 0)
-            .unwrap_or(false)
-    {
-        return Ok(());
-    }
-    for attempt in 1..=retries {
-        let result = stream_media_response_to_file(
-            client,
-            url,
-            headers,
-            path,
-            progress_start,
-            progress_end,
-            reporter,
-            label,
-        );
+    let mut parallelism = concurrency;
+    for attempt in 1..=retries.max(1) {
+        let result = (|| {
+            if reuse_completed_file && completed_media_is_valid(client, url, headers, path)? {
+                emit_progress(
+                    reporter,
+                    format!("{label} [verified cached file]"),
+                    progress_end,
+                );
+                return Ok(());
+            }
+            match parallel::try_parallel_transfer(
+                client,
+                url,
+                headers,
+                path,
+                parallelism,
+                progress_start,
+                progress_end,
+                reporter,
+                label,
+            ) {
+                Ok(true) => return Ok(()),
+                Ok(false) => {}
+                Err(error) => {
+                    if !parallel::prepare_sequential_fallback(path, url, headers)? {
+                        return Err(error);
+                    }
+                    parallelism = 1;
+                    emit_progress(
+                        reporter,
+                        format!("{label} [retrying with one connection]"),
+                        progress_start,
+                    );
+                }
+            }
+            stream_media_response_to_file(
+                client,
+                url,
+                headers,
+                path,
+                progress_start,
+                progress_end,
+                reporter,
+                label,
+            )
+        })();
         match result {
             Ok(()) => return Ok(()),
             Err(error) => {
-                if attempt == retries {
+                if attempt == retries.max(1) {
                     let safe_url = safe_media_url_label(url);
                     let details = format!("{error:#}").replace(url, &safe_url);
                     return Err(anyhow!(
@@ -698,6 +876,7 @@ pub(super) fn download_with_fallbacks(
     headers: &[(String, String)],
     path: &Path,
     reuse_completed_file: bool,
+    concurrency: usize,
     retries: u8,
     progress_start: f64,
     progress_end: f64,
@@ -711,6 +890,7 @@ pub(super) fn download_with_fallbacks(
             headers,
             path,
             reuse_completed_file,
+            concurrency,
             retries,
             progress_start,
             progress_end,
@@ -746,6 +926,7 @@ pub(super) fn download_with_fallbacks(
             headers,
             path,
             reuse_completed_file,
+            concurrency,
             retries,
             progress_start,
             progress_end,

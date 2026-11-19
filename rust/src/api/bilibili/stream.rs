@@ -571,9 +571,11 @@ mod tests {
         };
         let (candidates, warnings) = collect(&streams);
         assert_eq!(candidates.len(), 1);
-        assert!(warnings
-            .iter()
-            .any(|warning| warning.contains("bilibili-audio-missing")));
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("bilibili-audio-missing"))
+        );
     }
 
     #[test]
@@ -587,9 +589,11 @@ mod tests {
         };
         let (candidates, _) = collect(&streams);
         assert_eq!(candidates.len(), 2);
-        assert!(candidates
-            .iter()
-            .all(|candidate| candidate.audio_url.is_none()));
+        assert!(
+            candidates
+                .iter()
+                .all(|candidate| candidate.audio_url.is_none())
+        );
     }
 
     #[test]

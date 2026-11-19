@@ -6,7 +6,7 @@
 //! to a worker thread, and long-running download tasks run on their own
 //! dedicated threads so the accept loop is never blocked.
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use courierust::courierust_body::Body;
 use courierust::courierust_http::header::HeaderName;
 use courierust::courierust_http::request::Request;
@@ -50,8 +50,8 @@ fn configured_api_token() -> Option<&'static str> {
 
 /// Whether the request carries the configured bearer token (or no token is
 /// required at all).
-fn request_authorized(request: &Request<Body>) -> bool {
-    let Some(expected) = configured_api_token() else {
+fn request_authorized(request: &Request<Body>, expected_token: Option<&str>) -> bool {
+    let Some(expected) = expected_token else {
         return true;
     };
     let provided = request
@@ -154,6 +154,14 @@ pub fn run_server() -> std::io::Result<()> {
 }
 
 fn handle_request(request: Request<Body>, tasks: &TaskStore) -> Response<Body> {
+    handle_request_with_token(request, tasks, configured_api_token())
+}
+
+fn handle_request_with_token(
+    request: Request<Body>,
+    tasks: &TaskStore,
+    expected_token: Option<&str>,
+) -> Response<Body> {
     let method = request.method.as_str().to_ascii_uppercase();
     let path = request.uri.path().to_string();
 
@@ -168,17 +176,18 @@ fn handle_request(request: Request<Body>, tasks: &TaskStore) -> Response<Body> {
         // Health checks (Docker HEALTHCHECK / orchestrator probes) stay open
         // so the container liveness probe works even with a token configured.
         handle_health()
-    } else if !request_authorized(&request) {
+    } else if !request_authorized(&request, expected_token) {
         json_response(StatusCode::UNAUTHORIZED, r#"{"error":"Unauthorized"}"#)
     } else if method == "POST" && path == "/inspect" {
         handle_inspect(request)
     } else if method == "POST" && path == "/download" {
         handle_download(request, tasks)
     } else if method == "POST" && path.starts_with("/tasks/") {
-        let parts: Vec<_> = path.trim_start_matches("/tasks/").split('/').collect();
+        let parts: Vec<_> = path.strip_prefix("/tasks/").unwrap().split('/').collect();
         match parts.as_slice() {
             [id, "pause"] => handle_pause(id, true, tasks),
             [id, "resume"] => handle_pause(id, false, tasks),
+            [id, "delete"] if !id.is_empty() => handle_delete(id, tasks),
             _ => json_response(StatusCode::NOT_FOUND, r#"{"error":"Not found"}"#),
         }
     } else if method == "GET" && path == "/tasks" {
@@ -236,6 +245,39 @@ fn handle_pause(id: &str, paused: bool, tasks: &TaskStore) -> Response<Body> {
         None,
     );
     json_response(StatusCode::OK, r#"{"ok":true}"#)
+}
+
+/// POST /tasks/:id/delete accepts only a known completed task, never a client path.
+fn handle_delete(id: &str, tasks: &TaskStore) -> Response<Body> {
+    let directory = std::env::var("DOWNLOAD_DIR").unwrap_or_else(|_| "/app/downloads".to_string());
+    handle_delete_in_directory(id, tasks, std::path::Path::new(&directory))
+}
+
+fn handle_delete_in_directory(
+    id: &str,
+    tasks: &TaskStore,
+    directory: &std::path::Path,
+) -> Response<Body> {
+    match tasks.delete_completed(id, directory) {
+        Ok(()) => json_response(
+            StatusCode::OK,
+            &format!(r#"{{"deleted":true,"task_id":"{}"}}"#, escape_json(id)),
+        ),
+        Err(error) => {
+            let status = match &error {
+                storage::DeleteTaskError::NotFound => StatusCode::NOT_FOUND,
+                storage::DeleteTaskError::NotCompleted | storage::DeleteTaskError::OutputInUse => {
+                    StatusCode::CONFLICT
+                }
+                storage::DeleteTaskError::InvalidOutput(_) => StatusCode::FORBIDDEN,
+                storage::DeleteTaskError::FileIo(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            json_response(
+                status,
+                &format!(r#"{{"error":"{}"}}"#, escape_json(&error.to_string())),
+            )
+        }
+    }
 }
 
 fn handle_health() -> Response<Body> {
@@ -316,19 +358,52 @@ fn handle_download(request: Request<Body>, tasks: &TaskStore) -> Response<Body> 
         return json_response(StatusCode::BAD_REQUEST, r#"{"error":"url is required"}"#);
     }
 
+    let reserved_output = match download::requested_output_path(&req) {
+        Ok(path) => path,
+        Err(_) => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                r#"{"error":"Cannot prepare download directory"}"#,
+            );
+        }
+    };
     let task_id = Uuid::new_v4().to_string();
-    tasks.insert_queued(task_id.clone(), req.url.clone());
+    match tasks.insert_if_output_available(task_id.clone(), req.clone(), reserved_output) {
+        Ok(storage::QueueTask::Existing(existing_id)) => return accepted_download(&existing_id),
+        Ok(storage::QueueTask::Inserted) => {}
+        Err(storage::DeleteTaskError::OutputInUse) => {
+            return json_response(
+                StatusCode::CONFLICT,
+                r#"{"error":"Output is already assigned to another download"}"#,
+            );
+        }
+        Err(_) => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                r#"{"error":"Cannot reserve download output"}"#,
+            );
+        }
+    }
 
     let background_tasks = tasks.clone();
     let background_request = req.clone();
     let background_task_id = task_id.clone();
-    std::thread::Builder::new()
+    if let Err(error) = std::thread::Builder::new()
         .name("segmeris-download".into())
         .spawn(move || {
             download::run_download_task(background_task_id, background_request, background_tasks);
         })
-        .expect("failed to spawn download thread");
+    {
+        tasks.mark_failed(&task_id, &format!("Failed to start download: {error}"));
+        return json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            r#"{"error":"Failed to start download"}"#,
+        );
+    }
+    accepted_download(&task_id)
+}
 
+fn accepted_download(task_id: &str) -> Response<Body> {
     let payload = format!(
         r#"{{"task_id":"{}","status":"accepted","message":"Download task accepted"}}"#,
         task_id
@@ -386,4 +461,101 @@ fn escape_json(value: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod delete_tests {
+    use super::*;
+    use courierust::courierust_http::method::Method;
+
+    #[test]
+    fn delete_route_requires_configured_bearer_token() {
+        let tasks = TaskStore::new();
+        tasks.insert_queued("queued".into(), "https://example.com/video".into());
+        let request = Request::new(Method::POST, "/tasks/queued/delete");
+        assert_eq!(
+            handle_request_with_token(request, &tasks, Some("secret")).status,
+            StatusCode::UNAUTHORIZED
+        );
+        let request = Request::new(Method::POST, "/tasks/queued/delete")
+            .header(HeaderName::from_lowercase("authorization"), "Bearer wrong!");
+        assert_eq!(
+            handle_request_with_token(request, &tasks, Some("secret")).status,
+            StatusCode::UNAUTHORIZED
+        );
+        let request = Request::new(Method::POST, "/tasks/queued/delete")
+            .header(HeaderName::from_lowercase("authorization"), "Bearer secret");
+        assert_eq!(
+            handle_request_with_token(request, &tasks, Some("secret")).status,
+            StatusCode::CONFLICT
+        );
+        assert!(tasks.get("queued").is_some());
+    }
+
+    #[test]
+    fn delete_route_rejects_unknown_tasks_and_malformed_routes() {
+        let tasks = TaskStore::new();
+        for (method, path) in [
+            (Method::POST, "/tasks/unknown/delete"),
+            (Method::GET, "/tasks/unknown/delete"),
+            (Method::POST, "/tasks//delete"),
+            (Method::POST, "/tasks/unknown/delete/extra"),
+            (Method::POST, "/tasks//tasks/unknown/delete"),
+        ] {
+            let request = Request::new(method, path);
+            assert_eq!(
+                handle_request_with_token(request, &tasks, None).status,
+                StatusCode::NOT_FOUND
+            );
+        }
+    }
+
+    #[test]
+    fn delete_response_confirms_deleted_and_task_id_only_after_success() {
+        let directory = crate::test_http::TestDirectory::new("api-delete-response");
+        let tasks = TaskStore::new();
+        let output = directory.path().join("movie.mp4");
+        std::fs::write(&output, "download").unwrap();
+        tasks.insert_queued("done".into(), "https://example.com/video".into());
+        tasks.mark_completed("done", output.to_string_lossy().into_owned());
+        let response = handle_delete_in_directory("done", &tasks, directory.path());
+        assert_eq!(response.status, StatusCode::OK);
+        let body = response.body.collect_limited(4096).unwrap();
+        assert_eq!(body.as_ref(), br#"{"deleted":true,"task_id":"done"}"#);
+        assert!(!output.exists());
+        assert!(tasks.get("done").is_none());
+    }
+
+    #[test]
+    fn delete_response_reports_path_denial_without_removing_record() {
+        let directory = crate::test_http::TestDirectory::new("api-delete-root");
+        let outside = crate::test_http::TestDirectory::new("api-delete-outside");
+        let tasks = TaskStore::new();
+        let output = outside.path().join("private.mp4");
+        std::fs::write(&output, "private").unwrap();
+        tasks.insert_queued("done".into(), "https://example.com/video".into());
+        tasks.mark_completed("done", output.to_string_lossy().into_owned());
+        let response = handle_delete_in_directory("done", &tasks, directory.path());
+        assert_eq!(response.status, StatusCode::FORBIDDEN);
+        assert!(tasks.get("done").is_some());
+        assert_eq!(std::fs::read_to_string(output).unwrap(), "private");
+    }
+
+    #[test]
+    fn delete_response_reports_shared_output_conflict() {
+        let directory = crate::test_http::TestDirectory::new("api-delete-shared");
+        let tasks = TaskStore::new();
+        let output = directory.path().join("shared.mp4");
+        std::fs::write(&output, "shared").unwrap();
+        for id in ["first", "second"] {
+            tasks.insert_queued(id.into(), "https://example.com/video".into());
+            tasks.mark_completed(id, output.to_string_lossy().into_owned());
+        }
+        assert_eq!(
+            handle_delete_in_directory("first", &tasks, directory.path()).status,
+            StatusCode::CONFLICT
+        );
+        assert_eq!(tasks.list().len(), 2);
+        assert!(output.exists());
+    }
 }

@@ -37,7 +37,10 @@ def main():
         if element.tag in ("activity", "service"):
             require(name.startswith(APP_ID + "."), f"Unexpected component: {name}")
     bridge_class = APP_ID + ".MediaTranscoder"
-    require(f'"{bridge_class}"' in read("rust/src/api/downloader.rs"), "JNI class mismatch")
+    require("Java_" + APP_ID.replace(".", "_") + "_MainActivity_nativeInitMedia"
+            in read("rust/src/api/downloader.rs"), "JNI entry point mismatch")
+    require("nativeInitMedia(MediaTranscoder::class.java" in read(
+        "android/app/src/main/kotlin/com/blue/segmeris/MainActivity.kt"), "JNI class mismatch")
     require(f"-keep class {bridge_class}" in read("android/app/proguard-rules.pro"),
             "Missing JNI keep rule")
     for platform in ("ios", "macos"):

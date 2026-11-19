@@ -10,5 +10,8 @@ Future<bool> localFileExists(String path) => fileExists(path);
 /// Byte length of a local file (0 on the web).
 Future<int> localFileLength(String path) => fileLength(path);
 
-/// Best-effort delete of a local file (no-op on the web).
+/// Delete a local file, reporting access and I/O failures to the caller.
 Future<void> localFileDelete(String path) => deleteFile(path);
+
+Future<String> localOutputPath(String name, String? directory) =>
+    outputPath(name, directory);

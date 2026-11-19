@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class AppLocalizations {
   AppLocalizations(this.locale);
@@ -112,6 +112,26 @@ class AppLocalizations {
 
   static const _strings = <String, Map<String, String>>{
     'en': {
+      'font': 'Typeface',
+      'font_system': 'System default',
+      'font_harmony_google': 'HarmonyOS Sans + Google Sans',
+      'font_license_notice':
+          'This app uses HarmonyOS Sans Fonts. © 2021 Huawei Device Co., Ltd.',
+      'history_retention': 'Keep completed records',
+      'history_retention_never': 'Do not delete automatically',
+      'history_retention_days': '{days} days',
+      'history_retention_hint': 'Automatic cleanup removes completed records only. Downloaded files and unfinished tasks are kept.',
+      'restoring_download': 'Restoring interrupted download',
+      'download_interrupted': 'Interrupted — ready to resume',
+      'journal_error': 'Download records could not be saved or restored',
+      'remove_record': 'Remove record',
+      'delete_file': 'Delete downloaded file',
+      'delete_download_title': 'Delete this download?',
+      'delete_download_hint': 'Choose whether to remove only the record or also permanently delete the downloaded file.',
+      'delete_failed': 'Deletion failed; the record has been kept',
+      'quality_unavailable': 'The original quality or codec is no longer available. Re-analyze the source to start a different download.',
+      'previous_page': 'Previous page',
+      'next_page': 'Next page',
       'download_control_failed': 'Could not change download state',
       'pause_download': 'Pause',
       'resume_download': 'Resume',
@@ -281,6 +301,25 @@ class AppLocalizations {
       'separate_audio': 'Separate audio',
     },
     'zh': {
+      'font': '字体',
+      'font_system': '系统默认字体',
+      'font_harmony_google': 'HarmonyOS Sans 中文 + Google Sans 英文',
+      'font_license_notice': '本应用使用 HarmonyOS Sans 字体；© 2021 华为终端有限公司。',
+      'history_retention': '完成记录保留时间',
+      'history_retention_never': '不自动删除',
+      'history_retention_days': '{days} 天',
+      'history_retention_hint': '自动清理仅移除完成记录，保留已下载的视频文件及未完成任务。',
+      'restoring_download': '正在恢复上次中断的下载',
+      'download_interrupted': '下载中断，可继续下载',
+      'journal_error': '下载记录保存或恢复失败',
+      'remove_record': '仅移除记录',
+      'delete_file': '同时删除视频文件',
+      'delete_download_title': '删除这项下载？',
+      'delete_download_hint': '可以仅移除记录，也可以同时永久删除已下载的视频文件。',
+      'delete_failed': '删除失败，已保留记录',
+      'quality_unavailable': '原清晰度或编码已不可用，请重新解析后创建新的下载任务。',
+      'previous_page': '上一页',
+      'next_page': '下一页',
       'download_control_failed': '无法切换下载状态',
       'pause_download': '暂停',
       'resume_download': '继续下载',

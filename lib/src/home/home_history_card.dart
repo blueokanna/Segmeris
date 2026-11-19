@@ -1,93 +1,88 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
-import 'package:segmeris/src/app/app_theme.dart';
 import 'package:segmeris/src/home/home_widgets.dart';
 
-class HomeHistoryCard extends StatelessWidget {
-  const HomeHistoryCard({super.key, required this.history});
-
+class HomeHistoryCard extends StatefulWidget {
+  const HomeHistoryCard({super.key, required this.history, this.onDelete});
   final List<DownloadRecord> history;
+  final ValueChanged<DownloadRecord>? onDelete;
+
+  @override
+  State<HomeHistoryCard> createState() => _HomeHistoryCardState();
+}
+
+class _HomeHistoryCardState extends State<HomeHistoryCard> {
+  static const _pageSize = 8;
+  int _page = 0;
 
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
-    final t = Theme.of(context);
-    final cs = t.colorScheme;
-
+    final theme = Theme.of(context);
+    final pageCount = (widget.history.length / _pageSize).ceil().clamp(
+      1,
+      1 << 30,
+    );
+    final page = _page.clamp(0, pageCount - 1);
+    final records = widget.history.skip(page * _pageSize).take(_pageSize);
     return SectionCard(
       title: l.text('history'),
-      subtitle: '${history.length}',
+      subtitle: '${widget.history.length}',
       icon: Icons.history_rounded,
-      child: AnimatedSwitcher(
-        duration: SegmerisMotion.duration(context, SegmerisMotion.slow),
-        switchInCurve: SegmerisMotion.decelerate,
-        switchOutCurve: SegmerisMotion.accelerate,
-        transitionBuilder: segmerisFadeScaleTransition,
-        child: history.isEmpty
-            ? Text(
-                key: const ValueKey('empty-history'),
-                l.text('no_history'),
-                style: t.textTheme.bodyMedium?.copyWith(
-                  color: cs.onSurfaceVariant,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.history.isEmpty)
+            Text(l.text('no_history'), style: theme.textTheme.bodyMedium),
+          for (final record in records)
+            Padding(
+              key: ValueKey(record.id),
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                title: Text(
+                  record.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              )
-            : Column(
-                key: ValueKey('history-${history.length}'),
-                children: [
-                  for (final entry in history.take(6).indexed)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: RevealMotion(
-                        key: ValueKey('${entry.$2.path}-${entry.$1}'),
-                        delay: Duration(milliseconds: 34 * entry.$1),
-                        child: AnimatedContainer(
-                          duration: SegmerisMotion.duration(
-                            context,
-                            const Duration(milliseconds: 240),
-                          ),
-                          curve: Curves.easeOutCubic,
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            borderRadius: SegmerisShapes.of(context).md,
-                            color: cs.surfaceContainerHighest.withValues(
-                              alpha: 0.45,
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                entry.$2.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: t.textTheme.labelLarge?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                entry.$2.source,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: t.textTheme.bodySmall?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                entry.$2.path,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: t.textTheme.bodySmall,
-                              ),
-                            ],
-                          ),
-                        ),
+                subtitle: Text(
+                  '${MaterialLocalizations.of(context).formatMediumDate(record.time)}\n${record.path}',
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: widget.onDelete == null
+                    ? null
+                    : IconButton(
+                        tooltip: l.text('delete_download_title'),
+                        onPressed: () => widget.onDelete!(record),
+                        icon: const Icon(Icons.delete_outline_rounded),
                       ),
-                    ),
-                ],
               ),
+            ),
+          if (pageCount > 1)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                IconButton(
+                  tooltip: l.text('previous_page'),
+                  onPressed: page == 0
+                      ? null
+                      : () => setState(() => _page = page - 1),
+                  icon: const Icon(Icons.chevron_left_rounded),
+                ),
+                Text(
+                  '${page + 1} / $pageCount',
+                  style: theme.textTheme.labelLarge,
+                ),
+                IconButton(
+                  tooltip: l.text('next_page'),
+                  onPressed: page + 1 >= pageCount
+                      ? null
+                      : () => setState(() => _page = page + 1),
+                  icon: const Icon(Icons.chevron_right_rounded),
+                ),
+              ],
+            ),
+        ],
       ),
     );
   }

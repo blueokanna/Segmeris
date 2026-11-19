@@ -4,15 +4,14 @@ import 'package:permission_handler/permission_handler.dart';
 import 'platform_utils.dart';
 
 class MediaStoreBridge {
-  static const MethodChannel _channel =
-      MethodChannel('com.blue.segmeris/media_store');
+  static const MethodChannel _channel = MethodChannel(
+    'com.blue.segmeris/media_store',
+  );
 
-  static Future<void> requestPermissions() async {
-    if (!SegmerisPlatform.isAndroid) {
-      return;
-    }
-    await [Permission.storage, Permission.manageExternalStorage].request();
-    await Permission.notification.request();
+  static Future<void>? _permissionPrompt;
+
+  static Future<void> _requestDownloadPermissions() async {
+    await [Permission.storage, Permission.notification].request();
   }
 
   static Future<String> getAppPrivateDir() async {
@@ -67,9 +66,23 @@ class MediaStoreBridge {
     }
   }
 
+  static Future<void> deleteDownloadedFile(String path) async {
+    final deleted = await _channel.invokeMethod<bool>('deleteDownloadedFile', {
+      'path': path,
+    });
+    if (deleted != true) {
+      throw StateError('The platform did not confirm file deletion');
+    }
+  }
+
   static Future<void> startForegroundService() async {
     if (!SegmerisPlatform.isAndroid) {
       return;
+    }
+    try {
+      await (_permissionPrompt ??= _requestDownloadPermissions());
+    } on PlatformException {
+      _permissionPrompt = null;
     }
     try {
       await _channel.invokeMethod('startForegroundService');
@@ -86,7 +99,9 @@ class MediaStoreBridge {
   }
 
   static Future<void> updateForegroundProgress(
-      int progress, String status) async {
+    int progress,
+    String status,
+  ) async {
     if (!SegmerisPlatform.isAndroid) {
       return;
     }
@@ -103,8 +118,9 @@ class MediaStoreBridge {
       return true;
     }
     try {
-      return await _channel
-              .invokeMethod<bool>('isIgnoringBatteryOptimizations') ??
+      return await _channel.invokeMethod<bool>(
+            'isIgnoringBatteryOptimizations',
+          ) ??
           false;
     } catch (_) {
       return false;

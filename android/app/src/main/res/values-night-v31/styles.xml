@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">@color/brand_launch_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/brand_splash_motion</item>
+        <item name="android:windowSplashScreenAnimationDuration">800</item>
+    </style>
+</resources>

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Segmeris
+Comment=Video downloader
+Exec=segmeris
+Icon=segmeris
+Terminal=false
+Categories=AudioVideo;Network;
+StartupNotify=true

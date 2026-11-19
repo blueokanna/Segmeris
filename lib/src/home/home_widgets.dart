@@ -1,27 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
+import 'package:segmeris/src/app/app_motion.dart';
 import 'package:segmeris/src/app/app_theme.dart';
 import 'package:segmeris/src/app/runtime_capabilities.dart';
 import 'package:segmeris/src/rust/api/downloader.dart';
 
-class SegmerisMotion {
-  static const Duration fast = Duration(milliseconds: 200);
-  static const Duration medium = Duration(milliseconds: 300);
-  static const Duration slow = Duration(milliseconds: 500);
-  static const Curve linear = Curves.linear;
-
-  static Duration duration(BuildContext context, Duration value) =>
-      MediaQuery.disableAnimationsOf(context) ? Duration.zero : value;
-
-  static const Curve standard = Cubic(0.2, 0, 0, 1);
-  static const Curve standardDecelerate = Cubic(0, 0, 0, 1);
-  static const Curve standardAccelerate = Cubic(0.3, 0, 1, 1);
-  static const Curve emphasized = Curves.easeInOutCubicEmphasized;
-  static const Curve emphasizedDecelerate = Cubic(0.05, 0.7, 0.1, 1);
-  static const Curve emphasizedAccelerate = Cubic(0.3, 0, 0.8, 0.15);
-  static const Curve decelerate = emphasizedDecelerate;
-  static const Curve accelerate = emphasizedAccelerate;
-}
+export 'package:segmeris/src/app/app_motion.dart';
 
 Widget segmerisFadeScaleTransition(Widget child, Animation<double> animation) {
   return FadeTransition(
@@ -66,9 +50,7 @@ class SectionCard extends StatelessWidget {
     final cs = t.colorScheme;
     final shapes = SegmerisShapes.of(context);
     final spacing = SegmerisSpacing.of(context);
-    return AnimatedContainer(
-      duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
-      curve: SegmerisMotion.emphasized,
+    return Container(
       decoration: BoxDecoration(
         borderRadius: shapes.card,
         color: cs.surfaceContainerLow,
@@ -369,6 +351,7 @@ class _RevealMotionState extends State<RevealMotion>
   late Animation<double> _scale;
   late Animation<Offset> _slide;
   bool? _reducedMotion;
+  bool _started = false;
 
   @override
   void initState() {
@@ -399,16 +382,18 @@ class _RevealMotionState extends State<RevealMotion>
 
   void _play() {
     if (_reducedMotion == true) {
+      _started = true;
       _controller.value = 1;
-    } else {
-      _controller.forward(from: 0);
+    } else if (!_started) {
+      _started = true;
+      _controller.forward();
     }
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    final reducedMotion = !SegmerisMotion.enabled(context);
     if (_reducedMotion != reducedMotion) {
       _reducedMotion = reducedMotion;
       _play();
@@ -432,7 +417,7 @@ class _RevealMotionState extends State<RevealMotion>
 
   @override
   Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context)) {
+    if (!SegmerisMotion.enabled(context)) {
       return widget.child;
     }
     return FadeTransition(
@@ -470,10 +455,13 @@ class MiniChip extends StatelessWidget {
             Icon(icon, size: 14, color: cs.onSurfaceVariant),
             const SizedBox(width: 5),
           ],
-          Text(
-            label,
-            style: t.textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.w700,
+          Flexible(
+            child: Text(
+              label,
+              softWrap: true,
+              style: t.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -518,9 +506,12 @@ class RuntimeCapabilitiesPanel extends StatelessWidget {
                       SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.4,
-                          color: cs.primary,
+                        child: TickerMode(
+                          enabled: SegmerisMotion.enabled(context),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.4,
+                            color: cs.primary,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -537,7 +528,7 @@ class RuntimeCapabilitiesPanel extends StatelessWidget {
                     report: report,
                   ),
           );
-          if (MediaQuery.disableAnimationsOf(context)) return content;
+          if (!SegmerisMotion.enabled(context)) return content;
           return AnimatedSize(
             duration: SegmerisMotion.medium,
             curve: SegmerisMotion.emphasized,
@@ -724,9 +715,7 @@ class _CapabilityIndicator extends StatelessWidget {
       false => cs.onErrorContainer,
       null => cs.onSurfaceVariant,
     };
-    return AnimatedContainer(
-      duration: SegmerisMotion.duration(context, SegmerisMotion.fast),
-      curve: SegmerisMotion.standard,
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
       decoration: BoxDecoration(
         color: background,
@@ -770,25 +759,30 @@ class DisplayPreviewCard extends StatelessWidget {
     required this.profile,
     required this.mode,
     required this.localeLabel,
+    this.font = AppFont.system,
   });
 
   final AppThemeProfile profile;
   final ThemeMode mode;
   final String localeLabel;
+  final AppFont font;
 
   @override
   Widget build(BuildContext context) {
-    final brightness = mode == ThemeMode.dark
-        ? Brightness.dark
-        : Brightness.light;
-    final previewTheme = buildAppTheme(profile, brightness);
+    // Reflect the active theme (including platform brightness, font and dynamic
+    // color) without generating another scheme on every AnimatedTheme frame.
+    final previewTheme = Theme.of(context);
     final cs = previewTheme.colorScheme;
-    final isDark = brightness == Brightness.dark;
+    final isDark = previewTheme.brightness == Brightness.dark;
 
-    return AnimatedContainer(
-      duration: SegmerisMotion.duration(context, SegmerisMotion.slow),
-      curve: SegmerisMotion.emphasized,
-      height: 234,
+    return Container(
+      height:
+          234.0 +
+          (MediaQuery.textScalerOf(context).scale(16) - 16).clamp(
+                0,
+                double.infinity,
+              ) *
+              4,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: SegmerisShapes.of(context).card,
@@ -886,84 +880,76 @@ class ThemePaletteCard extends StatelessWidget {
     final t = Theme.of(context);
     final cs = t.colorScheme;
     final shapes = SegmerisShapes.of(context);
-    return AnimatedSlide(
-      duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
-      curve: SegmerisMotion.emphasized,
-      offset: selected ? Offset.zero : const Offset(0, 0.02),
-      child: AnimatedScale(
-        duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
-        curve: SegmerisMotion.emphasized,
-        scale: selected ? 1 : 0.972,
-        child: InkWell(
-          borderRadius: shapes.md,
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
-            curve: SegmerisMotion.emphasized,
-            width: 172,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              borderRadius: shapes.md,
-              color: selected ? cs.primaryContainer : cs.surfaceContainerHigh,
-              border: Border.all(
-                color: selected ? cs.primary : cs.outlineVariant,
-                width: selected ? 2 : 1,
-              ),
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: InkWell(
+        borderRadius: shapes.md,
+        onTap: onTap,
+        child: Container(
+          width: 172,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: shapes.md,
+            color: selected ? cs.primaryContainer : cs.surfaceContainerHigh,
+            border: Border.all(
+              color: selected ? cs.primary : cs.outlineVariant,
+              width: selected ? 2 : 1,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  height: 58,
-                  decoration: BoxDecoration(
-                    borderRadius: shapes.sm,
-                    color: profile.canvasLight,
-                  ),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 12),
-                      ThemeDot(color: profile.seed),
-                      const SizedBox(width: 8),
-                      ThemeDot(color: profile.accent),
-                      const Spacer(),
-                      AnimatedSwitcher(
-                        duration: SegmerisMotion.duration(
-                          context,
-                          SegmerisMotion.fast,
-                        ),
-                        transitionBuilder: segmerisFadeScaleTransition,
-                        child: selected
-                            ? Icon(
-                                Icons.check_circle_rounded,
-                                key: ValueKey(profile.id),
-                                color: Colors.white.withValues(alpha: 0.95),
-                              )
-                            : const SizedBox(width: 24),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 58,
+                decoration: BoxDecoration(
+                  borderRadius: shapes.sm,
+                  color: profile.canvasLight,
+                ),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 12),
+                    ThemeDot(color: profile.seed),
+                    const SizedBox(width: 8),
+                    ThemeDot(color: profile.accent),
+                    const Spacer(),
+                    AnimatedSwitcher(
+                      duration: SegmerisMotion.duration(
+                        context,
+                        SegmerisMotion.fast,
                       ),
-                      const SizedBox(width: 10),
-                    ],
-                  ),
+                      transitionBuilder: segmerisFadeScaleTransition,
+                      child: selected
+                          ? Icon(
+                              Icons.check_circle_rounded,
+                              key: ValueKey(profile.id),
+                              color: Colors.white.withValues(alpha: 0.95),
+                            )
+                          : const SizedBox(width: 24),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  profile.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: t.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                profile.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: t.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  profile.description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: t.textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                  ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                profile.description,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: t.textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -980,9 +966,7 @@ class InspectionWarningTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context);
     final parsed = InspectionWarningData.parse(warning, t.colorScheme);
-    return AnimatedContainer(
-      duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
-      curve: SegmerisMotion.emphasized,
+    return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1151,9 +1135,7 @@ class StatusBadge extends StatelessWidget {
     final foreground = brightness == Brightness.dark
         ? Colors.white
         : Colors.black87;
-    return AnimatedContainer(
-      duration: SegmerisMotion.duration(context, SegmerisMotion.fast),
-      curve: SegmerisMotion.emphasized,
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         borderRadius: shapes.pill,
@@ -1171,7 +1153,9 @@ class StatusBadge extends StatelessWidget {
   }
 }
 
-class StatusPulseDot extends StatefulWidget {
+/// A stable status marker. The adjacent progress indicator already conveys
+/// activity, so task lists do not need one indefinitely repeating ticker each.
+class StatusPulseDot extends StatelessWidget {
   const StatusPulseDot({
     super.key,
     required this.active,
@@ -1184,7 +1168,23 @@ class StatusPulseDot extends StatefulWidget {
   final double size;
 
   @override
-  State<StatusPulseDot> createState() => _StatusPulseDotState();
+  Widget build(BuildContext context) => SizedBox(
+    width: size * 2.4,
+    height: size * 2.4,
+    child: Center(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color,
+          border: active
+              ? Border.all(color: color.withValues(alpha: 0.3), width: 2)
+              : null,
+        ),
+      ),
+    ),
+  );
 }
 
 class SmoothLinearProgressIndicator extends StatelessWidget {
@@ -1206,12 +1206,15 @@ class SmoothLinearProgressIndicator extends StatelessWidget {
     final target = value?.clamp(0.0, 1.0);
     final radius = SegmerisShapes.of(context).xs;
     if (target == null) {
-      return ClipRRect(
-        borderRadius: radius,
-        child: LinearProgressIndicator(
-          minHeight: minHeight,
-          color: color,
-          backgroundColor: backgroundColor,
+      return TickerMode(
+        enabled: SegmerisMotion.enabled(context),
+        child: ClipRRect(
+          borderRadius: radius,
+          child: LinearProgressIndicator(
+            minHeight: minHeight,
+            color: color,
+            backgroundColor: backgroundColor,
+          ),
         ),
       );
     }
@@ -1229,94 +1232,6 @@ class SmoothLinearProgressIndicator extends StatelessWidget {
           backgroundColor: backgroundColor,
         ),
       ),
-    );
-  }
-}
-
-class _StatusPulseDotState extends State<StatusPulseDot>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1200),
-  );
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _sync();
-  }
-
-  @override
-  void didUpdateWidget(covariant StatusPulseDot oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.active != widget.active) {
-      _sync();
-    }
-  }
-
-  void _sync() {
-    if (widget.active && !MediaQuery.disableAnimationsOf(context)) {
-      _controller.repeat(reverse: true);
-    } else {
-      _controller.stop();
-      _controller.value = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        final t = widget.active ? _controller.value : 0;
-        final glowScale = 1 + (t * 0.75);
-        return SizedBox(
-          width: widget.size * 2.4,
-          height: widget.size * 2.4,
-          child: Center(
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Transform.scale(
-                  scale: glowScale,
-                  child: Container(
-                    width: widget.size,
-                    height: widget.size,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: widget.color.withValues(
-                        alpha: widget.active ? 0.16 - (t * 0.08) : 0,
-                      ),
-                    ),
-                  ),
-                ),
-                Container(
-                  width: widget.size,
-                  height: widget.size,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: widget.color,
-                    boxShadow: [
-                      BoxShadow(
-                        color: widget.color.withValues(
-                          alpha: widget.active ? 0.34 : 0.12,
-                        ),
-                        blurRadius: widget.active ? 12 + (t * 6) : 6,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }
@@ -1341,9 +1256,7 @@ class BatteryBanner extends StatelessWidget {
     final cs = t.colorScheme;
     final shapes = SegmerisShapes.of(context);
     final spacing = SegmerisSpacing.of(context);
-    return AnimatedContainer(
-      duration: SegmerisMotion.duration(context, SegmerisMotion.medium),
-      curve: SegmerisMotion.emphasized,
+    return Container(
       decoration: BoxDecoration(
         borderRadius: shapes.md,
         color: cs.tertiaryContainer,
@@ -1397,10 +1310,14 @@ class DownloadRecord {
     required this.source,
     required this.path,
     required this.time,
+    this.taskId,
   });
 
   final String name;
   final String source;
   final String path;
   final DateTime time;
+  final String? taskId;
+
+  String get id => taskId ?? '${time.microsecondsSinceEpoch}:$path';
 }

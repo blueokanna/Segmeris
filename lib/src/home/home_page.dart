@@ -1,15 +1,20 @@
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
 import 'package:segmeris/src/app/app_settings.dart';
-import 'package:segmeris/src/app/app_theme.dart';
+import 'package:segmeris/src/app/brand_logo.dart';
+import 'package:segmeris/src/app/app_update.dart';
+import 'package:segmeris/src/app/app_update_widgets.dart';
 import 'package:segmeris/src/app/auth_context_store.dart';
 import 'package:segmeris/src/app/auth_entry.dart';
 import 'package:segmeris/src/app/bilibili_qr_login.dart';
 import 'package:segmeris/src/app/auth_browser_page.dart';
 import 'package:segmeris/src/app/download_engine.dart';
+import 'package:segmeris/src/app/download_state_store.dart';
+import 'package:segmeris/src/home/download_session.dart';
+import 'package:segmeris/src/home/download_task_request.dart';
 import 'package:segmeris/src/app/local_file_utils.dart';
 import 'package:segmeris/src/app/platform_bridge.dart';
 import 'package:segmeris/src/app/platform_utils.dart';
@@ -28,105 +33,36 @@ import 'package:segmeris/src/home/source_input.dart';
 import 'package:segmeris/src/home/subtitle_preference.dart';
 import 'package:segmeris/src/rust/api/downloader.dart';
 
-class _DownloadTaskRequest {
-  const _DownloadTaskRequest({
-    required this.pageUrl,
-    required this.mediaUrl,
-    this.mediaFallbackUrls = const [],
-    required this.audioUrl,
-    this.audioFallbackUrls = const [],
-    required this.output,
-    required this.chosenDir,
-    required this.options,
-    required this.requestContext,
-    required this.fileName,
-    required this.sourcePage,
-    this.preferredTier,
-  });
-
-  final String pageUrl;
-  final String mediaUrl;
-  final List<String> mediaFallbackUrls;
-  final String? audioUrl;
-  final List<String> audioFallbackUrls;
-  final String output;
-  final String? chosenDir;
-
-  /// Transport options, including the subtitle decision this task was
-  /// queued with — a retry must reproduce the same download.
-  final DownloadOptions options;
-  final RequestContext requestContext;
-  final String fileName;
-  final String sourcePage;
-
-  /// The tier this task must re-resolve before every attempt.
-  ///
-  /// A queued episode stores its page URL and the picked tier instead of
-  /// stream URLs: signed CDN links belong to the episode they were resolved
-  /// for and expire, while a queue can run for hours and be retried after
-  /// that. When this is set, [mediaUrl]/[audioUrl] carry no meaning and are
-  /// replaced by the tier matching [pageUrl].
-  final MediaCandidate? preferredTier;
-
-  _DownloadTaskRequest withRequestContext(RequestContext value) {
-    return _DownloadTaskRequest(
-      pageUrl: pageUrl,
-      mediaUrl: mediaUrl,
-      mediaFallbackUrls: mediaFallbackUrls,
-      audioUrl: audioUrl,
-      audioFallbackUrls: audioFallbackUrls,
-      output: output,
-      chosenDir: chosenDir,
-      options: options,
-      requestContext: value,
-      fileName: fileName,
-      sourcePage: sourcePage,
-      preferredTier: preferredTier,
-    );
-  }
-
-  /// The same task, bound to the tier resolved for this attempt.
-  _DownloadTaskRequest withResolvedSource(MediaCandidate source) {
-    return _DownloadTaskRequest(
-      pageUrl: pageUrl,
-      mediaUrl: source.mediaUrl,
-      mediaFallbackUrls: source.mediaFallbackUrls,
-      audioUrl: source.audioUrl,
-      audioFallbackUrls: source.audioFallbackUrls,
-      output: output,
-      chosenDir: chosenDir,
-      options: options,
-      requestContext: requestContext,
-      fileName: fileName,
-      sourcePage: sourcePage,
-    );
-  }
-}
-
 class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
     required this.settings,
     required this.onSettingsChanged,
     this.capabilityProbe = RuntimeCapabilityProbe.inspect,
+    this.downloadEngine,
+    this.stateStore,
+    this.updateController,
   });
 
   final AppSettings settings;
   final ValueChanged<AppSettings> onSettingsChanged;
   final Future<PlatformCapabilitySnapshot> Function() capabilityProbe;
+  final DownloadEngine? downloadEngine;
+  final DownloadStateStore? stateStore;
+  final AppUpdateController? updateController;
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // Not `final`: recreated in `didUpdateWidget` when the web API settings
   // change, so it must be reassignable.
   late DownloadEngine _engine;
   final _formKey = GlobalKey<FormState>();
   final _urlCtrl = TextEditingController();
   final _fileNameCtrl = TextEditingController(text: 'video.mp4');
-  final _concurrencyCtrl = TextEditingController(text: '4');
+  final _concurrencyCtrl = TextEditingController(text: '6');
   final _retriesCtrl = TextEditingController(text: '5');
   final _vBitrateCtrl = TextEditingController(text: '0');
   final _aBitrateCtrl = TextEditingController(text: '0');
@@ -136,7 +72,15 @@ class _HomePageState extends State<HomePage> {
   final _cookieCtrl = TextEditingController();
   final _headersCtrl = TextEditingController();
   final _pageController = HomePageController();
-  final Map<String, _DownloadTaskRequest> _retryRequests = {};
+  final Map<String, DownloadTaskRequest> _retryRequests = {};
+  late final DownloadStateStore _stateStore =
+      widget.stateStore ?? createDownloadStateStore();
+  bool _sessionReady = false;
+  String? _sessionError;
+  Timer? _checkpointTimer;
+  Timer? _retentionTimer;
+  final Set<String> _activeTaskIds = {};
+  final Set<String> _removingRecords = {};
 
   /// Subtitle pick of the current inspection; reset to the episode default
   /// whenever a new analysis replaces it.
@@ -158,19 +102,28 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _engine = createDownloadEngine(
-      apiBaseUrl: widget.settings.apiBaseUrl,
-      apiToken: widget.settings.apiToken,
-    );
+    _engine =
+        widget.downloadEngine ??
+        createDownloadEngine(
+          apiBaseUrl: widget.settings.apiBaseUrl,
+          apiToken: widget.settings.apiToken,
+        );
+    WidgetsBinding.instance.addObserver(this);
     _checkBattery();
-    unawaited(_restoreAuthContext());
+    unawaited(_restoreSession());
   }
 
   @override
   void didUpdateWidget(HomePage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.settings.apiBaseUrl != widget.settings.apiBaseUrl ||
-        oldWidget.settings.apiToken != widget.settings.apiToken) {
+    if (oldWidget.settings.historyRetentionDays !=
+            widget.settings.historyRetentionDays &&
+        _sessionReady) {
+      _pruneHistory();
+    }
+    if (widget.downloadEngine == null &&
+        (oldWidget.settings.apiBaseUrl != widget.settings.apiBaseUrl ||
+            oldWidget.settings.apiToken != widget.settings.apiToken)) {
       _engine = createDownloadEngine(
         apiBaseUrl: widget.settings.apiBaseUrl,
         apiToken: widget.settings.apiToken,
@@ -180,6 +133,11 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _checkpointTimer?.cancel();
+    _retentionTimer?.cancel();
+    _pageController.removeListener(_scheduleCheckpoint);
+    if (_sessionReady) unawaited(_checkpointQuietly());
     _urlCtrl.dispose();
     _fileNameCtrl.dispose();
     _concurrencyCtrl.dispose();
@@ -196,38 +154,156 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  Future<void> _restoreSession() async {
+    try {
+      await _restoreAuthContext();
+      final json = await _stateStore.load();
+      final session = json == null
+          ? null
+          : await DownloadSession.fromJson(json);
+      if (!mounted) return;
+      if (session != null) {
+        _retryRequests.addAll(session.requests);
+        _pageController.restoreDownloads(
+          tasks: session.tasks,
+          history: session.history,
+        );
+      }
+      setState(() => _sessionReady = true);
+      _pageController.addListener(_scheduleCheckpoint);
+      _pruneHistory();
+      _retentionTimer = Timer.periodic(
+        const Duration(hours: 1),
+        (_) => _pruneHistory(),
+      );
+      // Resume serially: reopening a large queue must not start hundreds of
+      // independent connection pools at once. Explicitly paused tasks stay paused.
+      final resumeIds = _pageController.value.downloadTasks.reversed
+          .where((task) => task.interrupted && !task.paused)
+          .map((task) => task.id)
+          .toList();
+      if (resumeIds.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_resumeInterrupted(resumeIds));
+        });
+      }
+    } catch (error) {
+      if (mounted) setState(() => _sessionError = '$error');
+    }
+  }
+
+  Future<void> _resumeInterrupted(List<String> ids) async {
+    setState(() => _seriesQueueActive = true);
+    try {
+      for (final id in ids) {
+        if (!mounted) return;
+        final request = _retryRequests[id];
+        if (request == null) continue;
+        if (!_pageController.retryDownloadTask(
+          id,
+          status: AppLocalizations.of(context).text('restoring_download'),
+        )) {
+          continue;
+        }
+        await _runDownloadTask(id, request, allowAutoAuth: false);
+      }
+    } finally {
+      if (mounted) setState(() => _seriesQueueActive = false);
+    }
+  }
+
+  void _scheduleCheckpoint() {
+    if (!_sessionReady || _checkpointTimer != null) return;
+    _checkpointTimer = Timer(const Duration(seconds: 1), () {
+      _checkpointTimer = null;
+      unawaited(_checkpointQuietly());
+    });
+  }
+
+  Future<void> _checkpoint() {
+    _checkpointTimer?.cancel();
+    _checkpointTimer = null;
+    if (!_sessionReady) {
+      return Future.error(StateError('Download journal is not available'));
+    }
+    final vm = _pageController.value;
+    return _stateStore.save(
+      DownloadSession(
+        tasks: vm.downloadTasks,
+        history: vm.history,
+        requests: _retryRequests,
+      ).toJson(),
+    );
+  }
+
+  Future<void> _checkpointQuietly() async {
+    try {
+      await _checkpoint();
+      if (mounted && _sessionError != null) {
+        setState(() => _sessionError = null);
+      }
+    } catch (error) {
+      if (mounted) setState(() => _sessionError = '$error');
+    }
+  }
+
+  void _pruneHistory() {
+    if (_pageController.pruneHistory(widget.settings.historyRetentionDays)) {
+      unawaited(_checkpointQuietly());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_sessionReady) return;
+    if (state == AppLifecycleState.resumed) _pruneHistory();
+    unawaited(_checkpointQuietly());
+  }
+
   Future<void> _checkBattery() async {
     final value = await MediaStoreBridge.isIgnoringBatteryOptimizations();
-    _pageController.setIgnoringBattery(value);
+    if (mounted) _pageController.setIgnoringBattery(value);
   }
 
   Future<void> _pickDir() async {
     if (_pageController.value.analyzing || SegmerisPlatform.isWeb) {
       return;
     }
-    final dir = await FilePicker.getDirectoryPath();
-    if (dir != null) {
-      _pageController.setChosenDir(dir);
+    final uri = await FilePicker.pickDirectory();
+    if (uri != null && mounted) {
+      _pageController.setChosenDir(
+        uri.scheme == 'file' ? uri.toFilePath() : uri.toString(),
+      );
     }
   }
 
   Future<String> _tempOutputPathFor(String name, String? chosenDir) async {
-    if (SegmerisPlatform.isWeb) {
-      return name;
+    String path;
+    if (!_engine.writesLocalFiles) {
+      path = name;
+    } else {
+      final privateDir = SegmerisPlatform.isAndroid
+          ? await MediaStoreBridge.getAppPrivateDir()
+          : null;
+      if (SegmerisPlatform.isAndroid &&
+          (privateDir == null || privateDir.isEmpty)) {
+        throw StateError('Application download directory is unavailable');
+      }
+      path = await localOutputPath(name, privateDir ?? chosenDir);
     }
-    if (SegmerisPlatform.isAndroid) {
-      final safe = await MediaStoreBridge.getAppPrivateDir();
-      return safe.isNotEmpty
-          ? '$safe${SegmerisPlatform.pathSeparator}$name'
-          : name;
+    final reserved = _retryRequests.values
+        .map((request) => request.output.toLowerCase())
+        .toSet();
+    final dot = path.lastIndexOf('.');
+    final base = dot < 0 ? path : path.substring(0, dot);
+    final extension = dot < 0 ? '' : path.substring(dot);
+    var candidate = path;
+    var suffix = 1;
+    while (reserved.contains(candidate.toLowerCase()) ||
+        (_engine.writesLocalFiles && await localFileExists(candidate))) {
+      candidate = '$base (${suffix++})$extension';
     }
-    if (chosenDir != null && chosenDir.isNotEmpty) {
-      final separator = SegmerisPlatform.pathSeparator;
-      return chosenDir.endsWith(separator)
-          ? '$chosenDir$name'
-          : '$chosenDir$separator$name';
-    }
-    return name;
+    return candidate;
   }
 
   String _normalizeOutputName(String value) {
@@ -550,7 +626,7 @@ class _HomePageState extends State<HomePage> {
     }
     // A series queue owns the download pipeline while it runs; a manual
     // click would interleave a second task with the queue.
-    if (_seriesQueueActive) {
+    if (_seriesQueueActive || !_sessionReady || _sessionError != null) {
       return;
     }
     final l = AppLocalizations.of(context);
@@ -617,7 +693,9 @@ class _HomePageState extends State<HomePage> {
     final (subtitleMode, subtitleValue) = subtitleChoiceForSingle(
       _subtitlePreference,
     );
-    final request = _DownloadTaskRequest(
+    final request = DownloadTaskRequest(
+      preferredTier: candidateMatchesInput ? selectedCandidate : null,
+      strictTier: true,
       pageUrl: pageUrl,
       mediaUrl: mediaUrl,
       mediaFallbackUrls: mediaFallbackUrls,
@@ -758,6 +836,7 @@ class _HomePageState extends State<HomePage> {
 
     setState(() => _seriesQueueActive = true);
     try {
+      final queued = <String>[];
       for (final entry in entries) {
         if (!mounted) {
           return;
@@ -768,8 +847,9 @@ class _HomePageState extends State<HomePage> {
           fileName: fileName,
           sourcePage: entry.pageUrl,
           status: l.text('preparing'),
+          queued: true,
         );
-        final request = _DownloadTaskRequest(
+        final request = DownloadTaskRequest(
           pageUrl: entry.pageUrl,
           mediaUrl: entry.pageUrl,
           audioUrl: null,
@@ -790,8 +870,24 @@ class _HomePageState extends State<HomePage> {
           preferredTier: tier,
         );
         _retryRequests[taskId] = request;
+        await request.saveCredentials(taskId);
+        queued.add(taskId);
+      }
+      await _checkpoint();
+      for (final taskId in queued) {
+        if (!mounted) return;
+        final request = _retryRequests[taskId];
+        if (request == null ||
+            !_pageController.retryDownloadTask(
+              taskId,
+              status: l.text('preparing'),
+            )) {
+          continue;
+        }
         await _runDownloadTask(taskId, request, allowAutoAuth: false);
       }
+    } catch (error) {
+      if (mounted) setState(() => _sessionError = '$error');
     } finally {
       if (mounted) {
         setState(() => _seriesQueueActive = false);
@@ -802,7 +898,7 @@ class _HomePageState extends State<HomePage> {
   /// Export the SRT the engine wrote next to its output, so the subtitle is
   /// visible in the same Downloads folder as the video. Best effort: a
   /// finished download must not fail because a sidecar copy did.
-  Future<void> _exportSubtitleSidecar(_DownloadTaskRequest request) async {
+  Future<void> _exportSubtitleSidecar(DownloadTaskRequest request) async {
     try {
       final subtitlePath = _siblingSrtPath(request.output);
       if (!await localFileExists(subtitlePath)) {
@@ -866,7 +962,7 @@ class _HomePageState extends State<HomePage> {
   /// episode must not stall the rest.
   Future<MediaCandidate?> _resolveQueuedSource(
     String taskId,
-    _DownloadTaskRequest request,
+    DownloadTaskRequest request,
     AppLocalizations l,
   ) async {
     try {
@@ -874,14 +970,17 @@ class _HomePageState extends State<HomePage> {
         url: request.pageUrl,
         requestContext: request.requestContext,
       );
-      final source = candidateForTier(
-        inspection.candidates,
-        request.preferredTier,
-      );
+      if (!mounted) return null;
+      final source = request.strictTier && request.preferredTier != null
+          ? candidateForResumeTier(
+              inspection.candidates,
+              request.preferredTier!,
+            )
+          : candidateForTier(inspection.candidates, request.preferredTier);
       if (source == null) {
         _pageController.failDownloadTask(
           taskId,
-          l.text('no_candidates'),
+          l.text(request.strictTier ? 'quality_unavailable' : 'no_candidates'),
           status: null,
           progress: 0,
         );
@@ -935,34 +1034,42 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _runDownloadTask(
     String taskId,
-    _DownloadTaskRequest request, {
+    DownloadTaskRequest request, {
     bool allowAutoAuth = true,
   }) async {
+    if (!_activeTaskIds.add(taskId)) return;
     final l = AppLocalizations.of(context);
-    var effective = request;
-    if (request.preferredTier != null) {
-      final resolved = await _resolveQueuedSource(taskId, request, l);
-      if (!mounted || resolved == null) {
-        return;
-      }
-      effective = request.withResolvedSource(resolved);
-    }
-    _pageController.setTaskControl(
-      taskId,
-      paused: false,
-      urls: [
-        effective.mediaUrl,
-        if (effective.audioUrl != null) effective.audioUrl!,
-      ],
-    );
+    final engine = _engine;
     var shouldAutoOpenAuthBrowser = false;
     var downloadStreamFailed = false;
-    await MediaStoreBridge.startForegroundService();
     var lastNotifiedPercent = -1;
-    var lastNotifiedMessage = <String>{};
+    final notificationClock = Stopwatch()..start();
+    var lastNotificationMs = -1000;
 
     try {
-      await for (final event in _engine.download(
+      // Commit the request before starting any network or file work.
+      await request.saveCredentials(taskId);
+      await _checkpoint();
+      if (!mounted) return;
+      var effective = request;
+      if (request.preferredTier != null) {
+        final resolved = await _resolveQueuedSource(taskId, request, l);
+        if (!mounted || resolved == null) return;
+        effective = request.withResolvedSource(resolved);
+        _retryRequests[taskId] = effective;
+        await _checkpoint();
+      }
+      if (!mounted) return;
+      _pageController.setTaskControl(
+        taskId,
+        paused: false,
+        urls: [
+          effective.mediaUrl,
+          if (effective.audioUrl != null) effective.audioUrl!,
+        ],
+      );
+      await MediaStoreBridge.startForegroundService();
+      await for (final event in engine.download(
         pageUrl: effective.pageUrl,
         mediaUrl: effective.mediaUrl,
         mediaFallbackUrls: effective.mediaFallbackUrls,
@@ -1001,10 +1108,11 @@ class _HomePageState extends State<HomePage> {
         final percent = progress.isFinite
             ? (progress.clamp(0.0, 1.0) * 100).round()
             : lastNotifiedPercent.clamp(0, 100);
-        final isNewMessage = !lastNotifiedMessage.contains(event.message);
-        if (isNewMessage || percent - lastNotifiedPercent >= 1) {
+        if (notificationClock.elapsedMilliseconds - lastNotificationMs >=
+                1000 ||
+            percent == 100) {
           lastNotifiedPercent = percent;
-          lastNotifiedMessage = {event.message};
+          lastNotificationMs = notificationClock.elapsedMilliseconds;
           await MediaStoreBridge.updateForegroundProgress(
             percent,
             event.message,
@@ -1018,7 +1126,7 @@ class _HomePageState extends State<HomePage> {
 
       if (!downloadStreamFailed) {
         String finalPath;
-        if (_engine.writesLocalFiles) {
+        if (engine.writesLocalFiles) {
           if (!await localFileExists(request.output) ||
               await localFileLength(request.output) == 0) {
             _pageController.failDownloadTask(
@@ -1054,16 +1162,11 @@ class _HomePageState extends State<HomePage> {
               return;
             }
             finalPath = savedPath;
-            // The engine writes subtitles as a sidecar next to its output;
-            // app-private storage is invisible to the user, so the SRT has
-            // to make the same trip the video does. Best effort: a failed
-            // subtitle copy must not fail a finished download.
             await _exportSubtitleSidecar(request);
-            await localFileDelete(request.output);
           }
         } else {
           // Web: the file lives on the API server; surface its path.
-          finalPath = _engine.lastResultPath ?? request.output;
+          finalPath = engine.lastResultPath ?? request.output;
         }
 
         _retryRequests.remove(taskId);
@@ -1074,6 +1177,16 @@ class _HomePageState extends State<HomePage> {
           sourcePage: request.sourcePage,
           completedStatus: l.text('completed'),
         );
+        // Publish history durably before removing the recoverable private copy.
+        await _checkpoint();
+        await DownloadTaskRequest.deleteCredentials(taskId);
+        if (SegmerisPlatform.isAndroid && engine.writesLocalFiles) {
+          try {
+            await localFileDelete(request.output);
+          } catch (error) {
+            debugPrint('Completed private copy cleanup failed: $error');
+          }
+        }
       }
     } catch (error) {
       if (!mounted) {
@@ -1090,13 +1203,117 @@ class _HomePageState extends State<HomePage> {
         progress: 0,
       );
     } finally {
-      if (!_pageController.value.running) {
+      _activeTaskIds.remove(taskId);
+      if (mounted) await _checkpointQuietly();
+      if (_activeTaskIds.isEmpty) {
         await MediaStoreBridge.stopForegroundService();
       }
     }
 
     if (shouldAutoOpenAuthBrowser && mounted) {
       await _openAuthBrowser(reanalyzeAfterImport: true);
+    }
+  }
+
+  Future<void> _deleteRecord(DownloadRecord record) async {
+    if (!_removingRecords.add(record.id)) return;
+    try {
+      final l = AppLocalizations.of(context);
+      final deleteFile = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(l.text('delete_download_title')),
+          content: Text('${record.name}\n\n${l.text('delete_download_hint')}'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(l.text('cancel')),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(l.text('remove_record')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(l.text('delete_file')),
+            ),
+          ],
+        ),
+      );
+      if (deleteFile == null || !mounted) return;
+      if (deleteFile) {
+        if (_retryRequests.values.any(
+          (request) => request.output == record.path,
+        )) {
+          throw StateError('An unfinished task still uses this output');
+        }
+        final engine = _engine;
+        if (!engine.writesLocalFiles) {
+          if (engine is! CompletedDownloadDeletionEngine ||
+              !await (engine as CompletedDownloadDeletionEngine)
+                  .deleteDownloadedFile(path: record.path)) {
+            throw StateError(
+              'The server could not identify this completed file',
+            );
+          }
+        } else if (SegmerisPlatform.isAndroid) {
+          await MediaStoreBridge.deleteDownloadedFile(record.path);
+        } else {
+          await localFileDelete(record.path);
+        }
+      }
+      if (!mounted) return;
+      final before = _pageController.value;
+      _pageController.removeHistory(record.id);
+      try {
+        await _checkpoint();
+      } catch (_) {
+        _pageController.restoreDownloads(
+          tasks: before.downloadTasks,
+          history: before.history,
+        );
+        rethrow;
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${AppLocalizations.of(context).text('delete_failed')}: $error',
+            ),
+          ),
+        );
+      }
+    } finally {
+      _removingRecords.remove(record.id);
+    }
+  }
+
+  Future<void> _removeTask(String id) async {
+    if (_activeTaskIds.contains(id)) return;
+    final records = _pageController.value.history.where(
+      (record) => record.taskId == id,
+    );
+    if (records.isNotEmpty) {
+      await _deleteRecord(records.first);
+      return;
+    }
+    final before = _pageController.value;
+    final request = _retryRequests[id];
+    if (!_pageController.removeDownloadTask(id)) return;
+    _retryRequests.remove(id);
+    try {
+      await _checkpoint();
+      await DownloadTaskRequest.deleteCredentials(id);
+    } catch (error) {
+      if (request != null) _retryRequests[id] = request;
+      if (mounted) {
+        _pageController.restoreDownloads(
+          tasks: before.downloadTasks,
+          history: before.history,
+        );
+        setState(() => _sessionError = '$error');
+      }
     }
   }
 
@@ -1107,6 +1324,7 @@ class _HomePageState extends State<HomePage> {
       showDragHandle: true,
       useSafeArea: true,
       builder: (context) => HomeSettingsSheet(
+        updateController: widget.updateController,
         settings: widget.settings,
         capabilityProbe: widget.capabilityProbe,
         enabled: !_pageController.value.busy,
@@ -1162,16 +1380,13 @@ class _HomePageState extends State<HomePage> {
             title: Row(
               children: [
                 ExcludeSemantics(
-                  child: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: cs.primaryContainer,
-                      borderRadius: SegmerisShapes.of(context).md,
+                  child: ClipPath(
+                    clipper: ShapeBorderClipper(
+                      shape: MaterialShapeBorder(
+                        shape: MaterialShapes.cookie9Sided,
+                      ),
                     ),
-                    child: Icon(
-                      Icons.downloading_rounded,
-                      color: cs.onPrimaryContainer,
-                    ),
+                    child: const BrandLogo(size: 44),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1200,10 +1415,13 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
             actions: [
-              IconButton(
-                onPressed: _showSettingsSheet,
-                icon: const Icon(Icons.tune_rounded),
-                tooltip: l.text('appearance'),
+              Semantics(
+                identifier: 'segmeris.settings',
+                child: IconButton(
+                  onPressed: _showSettingsSheet,
+                  icon: const Icon(Icons.tune_rounded),
+                  tooltip: l.text('appearance'),
+                ),
               ),
             ],
           ),
@@ -1310,6 +1528,26 @@ class _HomePageState extends State<HomePage> {
   }) {
     final l = AppLocalizations.of(context);
     final children = <Widget>[
+      if (_sessionError != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: MaterialBanner(
+            content: Text('${l.text('journal_error')}: $_sessionError'),
+            actions: [
+              TextButton(
+                onPressed: () async {
+                  if (_sessionReady) {
+                    await _checkpointQuietly();
+                  } else {
+                    setState(() => _sessionError = null);
+                    await _restoreSession();
+                  }
+                },
+                child: Text(l.text('retry')),
+              ),
+            ],
+          ),
+        ),
       if (SegmerisPlatform.isAndroid && !vm.ignoringBattery)
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
@@ -1331,7 +1569,11 @@ class _HomePageState extends State<HomePage> {
         retriesController: _retriesCtrl,
         videoBitrateController: _vBitrateCtrl,
         audioBitrateController: _aBitrateCtrl,
-        running: vm.running || _seriesQueueActive,
+        running:
+            vm.running ||
+            _seriesQueueActive ||
+            !_sessionReady ||
+            _sessionError != null,
         analyzing: vm.analyzing,
         keepTemp: vm.keepTemp,
         chosenDir: vm.chosenDir,
@@ -1401,15 +1643,26 @@ class _HomePageState extends State<HomePage> {
     EdgeInsetsGeometry padding = EdgeInsets.zero,
   }) {
     final children = <Widget>[
+      if (widget.updateController case final updates?)
+        ListenableBuilder(
+          listenable: updates,
+          builder: (context, _) => updates.hasUpdate
+              ? Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: AppUpdateCard(controller: updates),
+                )
+              : const SizedBox.shrink(),
+        ),
       HomeDownloadTasksCard(
         tasks: vm.downloadTasks,
         onRetry: (taskId) => _retryDownloadTask(taskId),
+        onRemove: _removeTask,
         onTogglePause: _engine is PausableDownloadEngine
             ? _toggleDownloadPause
             : null,
       ),
       const SizedBox(height: 12),
-      HomeHistoryCard(history: vm.history),
+      HomeHistoryCard(history: vm.history, onDelete: _deleteRecord),
     ];
 
     if (scrollable) {

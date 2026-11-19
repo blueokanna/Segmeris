@@ -16,7 +16,7 @@
 
 use std::io::{ErrorKind, Read};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use log::{debug, info, warn};
 
 use super::bits::BitReader;
@@ -199,10 +199,10 @@ impl Timebase {
     }
 
     fn map(&mut self, ticks: i64) -> i64 {
-        if let Some(last) = self.last {
-            if ticks + self.offset < last - 45_000 {
-                self.offset = last - ticks;
-            }
+        if let Some(last) = self.last
+            && ticks + self.offset < last - 45_000
+        {
+            self.offset = last - ticks;
         }
         let mapped = ticks + self.offset;
         self.last = Some(match self.last {

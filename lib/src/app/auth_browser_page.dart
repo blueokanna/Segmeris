@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
 import 'package:segmeris/src/app/bilibili_qr_login.dart';

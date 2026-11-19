@@ -36,14 +36,14 @@ mod url;
 mod wbi;
 
 use ::url::Url;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use log::debug;
 use nextjson::Value;
 use std::time::Duration;
 
 use crate::api::downloader::{
-    score_candidates, CandidateCollector, MediaCollection, MediaCollectionEntry,
-    MediaInspectionResult, MediaSubtitleTrack, RequestContext,
+    CandidateCollector, MediaCollection, MediaCollectionEntry, MediaInspectionResult,
+    MediaSubtitleTrack, RequestContext, score_candidates,
 };
 use crate::api::site_adapters::SiteWarning;
 use crate::net::SyncHttpClient;
@@ -163,7 +163,7 @@ fn inspect_video(
                 &view.title,
                 &error,
                 collection,
-            ))
+            ));
         }
     };
 
@@ -255,21 +255,21 @@ fn inspect_pgc_episode_in_season(
                 &season.title,
                 &error,
                 Some(collection),
-            ))
+            ));
         }
     };
 
     let mut warnings = Vec::new();
-    if let Some(episode) = current {
-        if !episode.badge.is_empty() {
-            warnings.push(SiteWarning::site(
+    if let Some(episode) = current
+        && !episode.badge.is_empty()
+    {
+        warnings.push(SiteWarning::site(
                 "bilibili-membership-badge",
                 format!(
                     "Episode {} carries a \"{}\" badge; downloading it requires the matching account entitlements",
                     episode.ep_id, episode.badge
                 ),
             ));
-        }
     }
     let subtitles = current
         .filter(|episode| !episode.bvid.is_empty() && episode.cid > 0)
@@ -402,7 +402,7 @@ fn inspect_archive_entry(
                 &view.title,
                 &error,
                 Some(collection),
-            ))
+            ));
         }
     };
 
@@ -856,8 +856,8 @@ fn fetch_subtitle_srt(track: &SubtitleTrack, request_context: &RequestContext) -
         bail!("Subtitle download failed with HTTP {status}");
     }
     let text = String::from_utf8_lossy(&body);
-    let payload: Value =
-        nextjson::from_str(&text).context("Subtitle document was not valid JSON")?;
+    let payload: Value = nextjson::from_str(&text)
+        .map_err(|error| anyhow::anyhow!("Subtitle document was not valid JSON: {error}"))?;
     subtitle::body_to_srt(&payload, &subtitle_label(track))
 }
 

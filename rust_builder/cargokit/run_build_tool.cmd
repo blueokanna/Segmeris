@@ -12,6 +12,8 @@ cd /D "%CARGOKIT_TOOL_TEMP_DIR%"
 
 SET BUILD_TOOL_PKG_DIR=%BASEDIR%build_tool
 SET DART=%FLUTTER_ROOT%\bin\cache\dart-sdk\bin\dart
+set "PUB_GET_OPTION="
+if /I "%CARGOKIT_PUB_OFFLINE%"=="true" set "PUB_GET_OPTION=--offline"
 if not exist "%DART%.exe" (
     echo Flutter Dart SDK was not found. Set FLUTTER_ROOT to the Flutter SDK directory. 1>&2
     exit /b 1
@@ -83,7 +85,7 @@ REM There is no CUR_PACKAGE_INFO it was renamed in previous step to %PREV_PACKAG
 REM which means  we need to do pub get and precompile
 if not exist "%PRECOMPILED%" (
     echo Running pub get in "%cd%"
-    "%DART%" pub get --no-precompile
+    "%DART%" pub get %PUB_GET_OPTION%
     if errorlevel 1 exit /b !ERRORLEVEL!
     "%DART%" compile kernel bin/build_tool_runner.dart
     if errorlevel 1 exit /b !ERRORLEVEL!
@@ -94,7 +96,7 @@ set BUILD_EXIT_CODE=%ERRORLEVEL%
 
 REM 253 means invalid snapshot version.
 If %BUILD_EXIT_CODE% equ 253 (
-    "%DART%" pub get --no-precompile
+    "%DART%" pub get %PUB_GET_OPTION%
     if errorlevel 1 exit /b !ERRORLEVEL!
     "%DART%" compile kernel bin/build_tool_runner.dart
     if errorlevel 1 exit /b !ERRORLEVEL!

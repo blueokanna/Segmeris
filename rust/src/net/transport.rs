@@ -1,6 +1,6 @@
 //! Streaming adapter over Courierust's public HTTP and TLS codecs.
 //! DNS is resolved once; the checked socket address is the one we connect to.
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use courierust::courierust_client::ClientConfig;
 use courierust::courierust_error::Error;
 use courierust::courierust_h1::{self as h1, BodyLen};
@@ -413,12 +413,13 @@ impl ResponseBody {
 
 impl Drop for ResponseBody {
     fn drop(&mut self) {
-        if self.done && self.reusable {
-            if let Some(reader) = self.reader.take() {
-                let mut pool = self.pool.lock().unwrap_or_else(|e| e.into_inner());
-                if pool.len() < 32 && pool.iter().filter(|(key, _)| key == &self.key).count() < 8 {
-                    pool.push((self.key.clone(), reader));
-                }
+        if self.done
+            && self.reusable
+            && let Some(reader) = self.reader.take()
+        {
+            let mut pool = self.pool.lock().unwrap_or_else(|e| e.into_inner());
+            if pool.len() < 32 && pool.iter().filter(|(key, _)| key == &self.key).count() < 8 {
+                pool.push((self.key.clone(), reader));
             }
         }
     }

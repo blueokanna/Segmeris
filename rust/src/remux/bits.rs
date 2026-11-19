@@ -3,7 +3,7 @@
 //! Only the operations needed to decode a Sequence Parameter Set are
 //! implemented: fixed-width reads and the Exp-Golomb codes (ue/se).
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 pub struct BitReader<'a> {
     data: &'a [u8],

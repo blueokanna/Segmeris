@@ -14,8 +14,8 @@ pub mod md5;
 pub mod murmur3;
 pub mod sha256;
 
-pub use aes_cbc::{aes_128_cbc_decrypt, AesCbcError};
+pub use aes_cbc::{AesCbcError, aes_128_cbc_decrypt};
 pub use hmac::hmac_sha256;
-pub use md5::{md5, md5_hex, Md5};
+pub use md5::{Md5, md5, md5_hex};
 pub use murmur3::murmur3_x64_128;
-pub use sha256::{sha256, sha256_hex, Sha256};
+pub use sha256::{Sha256, sha256, sha256_hex};

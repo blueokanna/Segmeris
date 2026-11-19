@@ -32,7 +32,7 @@
 //! Both shapes are wire facts (they are what the web player consumes), and
 //! both parsers below are network-free so they stay unit tested.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use nextjson::Value;
 
 /// One subtitle track as `player/v2` describes it.
@@ -78,14 +78,13 @@ impl SubtitleList {
 
     /// Position of [`Self::default_track`] inside [`Self::tracks`].
     pub fn default_index(&self) -> Option<usize> {
-        if !self.selected_language.is_empty() {
-            if let Some(index) = self
+        if !self.selected_language.is_empty()
+            && let Some(index) = self
                 .tracks
                 .iter()
                 .position(|track| track.language == self.selected_language)
-            {
-                return Some(index);
-            }
+        {
+            return Some(index);
         }
         self.tracks
             .iter()
@@ -104,10 +103,9 @@ impl SubtitleList {
         if let Some(tag) = preferred_language
             .map(str::trim)
             .filter(|tag| !tag.is_empty())
+            && let Some(track) = self.tracks.iter().find(|track| track.language == tag)
         {
-            if let Some(track) = self.tracks.iter().find(|track| track.language == tag) {
-                return Some(track);
-            }
+            return Some(track);
         }
         self.default_track()
     }

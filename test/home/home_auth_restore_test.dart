@@ -1,5 +1,4 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
 import 'package:segmeris/src/app/app_settings.dart';
@@ -29,9 +28,7 @@ Widget _buildApp() {
     supportedLocales: AppLocalizations.supportedLocales,
     localizationsDelegates: const [
       AppLocalizations.delegate,
-      GlobalMaterialLocalizations.delegate,
-      GlobalWidgetsLocalizations.delegate,
-      GlobalCupertinoLocalizations.delegate,
+      ...GlobalMaterialLocalizations.delegates,
     ],
     theme: buildAppTheme(_settings.themeProfile, Brightness.light),
     home: HomePage(

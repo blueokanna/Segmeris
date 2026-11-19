@@ -1,8 +1,10 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
 import 'package:segmeris/src/app/app_settings.dart';
 import 'package:segmeris/src/app/app_theme.dart';
+import 'package:segmeris/src/app/app_update.dart';
+import 'package:segmeris/src/app/app_update_widgets.dart';
 import 'package:segmeris/src/app/platform_utils.dart';
 import 'package:segmeris/src/app/runtime_capabilities.dart';
 import 'package:segmeris/src/home/auth_context_editor.dart';
@@ -28,9 +30,11 @@ class HomeSettingsSheet extends StatefulWidget {
     this.inspection,
     this.enabled = true,
     this.capabilityProbe = RuntimeCapabilityProbe.inspect,
+    this.updateController,
   });
 
   final AppSettings settings;
+  final AppUpdateController? updateController;
   final ValueChanged<AppSettings> onSettingsChanged;
   final Future<void> Function() onOpenBrowser;
   final Future<void> Function() onQrLogin;
@@ -44,6 +48,8 @@ class HomeSettingsSheet extends StatefulWidget {
   final TextEditingController cookieController;
   final TextEditingController headersController;
   final MediaInspectionResult? inspection;
+
+  /// Locks connection/auth edits during downloads; appearance remains available.
   final bool enabled;
   final Future<PlatformCapabilitySnapshot> Function() capabilityProbe;
 
@@ -79,17 +85,14 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
           position.minScrollExtent,
           position.maxScrollExtent,
         );
-    final duration = SegmerisMotion.duration(
-      context,
-      const Duration(milliseconds: 220),
-    );
+    final duration = SegmerisMotion.duration(context, SegmerisMotion.fast);
     if (duration == Duration.zero) {
       _themeScroll.jumpTo(target);
     } else {
       _themeScroll.animateTo(
         target,
         duration: duration,
-        curve: Curves.easeOutCubic,
+        curve: SegmerisMotion.standard,
       );
     }
   }
@@ -119,7 +122,6 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
     final t = Theme.of(context);
-    final cs = t.colorScheme;
     final mode = _draft.themeMode;
     final profile = _draft.themeProfile;
     final locale = _draft.locale;
@@ -130,325 +132,275 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            RevealMotion(
-              delay: const Duration(milliseconds: 30),
-              child: Padding(
-                padding: const EdgeInsets.only(left: 2),
-                child: Text(
-                  l.text('appearance'),
-                  style: t.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+            Text(
+              l.text('appearance'),
+              style: t.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: 18),
-            RevealMotion(
-              delay: const Duration(milliseconds: 80),
-              child: DisplayPreviewCard(
-                profile: profile,
-                mode: mode,
-                localeLabel: l.localeLabel(locale),
-              ),
+            DisplayPreviewCard(
+              profile: profile,
+              mode: mode,
+              localeLabel: l.localeLabel(locale),
+              font: _draft.font,
             ),
             const SizedBox(height: 18),
-            RevealMotion(
-              delay: const Duration(milliseconds: 110),
-              child: RuntimeCapabilitiesPanel(capabilities: _capabilities),
-            ),
+            RuntimeCapabilitiesPanel(capabilities: _capabilities),
+            if (widget.updateController case final updates?) ...[
+              const SizedBox(height: 16),
+              AppUpdateCard(controller: updates, alwaysVisible: true),
+            ],
             if (SegmerisPlatform.isWeb) ...[
               const SizedBox(height: 18),
-              RevealMotion(
-                delay: const Duration(milliseconds: 125),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(left: 2),
-                      child: Text(
-                        l.text('api_base_url'),
-                        style: t.textTheme.labelLarge,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _apiUrlCtrl,
-                      enabled: widget.enabled,
-                      keyboardType: TextInputType.url,
-                      autocorrect: false,
-                      decoration: InputDecoration(
-                        hintText: 'http://localhost:3000',
-                        helperText: l.text('api_base_url_hint'),
-                        border: OutlineInputBorder(
-                          borderRadius: SegmerisShapes.of(context).md,
-                        ),
-                      ),
-                      onChanged: (value) {
-                        final trimmed = value.trim();
-                        if (trimmed.isNotEmpty &&
-                            trimmed != widget.settings.apiBaseUrl) {
-                          _updateDraft(_draft.copyWith(apiBaseUrl: trimmed));
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _apiTokenCtrl,
-                      enabled: widget.enabled,
-                      autocorrect: false,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        hintText: 'Bearer token',
-                        helperText: l.text('api_token_hint'),
-                        border: OutlineInputBorder(
-                          borderRadius: SegmerisShapes.of(context).md,
-                        ),
-                      ),
-                      onChanged: (value) {
-                        final trimmed = value.trim();
-                        if (trimmed != widget.settings.apiToken) {
-                          _updateDraft(_draft.copyWith(apiToken: trimmed));
-                        }
-                      },
-                    ),
-                  ],
+              Text(l.text('api_base_url'), style: t.textTheme.labelLarge),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _apiUrlCtrl,
+                enabled: widget.enabled,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                decoration: InputDecoration(
+                  hintText: 'http://localhost:3000',
+                  helperText: l.text('api_base_url_hint'),
                 ),
+                onChanged: (value) {
+                  final trimmed = value.trim();
+                  if (trimmed.isNotEmpty && trimmed != _draft.apiBaseUrl) {
+                    _updateDraft(_draft.copyWith(apiBaseUrl: trimmed));
+                  }
+                },
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _apiTokenCtrl,
+                enabled: widget.enabled,
+                autocorrect: false,
+                obscureText: true,
+                decoration: InputDecoration(
+                  hintText: 'Bearer token',
+                  helperText: l.text('api_token_hint'),
+                ),
+                onChanged: (value) {
+                  final trimmed = value.trim();
+                  if (trimmed != _draft.apiToken) {
+                    _updateDraft(_draft.copyWith(apiToken: trimmed));
+                  }
+                },
               ),
             ],
             const SizedBox(height: 18),
-            RevealMotion(
-              delay: const Duration(milliseconds: 140),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(left: 2),
-                    child: Text(l.text('mode'), style: t.textTheme.labelLarge),
+            Text(l.text('mode'), style: t.textTheme.labelLarge),
+            const SizedBox(height: 10),
+            LayoutBuilder(
+              builder: (context, constraints) => SegmentedButton<ThemeMode>(
+                direction:
+                    constraints.maxWidth < 320 ||
+                        (constraints.maxWidth < 600 &&
+                            MediaQuery.textScalerOf(context).scale(14) > 18)
+                    ? Axis.vertical
+                    : Axis.horizontal,
+                selected: {mode},
+                onSelectionChanged: (selection) =>
+                    _updateDraft(_draft.copyWith(themeMode: selection.first)),
+                segments: [
+                  ButtonSegment(
+                    value: ThemeMode.system,
+                    label: Text(l.text('system')),
+                    icon: const Icon(Icons.brightness_auto),
                   ),
-                  const SizedBox(height: 10),
-                  AnimatedContainer(
-                    duration: SegmerisMotion.duration(
-                      context,
-                      const Duration(milliseconds: 260),
-                    ),
-                    curve: Curves.easeOutCubic,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      borderRadius: SegmerisShapes.of(context).md,
-                      color: cs.surfaceContainerHigh.withValues(alpha: 0.52),
-                    ),
-                    child: SegmentedButton<ThemeMode>(
-                      selected: {mode},
-                      onSelectionChanged: widget.enabled
-                          ? (selection) {
-                              _updateDraft(
-                                _draft.copyWith(themeMode: selection.first),
-                              );
-                            }
-                          : null,
-                      segments: [
-                        ButtonSegment(
-                          value: ThemeMode.system,
-                          label: Text(l.text('system')),
-                          icon: const Icon(Icons.brightness_auto),
-                        ),
-                        ButtonSegment(
-                          value: ThemeMode.light,
-                          label: Text(l.text('light')),
-                          icon: const Icon(Icons.light_mode),
-                        ),
-                        ButtonSegment(
-                          value: ThemeMode.dark,
-                          label: Text(l.text('dark')),
-                          icon: const Icon(Icons.dark_mode),
-                        ),
-                      ],
-                    ),
+                  ButtonSegment(
+                    value: ThemeMode.light,
+                    label: Text(l.text('light')),
+                    icon: const Icon(Icons.light_mode),
+                  ),
+                  ButtonSegment(
+                    value: ThemeMode.dark,
+                    label: Text(l.text('dark')),
+                    icon: const Icon(Icons.dark_mode),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
-            RevealMotion(
-              delay: const Duration(milliseconds: 160),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(left: 2),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            l.text('theme'),
-                            style: t.textTheme.labelLarge,
-                          ),
-                        ),
-                        IconButton.filledTonal(
-                          key: const ValueKey('theme-previous'),
-                          tooltip: MaterialLocalizations.of(context)
-                              .previousPageTooltip,
-                          onPressed: () => _pageThemes(-1),
-                          icon: const Icon(Icons.chevron_left_rounded),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton.filledTonal(
-                          key: const ValueKey('theme-next'),
-                          tooltip: MaterialLocalizations.of(context)
-                              .nextPageTooltip,
-                          onPressed: () => _pageThemes(1),
-                          icon: const Icon(Icons.chevron_right_rounded),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    height: 186,
-                    child: Listener(
-                      onPointerSignal: _scrollThemes,
-                      child: ScrollConfiguration(
-                        behavior: ScrollConfiguration.of(context).copyWith(
-                          dragDevices: PointerDeviceKind.values.toSet(),
-                          scrollbars: false,
-                        ),
-                        child: Scrollbar(
-                          controller: _themeScroll,
-                          thumbVisibility: true,
-                          trackVisibility: true,
-                          child: ListView.separated(
-                            key: const ValueKey('theme-palette-scroll'),
-                            controller: _themeScroll,
-                            padding: const EdgeInsets.only(bottom: 14),
-                            scrollDirection: Axis.horizontal,
-                            itemCount: appThemeProfiles.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(width: 12),
-                            itemBuilder: (context, index) {
-                              final item = appThemeProfiles[index];
-                              return ThemePaletteCard(
-                                profile: item,
-                                selected: profile.id == item.id,
-                                onTap: widget.enabled
-                                    ? () {
-                                        _updateDraft(
-                                          _draft.copyWith(
-                                            themeProfileId: item.id,
-                                          ),
-                                        );
-                                      }
-                                    : null,
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      for (final item in appThemeProfiles)
-                        AnimatedContainer(
-                          duration: SegmerisMotion.duration(
-                            context,
-                            const Duration(milliseconds: 220),
-                          ),
-                          curve: Curves.easeOutCubic,
-                          margin: const EdgeInsets.symmetric(horizontal: 3),
-                          width: profile.id == item.id ? 20 : 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            borderRadius: SegmerisShapes.of(context).pill,
-                            color: profile.id == item.id
-                                ? cs.primary
-                                : cs.outlineVariant,
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(l.text('theme'), style: t.textTheme.labelLarge),
+                ),
+                IconButton.filledTonal(
+                  key: const ValueKey('theme-previous'),
+                  tooltip: MaterialLocalizations.of(context)
+                      .previousPageTooltip,
+                  onPressed: () => _pageThemes(-1),
+                  icon: const Icon(Icons.chevron_left_rounded),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  key: const ValueKey('theme-next'),
+                  tooltip: MaterialLocalizations.of(context).nextPageTooltip,
+                  onPressed: () => _pageThemes(1),
+                  icon: const Icon(Icons.chevron_right_rounded),
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
-            RevealMotion(
-              delay: const Duration(milliseconds: 200),
-              child: AnimatedContainer(
-                duration: SegmerisMotion.duration(
-                  context,
-                  const Duration(milliseconds: 260),
-                ),
-                curve: Curves.easeOutCubic,
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  borderRadius: SegmerisShapes.of(context).md,
-                  color: cs.surfaceContainerHigh.withValues(alpha: 0.52),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(l.text('language'), style: t.textTheme.labelLarge),
-                    const SizedBox(height: 10),
-                    DropdownMenu<Locale>(
-                      initialSelection: locale,
-                      enabled: widget.enabled,
-                      width: double.infinity,
-                      hintText: l.text('language'),
-                      onSelected: (value) {
-                        if (value == null) {
-                          return;
-                        }
-                        _updateDraft(
-                          _draft.copyWith(
-                            localeTag: AppSettings.serializeLocale(value),
+            const SizedBox(height: 10),
+            SizedBox(
+              height:
+                  186.0 +
+                  (MediaQuery.textScalerOf(context).scale(14) - 14).clamp(
+                        0,
+                        double.infinity,
+                      ) *
+                      4,
+              child: Listener(
+                onPointerSignal: _scrollThemes,
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context).copyWith(
+                    dragDevices: PointerDeviceKind.values.toSet(),
+                    scrollbars: false,
+                  ),
+                  child: Scrollbar(
+                    controller: _themeScroll,
+                    thumbVisibility: true,
+                    trackVisibility: true,
+                    child: ListView.separated(
+                      key: const ValueKey('theme-palette-scroll'),
+                      controller: _themeScroll,
+                      padding: const EdgeInsets.only(bottom: 14),
+                      scrollDirection: Axis.horizontal,
+                      itemCount: appThemeProfiles.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 12),
+                      itemBuilder: (context, index) {
+                        final item = appThemeProfiles[index];
+                        return ThemePaletteCard(
+                          profile: item,
+                          selected: profile.id == item.id,
+                          onTap: () => _updateDraft(
+                            _draft.copyWith(themeProfileId: item.id),
                           ),
                         );
                       },
-                      dropdownMenuEntries: [
-                        for (final item in AppLocalizations.supportedLocales)
-                          DropdownMenuEntry(
-                            value: item,
-                            label: l.localeLabel(item),
-                          ),
-                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
             const SizedBox(height: 20),
-            RevealMotion(
-              delay: const Duration(milliseconds: 240),
-              child: AuthorizationSettingsPanel(
-                enabled: widget.enabled,
-                autoOpenAuthBrowser: _draft.autoOpenAuthBrowser,
-                onAutoOpenChanged: widget.enabled
-                    ? (value) => _updateDraft(
-                        _draft.copyWith(autoOpenAuthBrowser: value),
-                      )
-                    : null,
-                onOpenBrowser: widget.onOpenBrowser,
-                onQrLogin: widget.onQrLogin,
-                onClearContext: widget.onClearContext,
-                authContextListenable: widget.authContextListenable,
-                authContextBadges: widget.authContextBadges,
-                hasAuthContextOverrides: widget.hasAuthContextOverrides,
-                userAgentController: widget.userAgentController,
-                refererController: widget.refererController,
-                originController: widget.originController,
-                cookieController: widget.cookieController,
-                headersController: widget.headersController,
+            KeyedSubtree(
+              key: ValueKey(('font-labels', Localizations.localeOf(context))),
+              child: DropdownMenu<AppFont>(
+                key: const ValueKey('settings-font'),
+                initialSelection: _draft.font,
+                expandedInsets: EdgeInsets.zero,
+                label: Text(l.text('font')),
+                onSelected: (value) {
+                  if (value != null) _updateDraft(_draft.copyWith(font: value));
+                },
+                dropdownMenuEntries: [
+                  DropdownMenuEntry(
+                    value: AppFont.system,
+                    label: l.text('font_system'),
+                  ),
+                  DropdownMenuEntry(
+                    value: AppFont.harmonyGoogle,
+                    label: l.text('font_harmony_google'),
+                  ),
+                ],
               ),
+            ),
+            const SizedBox(height: 10),
+            Text(l.text('font_license_notice'), style: t.textTheme.bodySmall),
+            TextButton.icon(
+              onPressed: () => showLicensePage(
+                context: context,
+                applicationName: 'Segmeris',
+              ),
+              icon: const Icon(Icons.info_outline_rounded),
+              label: Text(MaterialLocalizations.of(context).licensesPageTitle),
+            ),
+            const SizedBox(height: 20),
+            DropdownMenu<Locale>(
+              initialSelection: locale,
+              expandedInsets: EdgeInsets.zero,
+              label: Text(l.text('language')),
+              onSelected: (value) {
+                if (value != null) {
+                  _updateDraft(
+                    _draft.copyWith(
+                      localeTag: AppSettings.serializeLocale(value),
+                    ),
+                  );
+                }
+              },
+              dropdownMenuEntries: [
+                for (final item in AppLocalizations.supportedLocales)
+                  DropdownMenuEntry(value: item, label: l.localeLabel(item)),
+              ],
+            ),
+            const SizedBox(height: 20),
+            KeyedSubtree(
+              key: ValueKey((
+                'retention-labels',
+                Localizations.localeOf(context),
+              )),
+              child: DropdownMenu<int>(
+                key: const ValueKey('settings-history-retention'),
+                initialSelection: AppSettings.normalizeHistoryRetentionDays(
+                  _draft.historyRetentionDays,
+                ),
+                expandedInsets: EdgeInsets.zero,
+                menuHeight: 320,
+                label: Text(l.text('history_retention')),
+                onSelected: (value) {
+                  if (value != null) {
+                    _updateDraft(_draft.copyWith(historyRetentionDays: value));
+                  }
+                },
+                dropdownMenuEntries: [
+                  for (final days in AppSettings.allowedHistoryRetentionDays)
+                    DropdownMenuEntry(
+                      value: days,
+                      label: days == 0
+                          ? l.text('history_retention_never')
+                          : l
+                                .text('history_retention_days')
+                                .replaceAll('{days}', '$days'),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              l.text('history_retention_hint'),
+              style: t.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 20),
+            AuthorizationSettingsPanel(
+              enabled: widget.enabled,
+              autoOpenAuthBrowser: _draft.autoOpenAuthBrowser,
+              onAutoOpenChanged: widget.enabled
+                  ? (value) => _updateDraft(
+                      _draft.copyWith(autoOpenAuthBrowser: value),
+                    )
+                  : null,
+              onOpenBrowser: widget.onOpenBrowser,
+              onQrLogin: widget.onQrLogin,
+              onClearContext: widget.onClearContext,
+              authContextListenable: widget.authContextListenable,
+              authContextBadges: widget.authContextBadges,
+              hasAuthContextOverrides: widget.hasAuthContextOverrides,
+              userAgentController: widget.userAgentController,
+              refererController: widget.refererController,
+              originController: widget.originController,
+              cookieController: widget.cookieController,
+              headersController: widget.headersController,
             ),
             if (widget.inspection?.authRequired ?? false) ...[
               const SizedBox(height: 18),
-              RevealMotion(
-                delay: const Duration(milliseconds: 280),
-                child: InspectionWarningTile(
-                  warning:
-                      '[auth:challenge] ${widget.inspection!.challengeReason}',
-                ),
+              InspectionWarningTile(
+                warning:
+                    '[auth:challenge] ${widget.inspection!.challengeReason}',
               ),
             ],
           ],

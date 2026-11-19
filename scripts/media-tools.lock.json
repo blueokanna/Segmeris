@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "sources": {
+    "ffmpeg": {
+      "version": "9.0.2",
+      "url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+      "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
+      "signature_url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz.asc",
+      "signing_key_url": "https://ffmpeg.org/ffmpeg-devel.asc",
+      "signing_key_fingerprint": "FCF986EA15E6E293A5644F10B4322F04D67658D8",
+      "upstream": "https://ffmpeg.org/download.html"
+    },
+    "x264": {
+      "version": "0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee",
+      "url": "https://codeload.github.com/mirror/x264/tar.gz/0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee",
+      "sha256": "d0967a1348c85dfde363bb52610403be898171493100561efa0dd05d5fd1ae50",
+      "upstream": "https://code.videolan.org/videolan/x264"
+    }
+  }
+}

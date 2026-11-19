@@ -1,24 +1,37 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:segmeris/src/app/app_localizations.dart';
 import 'package:segmeris/src/app/app_theme.dart';
 import 'package:segmeris/src/home/home_page_controller.dart';
 import 'package:segmeris/src/home/home_widgets.dart';
 
-class HomeDownloadTasksCard extends StatelessWidget {
+class HomeDownloadTasksCard extends StatefulWidget {
   const HomeDownloadTasksCard({
     super.key,
     required this.tasks,
     required this.onRetry,
     this.onTogglePause,
+    this.onRemove,
   });
 
   final List<HomeDownloadTask> tasks;
   final ValueChanged<String> onRetry;
   final ValueChanged<String>? onTogglePause;
+  final ValueChanged<String>? onRemove;
+
+  @override
+  State<HomeDownloadTasksCard> createState() => _HomeDownloadTasksCardState();
+}
+
+class _HomeDownloadTasksCardState extends State<HomeDownloadTasksCard> {
+  int _page = 0;
 
   @override
   Widget build(BuildContext context) {
+    final tasks = widget.tasks;
+    final pageCount = (tasks.length / 8).ceil().clamp(1, 1 << 30);
+    final page = _page.clamp(0, pageCount - 1);
+    final visibleTasks = tasks.skip(page * 8).take(8).toList();
     final l = AppLocalizations.of(context);
     final runningCount = tasks.where((task) => task.running).length;
 
@@ -36,7 +49,7 @@ class HomeDownloadTasksCard extends StatelessWidget {
             : Column(
                 key: const ValueKey('download-tasks'),
                 children: [
-                  for (final entry in tasks.indexed)
+                  for (final entry in visibleTasks.indexed)
                     Padding(
                       key: ValueKey(entry.$2.id),
                       padding: EdgeInsets.only(
@@ -45,10 +58,32 @@ class HomeDownloadTasksCard extends StatelessWidget {
                       child: RepaintBoundary(
                         child: _DownloadTaskTile(
                           task: entry.$2,
-                          onRetry: onRetry,
-                          onTogglePause: onTogglePause,
+                          onRetry: widget.onRetry,
+                          onTogglePause: widget.onTogglePause,
+                          onRemove: widget.onRemove,
                         ),
                       ),
+                    ),
+                  if (pageCount > 1)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          tooltip: l.text('previous_page'),
+                          onPressed: page == 0
+                              ? null
+                              : () => setState(() => _page = page - 1),
+                          icon: const Icon(Icons.chevron_left_rounded),
+                        ),
+                        Text('${page + 1} / $pageCount'),
+                        IconButton(
+                          tooltip: l.text('next_page'),
+                          onPressed: page + 1 >= pageCount
+                              ? null
+                              : () => setState(() => _page = page + 1),
+                          icon: const Icon(Icons.chevron_right_rounded),
+                        ),
+                      ],
                     ),
                 ],
               ),
@@ -96,11 +131,13 @@ class _DownloadTaskTile extends StatelessWidget {
     required this.task,
     required this.onRetry,
     this.onTogglePause,
+    this.onRemove,
   });
 
   final HomeDownloadTask task;
   final ValueChanged<String> onRetry;
   final ValueChanged<String>? onTogglePause;
+  final ValueChanged<String>? onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -175,11 +212,13 @@ class _DownloadTaskTile extends StatelessWidget {
                   ),
                 ),
               ),
-              if (failed && !task.running)
+              if ((failed || task.interrupted) && !task.running)
                 IconButton(
                   onPressed: () => onRetry(task.id),
                   icon: const Icon(Icons.refresh_rounded),
-                  tooltip: l.text('retry'),
+                  tooltip: l.text(
+                    task.interrupted ? 'resume_download' : 'retry',
+                  ),
                   visualDensity: VisualDensity.compact,
                   color: foreground,
                 ),
@@ -193,7 +232,11 @@ class _DownloadTaskTile extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            task.paused ? l.text('download_paused') : task.status,
+            task.interrupted
+                ? l.text('download_interrupted')
+                : task.paused
+                ? l.text('download_paused')
+                : task.status,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: t.textTheme.bodySmall?.copyWith(
@@ -231,6 +274,16 @@ class _DownloadTaskTile extends StatelessWidget {
           Wrap(
             spacing: 8,
             children: [
+              if (onRemove != null && !task.running)
+                TextButton.icon(
+                  onPressed: () => onRemove!(task.id),
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  label: Text(
+                    l.text(
+                      completed ? 'delete_download_title' : 'remove_record',
+                    ),
+                  ),
+                ),
               if (onTogglePause != null && task.canPause)
                 TextButton.icon(
                   onPressed: task.controlBusy

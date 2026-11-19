@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use nextjson::{NsonDeserialize, NsonSerialize};
 use tzcraft::Zoned;
@@ -8,7 +8,7 @@ use crate::api::downloader::{
     RequestContext, SubtitleMode,
 };
 
-#[derive(Debug, Clone, NsonDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, NsonDeserialize)]
 pub struct DownloadRequest {
     pub url: String,
     pub media_url: Option<String>,
@@ -25,13 +25,50 @@ pub struct DownloadRequest {
     pub request_context: Option<ApiRequestContext>,
 }
 
+impl DownloadRequest {
+    /// Credentials participate in matching but are never exposed in the task API.
+    /// Output ownership is checked separately, after filename normalization.
+    pub(super) fn same_effective_download(&self, other: &Self) -> bool {
+        self.normalized_for_matching() == other.normalized_for_matching()
+    }
+
+    fn normalized_for_matching(&self) -> Self {
+        let mut request = self.clone();
+        request.output_filename = None;
+        request.media_fallback_urls = Some(request.media_fallback_urls.unwrap_or_default());
+        request.audio_fallback_urls = Some(request.audio_fallback_urls.unwrap_or_default());
+        request.concurrency = Some(request.concurrency.unwrap_or(6));
+        request.retries = Some(request.retries.unwrap_or(3));
+        request.video_bitrate = Some(request.video_bitrate.unwrap_or(0));
+        request.audio_bitrate = Some(request.audio_bitrate.unwrap_or(0));
+        request.keep_temp = Some(request.keep_temp.unwrap_or(false));
+        let context = request.request_context.unwrap_or_default();
+        request.request_context = Some(ApiRequestContext {
+            user_agent: Some(context.user_agent.unwrap_or_default()),
+            referer: Some(context.referer.unwrap_or_default()),
+            origin: Some(context.origin.unwrap_or_default()),
+            cookie: Some(context.cookie.unwrap_or_default()),
+            headers: Some(context.headers.unwrap_or_default()),
+        });
+        let subtitle = request.subtitle.unwrap_or(SubtitleSelectionJson {
+            mode: "auto".into(),
+            value: None,
+        });
+        request.subtitle = Some(SubtitleSelectionJson {
+            mode: subtitle.mode.to_ascii_lowercase(),
+            value: Some(subtitle.value.unwrap_or_default()),
+        });
+        request
+    }
+}
+
 /// Subtitle choice as it travels over HTTP.
 ///
 /// `mode` is the discriminant (`auto` / `off` / `track` / `language`) and
 /// `value` carries the track URL or the `lan` tag. One shape instead of
 /// four optional fields keeps the payload unambiguous, and unknown modes
 /// are rejected instead of silently falling back to a default.
-#[derive(Debug, Clone, NsonDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, NsonDeserialize)]
 pub struct SubtitleSelectionJson {
     pub mode: String,
     pub value: Option<String>,
@@ -52,13 +89,13 @@ impl SubtitleSelectionJson {
     }
 }
 
-#[derive(Debug, Clone, Default, NsonDeserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, NsonDeserialize)]
 pub struct ApiRequestContext {
     pub user_agent: Option<String>,
     pub referer: Option<String>,
     pub origin: Option<String>,
     pub cookie: Option<String>,
-    pub headers: Option<HashMap<String, String>>,
+    pub headers: Option<BTreeMap<String, String>>,
 }
 
 impl From<ApiRequestContext> for RequestContext {
@@ -93,6 +130,38 @@ mod tests {
     }
 
     #[test]
+    fn request_headers_deserialize_and_default_options_match_retries() {
+        let original: super::DownloadRequest = nextjson::from_str(
+            r#"{"url":"https://example.com/video","request_context":{"headers":{"X-Token":"secret"}}}"#,
+        ).unwrap();
+        assert_eq!(
+            original
+                .request_context
+                .as_ref()
+                .unwrap()
+                .headers
+                .as_ref()
+                .unwrap()["X-Token"],
+            "secret"
+        );
+        let mut retry = original.clone();
+        retry.concurrency = Some(6);
+        retry.retries = Some(3);
+        retry.keep_temp = Some(false);
+        retry.subtitle = Some(selection("AUTO", Some("")));
+        assert!(original.same_effective_download(&retry));
+        retry
+            .request_context
+            .as_mut()
+            .unwrap()
+            .headers
+            .as_mut()
+            .unwrap()
+            .insert("X-Token".into(), "other".into());
+        assert!(!original.same_effective_download(&retry));
+    }
+
+    #[test]
     fn subtitle_payload_splits_into_engine_options() {
         assert_eq!(
             selection("auto", None).resolve().unwrap(),
@@ -116,9 +185,11 @@ mod tests {
     fn subtitle_payload_rejects_unknown_modes_and_unsafe_urls() {
         assert!(selection("chinese", None).resolve().is_err());
         assert!(selection("track", None).resolve().is_err());
-        assert!(selection("track", Some("http://i0.hdslb.com/1.json"))
-            .resolve()
-            .is_err());
+        assert!(
+            selection("track", Some("http://i0.hdslb.com/1.json"))
+                .resolve()
+                .is_err()
+        );
         assert!(selection("language", Some("")).resolve().is_err());
     }
 }

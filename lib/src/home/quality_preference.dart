@@ -14,6 +14,26 @@ import 'package:segmeris/src/rust/api/downloader.dart';
 /// that one episode lacking a tier never sinks the whole queue. What was
 /// actually picked is visible on the task itself, since each task reports the
 /// quality label it resolved.
+/// Resuming a partial download must keep the representation selected earlier.
+/// Never silently switch codec or quality when an account's access changes.
+MediaCandidate? candidateForResumeTier(
+  List<MediaCandidate> candidates,
+  MediaCandidate preferred,
+) {
+  for (final candidate in candidates) {
+    if (candidate.qualityLabel.trim() == preferred.qualityLabel.trim() &&
+        candidate.codec.trim() == preferred.codec.trim() &&
+        candidate.protocol == preferred.protocol &&
+        candidate.container == preferred.container &&
+        candidate.width == preferred.width &&
+        candidate.height == preferred.height &&
+        (candidate.audioUrl != null) == (preferred.audioUrl != null)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 MediaCandidate? candidateForTier(
   List<MediaCandidate> candidates,
   MediaCandidate? preferred,

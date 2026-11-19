@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Independent dark geometry. Trimmed centerlines are clipped to the source
+     silhouette, including its square ends and taper; fill finishes exactly. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="432dp" android:height="432dp"
+    android:viewportWidth="1000" android:viewportHeight="1000">
+    <group android:pivotX="500" android:pivotY="500" android:scaleX="0.9" android:scaleY="0.9">
+    <group>
+        <path android:name="silhouette0" android:fillColor="#FFFFFF"
+            android:pathData="M661,282 L472,282 C407.11,282 354.5,334.39 354.5,399 C354.5,463.61 407.11,516 472,516 L528,516 C574.94,516 613,554.06 613,601 C613,647.94 574.94,686 528,686 L338,686 L338,718 L528,718 C592.62,718 645,665.62 645,601 C645,536.38 592.62,484 528,484 L472,484 C424.78,484 386.5,445.94 386.5,399 C386.5,352.06 424.78,314 472,314 L661,314 Z" />
+        <clip-path android:pathData="M661,282 L472,282 C407.11,282 354.5,334.39 354.5,399 C354.5,463.61 407.11,516 472,516 L528,516 C574.94,516 613,554.06 613,601 C613,647.94 574.94,686 528,686 L338,686 L338,718 L528,718 C592.62,718 645,665.62 645,601 C645,536.38 592.62,484 528,484 L472,484 C424.78,484 386.5,445.94 386.5,399 C386.5,352.06 424.78,314 472,314 L661,314 Z" />
+        <path android:name="ribbon0" android:fillColor="#00000000"
+            android:strokeColor="#FFFFFF" android:strokeWidth="41.6"
+            android:pathData="M661,298 L472,298 C415.94,298 370.5,343.22 370.5,399 C370.5,454.78 415.94,500 472,500 L528,500 C583.78,500 629,545.22 629,601 C629,656.78 583.78,702 528,702 L338,702" />
+    </group>
+    <group>
+        <path android:name="silhouette1" android:fillColor="#FFFFFF"
+            android:pathData="M661,330.5 L472,330.5 C434.17,330.5 403.5,361.17 403.5,399 C403.5,436.83 434.17,467.5 472,467.5 L526,467.5 C594,467.5 650,520 661,589 C665,508 604,435.5 526,435.5 L472,435.5 C451.84,435.5 435.5,419.16 435.5,399 C435.5,378.84 451.84,362.5 472,362.5 L661,362.5 Z" />
+        <clip-path android:pathData="M661,330.5 L472,330.5 C434.17,330.5 403.5,361.17 403.5,399 C403.5,436.83 434.17,467.5 472,467.5 L526,467.5 C594,467.5 650,520 661,589 C665,508 604,435.5 526,435.5 L472,435.5 C451.84,435.5 435.5,419.16 435.5,399 C435.5,378.84 451.84,362.5 472,362.5 L661,362.5 Z" />
+        <path android:name="ribbon1" android:fillColor="#00000000"
+            android:strokeColor="#FFFFFF" android:strokeWidth="41.6"
+            android:pathData="M661,346.5 L472,346.5 C443,346.5 419.5,370 419.5,399 C419.5,428 443,451.5 472,451.5 L526,451.5 C595,451.5 653,517 661,589" />
+    </group>
+    <group>
+        <path android:name="silhouette2" android:fillColor="#FFFFFF"
+            android:pathData="M338,669.5 L528,669.5 C565.83,669.5 596.5,638.83 596.5,601 C596.5,563.17 565.83,532.5 528,532.5 L474,532.5 C406,532.5 350,480 338,411 C334,492 396,564.5 474,564.5 L528,564.5 C548.16,564.5 564.5,580.84 564.5,601 C564.5,621.16 548.16,637.5 528,637.5 L338,637.5 Z" />
+        <clip-path android:pathData="M338,669.5 L528,669.5 C565.83,669.5 596.5,638.83 596.5,601 C596.5,563.17 565.83,532.5 528,532.5 L474,532.5 C406,532.5 350,480 338,411 C334,492 396,564.5 474,564.5 L528,564.5 C548.16,564.5 564.5,580.84 564.5,601 C564.5,621.16 548.16,637.5 528,637.5 L338,637.5 Z" />
+        <path android:name="ribbon2" android:fillColor="#00000000"
+            android:strokeColor="#FFFFFF" android:strokeWidth="41.6"
+            android:pathData="M338,653.5 L528,653.5 C557,653.5 580.5,630 580.5,601 C580.5,572 557,548.5 528,548.5 L474,548.5 C405,548.5 347,483 338,411" />
+    </group>
+    </group>
+</vector>

@@ -1,7 +1,10 @@
-# Segmeris 1.0.8 - [English](README.en.md)
+# Segmeris 1.1.0 - [English](README.en.md)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/blueokanna/Segmeris/main/assets/playstore.png" width="20%" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/SegmerisDark.jpg" />
+    <img src="assets/SegmerisLight.jpg" alt="Segmeris" width="20%" />
+  </picture>
 </p>
 
 Segmeris 是一个 Flutter 视频下载器，使用 Rust 处理媒体解析、网络传输和下载任务。支持 HLS、媒体直链与 Bilibili 页面，输出 MP4；Android 通过系统 MediaCodec / MediaMuxer 处理媒体并导出到公共存储。
@@ -21,7 +24,9 @@ Segmeris 是一个 Flutter 视频下载器，使用 Rust 处理媒体解析、�
 
 从 [Releases](https://github.com/blueokanna/Segmeris/releases) 获取已发布版本。
 
-源码构建使用 Flutter 3.47.9（Dart 3.13.7）、Rust 1.89 或更新的 stable，以及目标平台的构建工具链。桌面端请将 FFmpeg 和 ffprobe 放入 PATH；Android 不需要 FFmpeg。Linux 的安全存储还需要 Secret Service，编译时安装 libsecret-1-dev。
+发布签名、标签与产物清单见 [发布说明](docs/releasing.md)。应用启动后会自动检查 GitHub 上的稳定版本，也可以在设置中手动检查。
+
+源码构建使用 Flutter 3.50.0（Dart 3.14.0）、Rust 1.89 或更新的 stable，以及目标平台的构建工具链。桌面端请将 FFmpeg 和 ffprobe 放入 PATH；Android 不需要 FFmpeg。Linux 的安全存储还需要 Secret Service，编译时安装 libsecret-1-dev。
 
 内置授权浏览器固定为稳定版 `flutter_inappwebview 6.1.5`。其 Android 插件仍引用 AGP 9 已移除的 ProGuard 默认文件；构建时在项目 `build/plugin-gradle` 中生成兼容脚本，仅替换这两个文件引用，不修改 Pub 缓存。上游脚本变化会触发检查失败，更新依赖时需要复核这项兼容处理。
 
@@ -38,7 +43,7 @@ Rust 库由 Cargokit 随 Flutter 构建。修改 Rust 对外接口后，使用�
 
     flutter_rust_bridge_codegen generate
 
-Courierust 固定为 crates.io 发布的 **1.1.1**，仓库不维护 vendor 副本或本机路径补丁。提交 `rust/Cargo.lock` 与 `pubspec.lock`，CI 使用锁文件构建。应用、Rust core 和 Flutter 桥接包统一为 **1.0.8**；第三方依赖保留各自版本。发布标签必须为 `v1.0.8`，`scripts/check_versions.py` 会检查包版本与标签是否一致。
+Courierust 固定为 crates.io 发布的 **1.1.3**，仓库不维护 vendor 副本或本机路径补丁。提交 `rust/Cargo.lock` 与 `pubspec.lock`，CI 使用锁文件构建。应用、Rust core 和 Flutter 桥接包统一为 **1.1.0**；第三方依赖保留各自版本。发布标签必须为 `v1.1.0`，`scripts/check_versions.py` 会检查包版本与标签是否一致。
 
 ## 使用
 

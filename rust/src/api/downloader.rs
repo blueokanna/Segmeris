@@ -1,29 +1,31 @@
 #![allow(unused_imports, unused_variables, dead_code)]
-use crate::api::site_adapters::{extractor_name_for_host, inspect_page_candidates, SiteWarning};
-use crate::crypto::{aes_128_cbc_decrypt, sha256, Sha256};
+use crate::api::site_adapters::{SiteWarning, extractor_name_for_host, inspect_page_candidates};
+use crate::crypto::{Sha256, aes_128_cbc_decrypt, sha256};
 use crate::frb_generated::StreamSink;
 use crate::hls::{
-    parse_playlist, AlternativeMedia, AlternativeMediaType, ByteRange, KeyMethod, Map,
-    MasterPlaylist, MediaPlaylist, Playlist, VariantStream,
+    AlternativeMedia, AlternativeMediaType, ByteRange, KeyMethod, Map, MasterPlaylist,
+    MediaPlaylist, Playlist, VariantStream, parse_playlist,
 };
 use crate::media_probe::*;
 use crate::net::SyncHttpClient;
 mod acceleration;
-use acceleration::{detect_acceleration, push_accel_encode_args, AccelType};
+use acceleration::{AccelType, detect_acceleration, push_accel_encode_args};
 mod hls;
 mod transfer;
 use transfer::*;
 #[cfg(test)]
+mod resume_tests;
+#[cfg(test)]
 mod transfer_tests;
 use crate::process::{command_with_timeout, failed_exit_status};
 use crate::xml::{self, Element};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use hls::*;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{error, info, warn};
 use nextjson::Value;
 use regex::Regex;
-use segmeris_core::{DownloadPlan, DOWNLOAD_PLAN_VERSION};
+use segmeris_core::{DOWNLOAD_PLAN_VERSION, DownloadPlan};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -38,11 +40,13 @@ use url::Url;
 use uuid::Uuid;
 
 #[cfg(target_os = "android")]
-use jni::objects::{GlobalRef, JClass, JObject, JValue};
-#[cfg(target_os = "android")]
-use jni::JNIEnv;
-#[cfg(target_os = "android")]
 use jni::JavaVM;
+#[cfg(target_os = "android")]
+use jni::objects::{JClass, JObject, JString};
+#[cfg(target_os = "android")]
+use jni::refs::Global;
+#[cfg(target_os = "android")]
+use jni::{Env, EnvUnowned, JValue, jni_sig, jni_str};
 
 pub(crate) type ProgressReporter = Arc<dyn Fn(ProgressUpdate) + Send + Sync>;
 
@@ -98,7 +102,7 @@ mod ios_videotoolbox {
         segmeris_videotoolbox_available, segmeris_videotoolbox_merge_segments,
         segmeris_videotoolbox_mux, segmeris_videotoolbox_transcode,
     };
-    use anyhow::{anyhow, Context, Result};
+    use anyhow::{Context, Result, anyhow};
     use std::ffi::{CStr, CString};
     use std::os::raw::c_char;
     use std::time::Duration;
@@ -355,11 +359,11 @@ fn resolve_ffmpeg_path() -> Option<PathBuf> {
     if let Some(configured) = env::var_os("FERRISLOAD_FFMPEG_PATH") {
         candidates.push(PathBuf::from(configured));
     }
-    if let Ok(current_exe) = env::current_exe() {
-        if let Some(directory) = current_exe.parent() {
-            candidates.push(directory.join("tools").join(executable_name));
-            candidates.push(directory.join(executable_name));
-        }
+    if let Ok(current_exe) = env::current_exe()
+        && let Some(directory) = current_exe.parent()
+    {
+        candidates.push(directory.join("tools").join(executable_name));
+        candidates.push(directory.join(executable_name));
     }
     candidates.push(PathBuf::from(executable_name));
 
@@ -382,17 +386,17 @@ fn resolve_ytdlp_command() -> Option<ExternalCommandSpec> {
             prefix_args: Vec::new(),
         });
     }
-    if let Ok(current_exe) = env::current_exe() {
-        if let Some(directory) = current_exe.parent() {
-            candidates.push(ExternalCommandSpec {
-                program: directory.join("tools").join(executable_name),
-                prefix_args: Vec::new(),
-            });
-            candidates.push(ExternalCommandSpec {
-                program: directory.join(executable_name),
-                prefix_args: Vec::new(),
-            });
-        }
+    if let Ok(current_exe) = env::current_exe()
+        && let Some(directory) = current_exe.parent()
+    {
+        candidates.push(ExternalCommandSpec {
+            program: directory.join("tools").join(executable_name),
+            prefix_args: Vec::new(),
+        });
+        candidates.push(ExternalCommandSpec {
+            program: directory.join(executable_name),
+            prefix_args: Vec::new(),
+        });
     }
     if let Ok(cached) = ytdlp_cache_path() {
         candidates.push(ExternalCommandSpec {
@@ -762,29 +766,21 @@ static ANDROID_HW_TRANSCODER: OnceLock<Arc<AndroidMediaCodecTranscoder>> = OnceL
 static ANDROID_TRANSCODE_GATE: OnceLock<Arc<StdMutex<()>>> = OnceLock::new();
 
 #[cfg(target_os = "android")]
-static ANDROID_CONTEXT: OnceLock<AndroidContextData> = OnceLock::new();
-
-/// Cached MediaTranscoder class reference (must be cached from main thread with app classloader)
-#[cfg(target_os = "android")]
-static MEDIA_TRANSCODER_CLASS: OnceLock<GlobalRef> = OnceLock::new();
-
-#[cfg(target_os = "android")]
 pub struct AndroidMediaCodecTranscoder {
-    jvm: Arc<JavaVM>,
+    jvm: JavaVM,
+    class: Arc<Global<JClass<'static>>>,
+    scratch_dirs: [PathBuf; 3],
 }
 
 #[cfg(target_os = "android")]
 impl AndroidMediaCodecTranscoder {
-    pub fn new(jvm: Arc<JavaVM>) -> Self {
-        Self { jvm }
-    }
-
     fn with_media_transcoder<T, F>(&self, timeout: Duration, operation: F) -> Result<T>
     where
         T: Send + 'static,
-        F: FnOnce(&mut JNIEnv, JClass) -> Result<T> + Send + 'static,
+        F: FnOnce(&mut Env, &JClass<'static>) -> Result<T> + Send + 'static,
     {
         let jvm = self.jvm.clone();
+        let class = self.class.clone();
         let gate = ANDROID_TRANSCODE_GATE
             .get_or_init(|| Arc::new(StdMutex::new(())))
             .clone();
@@ -796,11 +792,7 @@ impl AndroidMediaCodecTranscoder {
                     let _guard = gate
                         .lock()
                         .map_err(|_| anyhow!("Android transcode gate acquire failed"))?;
-                    let mut env = jvm
-                        .attach_current_thread()
-                        .map_err(|e| anyhow!("JNI attach thread failed: {}", e))?;
-                    let class = media_transcoder_class(&mut env)?;
-                    operation(&mut env, class)
+                    jvm.attach_current_thread(|env| operation(env, &class))
                 })();
                 let _ = tx.send(result);
             })
@@ -851,8 +843,8 @@ impl AndroidMediaCodecTranscoder {
             let result = env
                 .call_static_method(
                     class,
-                    "transcode",
-                    "(Ljava/lang/String;Ljava/lang/String;IIJ)Z",
+                    jni_str!("transcode"),
+                    jni_sig!("(Ljava/lang/String;Ljava/lang/String;IIJ)Z"),
                     &[
                         JValue::Object(&input_ts_jstring),
                         JValue::Object(&output_mp4_jstring),
@@ -896,8 +888,8 @@ impl AndroidMediaCodecTranscoder {
             let result = env
                 .call_static_method(
                     class,
-                    "mux",
-                    "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;J)Z",
+                    jni_str!("mux"),
+                    jni_sig!("(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;J)Z"),
                     &[
                         JValue::Object(&video_jstring),
                         JValue::Object(&audio_jstring),
@@ -956,8 +948,8 @@ impl AndroidMediaCodecTranscoder {
             let result = env
                 .call_static_method(
                     class,
-                    "transcodeDir",
-                    "(Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;IIJ)Z",
+                    jni_str!("transcodeDir"),
+                    jni_sig!("(Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;IIJ)Z"),
                     &[
                         JValue::Object(&dir_jstring),
                         JValue::Object(&prefix_jstring),
@@ -1019,8 +1011,8 @@ impl AndroidMediaCodecTranscoder {
             let result = env
                 .call_static_method(
                     class,
-                    "muxDirs",
-                    "(Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;ILjava/lang/String;J)Z",
+                    jni_str!("muxDirs"),
+                    jni_sig!("(Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;ILjava/lang/String;J)Z"),
                     &[
                         JValue::Object(&video_dir_jstring),
                         JValue::Object(&video_prefix_jstring),
@@ -1048,289 +1040,19 @@ impl AndroidMediaCodecTranscoder {
 }
 
 #[cfg(target_os = "android")]
-fn media_transcoder_class<'local>(env: &mut JNIEnv<'local>) -> Result<JClass<'local>> {
-    if let Some(class_ref) = MEDIA_TRANSCODER_CLASS.get() {
-        let local_ref = env
-            .new_local_ref(class_ref.as_obj())
-            .map_err(|e| anyhow!("Failed to create local MediaTranscoder ref: {}", e))?;
-        return Ok(JClass::from(local_ref));
-    }
-
-    let ctx = get_android_context().map_err(|e| anyhow!("Failed to get Android context: {}", e))?;
-    let class_loader = env
-        .call_method(
-            ctx.app_context.as_obj(),
-            "getClassLoader",
-            "()Ljava/lang/ClassLoader;",
-            &[],
-        )
-        .map_err(|e| anyhow!("Failed to get ClassLoader: {:?}", e))?
-        .l()
-        .map_err(|e| anyhow!("ClassLoader is not an object: {:?}", e))?;
-    let class_name = jni_string!(env, "com.blue.segmeris.MediaTranscoder", "class_name");
-    let loaded_class = env
-        .call_method(
-            &class_loader,
-            "loadClass",
-            "(Ljava/lang/String;)Ljava/lang/Class;",
-            &[JValue::Object(&class_name)],
-        )
-        .map_err(|e| anyhow!("Failed to load MediaTranscoder class: {:?}", e))?
-        .l()
-        .map_err(|e| anyhow!("loadClass did not return a Class: {:?}", e))?;
-
-    if let Ok(global_ref) = env.new_global_ref(&loaded_class) {
-        let _ = MEDIA_TRANSCODER_CLASS.set(global_ref);
-    }
-
-    Ok(JClass::from(loaded_class))
-}
-
-#[cfg(target_os = "android")]
-pub fn register_android_mediacodec_transcoder(jvm: Arc<JavaVM>) -> Result<()> {
-    if ANDROID_HW_TRANSCODER.get().is_some() {
-        info!("Android MediaCodec transcoder already registered");
-        return Ok(());
-    }
-
-    let transcoder = AndroidMediaCodecTranscoder::new(jvm);
-    ANDROID_HW_TRANSCODER
-        .set(Arc::new(transcoder))
-        .map_err(|_| anyhow!("Failed to register Android MediaCodec transcoder"))?;
-
-    info!("Android MediaCodec transcoder registered");
-    Ok(())
-}
-
-#[cfg(target_os = "android")]
-struct AndroidContextData {
-    jvm: Arc<JavaVM>,
-    app_context: GlobalRef,
-}
-
-#[cfg(target_os = "android")]
-pub fn init_android_context(jvm: Arc<JavaVM>, context: GlobalRef) -> Result<()> {
-    let data = AndroidContextData {
-        jvm,
-        app_context: context,
-    };
-
-    ANDROID_CONTEXT
-        .set(data)
-        .map_err(|_| anyhow!("Android Context already initialized"))?;
-
-    info!("Android context initialized");
-    Ok(())
-}
-
-#[cfg(target_os = "android")]
-fn get_android_context() -> Result<&'static AndroidContextData> {
-    ANDROID_CONTEXT
-        .get()
-        .ok_or_else(|| anyhow!("Android Context not initialized; call init_android_context()"))
-}
-
-#[cfg(target_os = "android")]
-fn verify_directory_writable(path: &PathBuf) -> bool {
-    if !path.exists() {
-        if let Err(e) = std::fs::create_dir_all(&path) {
-            warn!("Failed to create directory {}: {}", path.display(), e);
-            return false;
-        }
-    }
-
-    if !path.is_dir() {
-        warn!("Path exists but is not a directory: {}", path.display());
-        return false;
-    }
-
-    let test_file = path.join(".writable_test_temp");
-    match std::fs::write(&test_file, b"test") {
-        Ok(_) => {
-            if let Err(e) = std::fs::remove_file(&test_file) {
-                warn!("Failed to remove test file: {}", e);
-            }
-            info!("Directory is writable: {}", path.display());
-            true
-        }
-        Err(e) => {
-            warn!(
-                "Directory {} is not writable: {} (OS Error: {})",
-                path.display(),
-                e,
-                e.raw_os_error().unwrap_or(0)
-            );
-            false
-        }
-    }
-}
-
-#[cfg(target_os = "android")]
-pub fn get_app_cache_dir() -> Result<PathBuf> {
-    let ctx_data = get_android_context()?;
-    let mut env = ctx_data
-        .jvm
-        .attach_current_thread()
-        .map_err(|e| anyhow!("JNI attach thread failed: {}", e))?;
-
-    let context_obj = ctx_data.app_context.as_obj();
-
-    let cache_dir_obj = env
-        .call_method(context_obj, "getCacheDir", "()Ljava/io/File;", &[])
-        .map_err(|e| anyhow!("JNI getCacheDir call failed: {}", e))?
-        .l()
-        .map_err(|e| anyhow!("JNI getCacheDir returned invalid object: {}", e))?;
-
-    let path_str = env
-        .call_method(
-            &cache_dir_obj,
-            "getAbsolutePath",
-            "()Ljava/lang/String;",
-            &[],
-        )
-        .map_err(|e| anyhow!("JNI getAbsolutePath call failed: {}", e))?
-        .l()
-        .map_err(|e| anyhow!("JNI getAbsolutePath returned invalid object: {}", e))?;
-
-    let path_jstring = env
-        .get_string((&path_str).into())
-        .map_err(|e| anyhow!("JNI string conversion failed: {}", e))?;
-
-    Ok(PathBuf::from(path_jstring.to_string_lossy().to_string()))
-}
-
-#[cfg(target_os = "android")]
-pub fn get_app_files_dir() -> Result<PathBuf> {
-    let ctx_data = get_android_context()?;
-    let mut env = ctx_data
-        .jvm
-        .attach_current_thread()
-        .map_err(|e| anyhow!("JNI attach thread failed: {}", e))?;
-
-    let context_obj = ctx_data.app_context.as_obj();
-
-    let files_dir_obj = env
-        .call_method(context_obj, "getFilesDir", "()Ljava/io/File;", &[])
-        .map_err(|e| anyhow!("JNI getFilesDir call failed: {}", e))?
-        .l()
-        .map_err(|e| anyhow!("JNI getFilesDir returned invalid object: {}", e))?;
-
-    let path_str = env
-        .call_method(
-            &files_dir_obj,
-            "getAbsolutePath",
-            "()Ljava/lang/String;",
-            &[],
-        )
-        .map_err(|e| anyhow!("JNI getAbsolutePath call failed: {}", e))?
-        .l()
-        .map_err(|e| anyhow!("JNI getAbsolutePath returned invalid object: {}", e))?;
-
-    let path_jstring = env
-        .get_string((&path_str).into())
-        .map_err(|e| anyhow!("JNI string conversion failed: {}", e))?;
-
-    Ok(PathBuf::from(path_jstring.to_string_lossy().to_string()))
-}
-
-#[cfg(target_os = "android")]
-pub fn get_external_files_dir() -> Result<PathBuf> {
-    let ctx_data = get_android_context()?;
-    let mut env = ctx_data
-        .jvm
-        .attach_current_thread()
-        .map_err(|e| anyhow!("JNI attach thread failed: {}", e))?;
-
-    let context_obj = ctx_data.app_context.as_obj();
-
-    let ext_files_call = env.call_method(
-        context_obj,
-        "getExternalFilesDir",
-        "(Ljava/lang/String;)Ljava/io/File;",
-        &[JValue::Object(&JObject::null())],
-    );
-
-    let ext_files_obj = match ext_files_call {
-        Ok(v) => v
-            .l()
-            .map_err(|e| anyhow!("JNI getExternalFilesDir returned invalid object: {}", e))?,
-        Err(e) => {
-            warn!("JNI getExternalFilesDir call failed: {}", e);
-            return get_app_files_dir();
-        }
-    };
-
-    if ext_files_obj.is_null() {
-        warn!("getExternalFilesDir returned null, falling back to app files dir");
-        return get_app_files_dir();
-    }
-
-    let path_str = env
-        .call_method(
-            &ext_files_obj,
-            "getAbsolutePath",
-            "()Ljava/lang/String;",
-            &[],
-        )
-        .map_err(|e| anyhow!("JNI getAbsolutePath call failed: {}", e))?
-        .l()
-        .map_err(|e| anyhow!("JNI getAbsolutePath returned invalid object: {}", e))?;
-
-    let path_jstring = env
-        .get_string((&path_str).into())
-        .map_err(|e| anyhow!("JNI string conversion failed: {}", e))?;
-
-    Ok(PathBuf::from(path_jstring.to_string_lossy().to_string()))
-}
-
-#[cfg(target_os = "android")]
 fn select_writable_temp_dir() -> Result<PathBuf> {
-    info!("Selecting writable temporary directory");
-
-    let candidates = vec![
-        ("app_cache", get_app_cache_dir()),
-        ("app_files", get_app_files_dir()),
-        ("external_files", get_external_files_dir()),
-    ];
-
-    for (name, result) in candidates {
-        match result {
-            Ok(dir) => {
-                info!("Trying candidate [{}]: {}", name, dir.display());
-                if verify_directory_writable(&dir) {
-                    info!("Selected writable temporary directory: {}", dir.display());
-                    return Ok(dir);
-                } else {
-                    warn!("Directory not writable: {} ({})", dir.display(), name);
-                }
-            }
-            Err(e) => {
-                warn!("Failed to get {}: {}", name, e);
-            }
+    let bridge = ANDROID_HW_TRANSCODER
+        .get()
+        .context("Android media bridge is not initialized")?;
+    for dir in &bridge.scratch_dirs {
+        let probe = dir.join(format!(".segmeris-write-{}", Uuid::new_v4()));
+        if let Ok(file) = std::fs::File::create_new(&probe) {
+            drop(file);
+            std::fs::remove_file(probe)?;
+            return Ok(dir.clone());
         }
     }
-
-    let env_temp = env::temp_dir();
-    info!("Trying env::temp_dir(): {}", env_temp.display());
-    if verify_directory_writable(&env_temp) {
-        return Ok(env_temp);
-    }
-
-    let data_local_tmp = PathBuf::from("/data/local/tmp");
-    info!("Trying /data/local/tmp");
-    if verify_directory_writable(&data_local_tmp) {
-        return Ok(data_local_tmp);
-    }
-
-    let current = PathBuf::from(".");
-    info!("Trying current directory");
-    if verify_directory_writable(&current) {
-        return Ok(current);
-    }
-
-    bail!(
-        "No writable temporary directory found. Ensure init_android_context() was called with an Application context and that storage is configured."
-    )
+    bail!("None of the application's media working directories are writable")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1398,13 +1120,27 @@ pub(crate) fn hls2mp4_core(
     audio_bitrate: i32,
     keep_temp: bool,
 ) -> Result<()> {
-    let request_context = RequestContext::default();
+    if !(1..=i32::from(segmeris_core::MAX_CONCURRENCY)).contains(&concurrency)
+        || !(0..=i32::from(segmeris_core::MAX_RETRIES)).contains(&retries)
+        || !(0..=segmeris_core::MAX_BITRATE_KBPS as i32).contains(&video_bitrate)
+        || !(0..=segmeris_core::MAX_BITRATE_KBPS as i32).contains(&audio_bitrate)
+    {
+        bail!("Invalid HLS download options");
+    }
+    let normalized = normalized_output_path(&output)?;
+    let mut ownership_key = normalized.to_string_lossy().into_owned();
+    if cfg!(windows) {
+        ownership_key.make_ascii_lowercase();
+    }
+    let _owner = crate::download_control::register(&ownership_key)?;
+    let _alias = crate::download_control::register(&output)?;
+    // The legacy endpoint explicitly promises HLS, including extensionless URLs.
     run_hls_pipeline(
         &reporter,
-        &url,
-        &request_context,
+        &normalize_source_url(&url)?,
+        &RequestContext::default(),
         concurrency,
-        &output,
+        &normalized.to_string_lossy(),
         retries,
         video_bitrate,
         audio_bitrate,
@@ -1518,24 +1254,24 @@ pub(crate) fn inspect_media_with_context_sync(
 
     let candidates = score_candidates(collector.finish(), &request_context);
 
-    if candidates.is_empty() {
-        if let Some(auth_warning) = warnings.iter().find(|warning| warning.scope() == "auth") {
-            let challenge_reason = auth_warning.message().to_string();
-            return Ok(MediaInspectionResult {
-                page_url: url,
-                page_title,
-                extractor,
-                candidates,
-                subtitles: Vec::new(),
-                warnings: warnings
-                    .into_iter()
-                    .map(SiteWarning::into_display)
-                    .collect(),
-                auth_required: true,
-                challenge_reason,
-                collection: None,
-            });
-        }
+    if candidates.is_empty()
+        && let Some(auth_warning) = warnings.iter().find(|warning| warning.scope() == "auth")
+    {
+        let challenge_reason = auth_warning.message().to_string();
+        return Ok(MediaInspectionResult {
+            page_url: url,
+            page_title,
+            extractor,
+            candidates,
+            subtitles: Vec::new(),
+            warnings: warnings
+                .into_iter()
+                .map(SiteWarning::into_display)
+                .collect(),
+            auth_required: true,
+            challenge_reason,
+            collection: None,
+        });
     }
 
     if candidates.is_empty() {
@@ -1618,8 +1354,8 @@ fn augment_youtube_candidates_with_ytdlp(
         bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
     }
 
-    let metadata: Value =
-        nextjson::from_slice(&output.stdout).context("Failed to parse yt-dlp metadata")?;
+    let metadata: Value = nextjson::from_slice(&output.stdout)
+        .map_err(|error| anyhow!("Failed to parse yt-dlp metadata: {error}"))?;
     let title = metadata
         .get("title")
         .and_then(Value::as_str)
@@ -1933,8 +1669,6 @@ fn run_ytdlp_site_pipeline(
         .take()
         .ok_or_else(|| anyhow!("yt-dlp stderr was not captured"))?;
 
-    // Drain stderr on a background thread so the child never blocks on
-    // a full pipe while we stream stdout.
     let (stderr_tx, stderr_rx) = std::sync::mpsc::channel::<String>();
     std::thread::Builder::new()
         .name("ytdlp-stderr".into())
@@ -1947,12 +1681,7 @@ fn run_ytdlp_site_pipeline(
 
     let lines = BufReader::new(stdout).lines();
     let mut reported_output = None;
-    // Throttle yt-dlp progress events (yt-dlp emits multiple lines per
-    // second) so the UI only sees ~1% steps instead of a flood of messages.
     let mut last_reported_coarse = i64::MIN;
-    // A wedged yt-dlp (stalled network / hung extractor) must not stall the
-    // download forever: read stdout on a worker thread and abort when the
-    // main loop hears nothing for a long time.
     let (stdout_tx, stdout_rx) = std::sync::mpsc::channel::<std::io::Result<String>>();
     std::thread::Builder::new()
         .name("ytdlp-stdout".into())
@@ -2139,7 +1868,7 @@ pub struct DownloadOptions {
 impl Default for DownloadOptions {
     fn default() -> Self {
         Self {
-            concurrency: 4,
+            concurrency: 6,
             retries: 3,
             video_bitrate: 0,
             audio_bitrate: 0,
@@ -2275,7 +2004,15 @@ pub(crate) fn download_media_with_context_core(
     options: DownloadOptions,
     request_context: RequestContext,
 ) -> Result<()> {
-    let _control_scope = crate::download_control::register(&output)?;
+    let normalized_output = normalized_output_path(&output)?;
+    let mut ownership_key = normalized_output.to_string_lossy().into_owned();
+    if cfg!(windows) {
+        ownership_key.make_ascii_lowercase();
+    }
+    let _control_scope = crate::download_control::register(&ownership_key)?;
+    // Preserve the caller's pause handle as an alias of the canonical owner.
+    let _output_alias = crate::download_control::register(&output)?;
+    let output = normalized_output.to_string_lossy().into_owned();
     let MediaSource {
         page_url,
         media_url,
@@ -2437,6 +2174,7 @@ pub(crate) fn download_media_with_context_core(
             &media_url,
             &request_context,
             &output,
+            concurrency as usize,
             retries,
             video_bitrate,
             audio_bitrate,
@@ -2449,12 +2187,15 @@ pub(crate) fn download_media_with_context_core(
     let page_url = Url::parse(&page_url).ok();
     let client =
         create_http_client_for_context(page_url.as_ref().map(Url::as_str), &request_context)?;
-    let mut resume_identity = media_url.as_bytes().to_vec();
+    let mut resume_identity = media_resume_identity(&media_url).into_bytes();
     if let Some(audio_url) = &audio_url {
         resume_identity.push(0);
-        resume_identity.extend_from_slice(audio_url.as_bytes());
+        resume_identity.extend_from_slice(media_resume_identity(audio_url).as_bytes());
     }
     let (output_path, temp_dir) = prepare_output_path(&output, &resume_identity)?;
+    let staged = staged_output_path(&output_path);
+    let _staged_cleanup = StagedOutputCleanup(staged.clone());
+    let staged_name = staged.to_string_lossy();
     // Build the authenticated headers once and reuse them for every
     // stream so Referer/Origin/Cookie stay consistent across retries.
     let headers = match page_url.as_ref() {
@@ -2471,70 +2212,33 @@ pub(crate) fn download_media_with_context_core(
             let video_temp = temp_dir.join("stream_video_input.bin");
             let audio_temp = temp_dir.join("stream_audio_input.bin");
 
-            let progress = Arc::new(Mutex::new([0.0f64; 2]));
-            let make_reporter = |index: usize| -> ProgressReporter {
-                let progress = progress.clone();
-                let reporter = reporter.clone();
-                Arc::new(move |mut update| {
-                    let mut fractions = progress.lock().unwrap_or_else(|e| e.into_inner());
-                    fractions[index] = fractions[index].max(update.progress);
-                    update.progress = 0.04 + fractions[0] * 0.55 + fractions[1] * 0.21;
-                    reporter(update);
-                })
-            };
-            let video_reporter = make_reporter(0);
-            let audio_reporter = make_reporter(1);
-            let control = crate::download_control::current();
-            std::thread::scope(|scope| -> Result<()> {
-                let audio_worker = scope.spawn(|| {
-                    let _scope = crate::download_control::enter(control);
-                    download_with_fallbacks(
-                        &client,
-                        &audio,
-                        &audio_fallback_urls,
-                        &headers,
-                        &audio_temp,
-                        true,
-                        retries.max(1) as u8,
-                        0.0,
-                        1.0,
-                        &audio_reporter,
-                        "Downloading audio stream",
-                    )
-                });
-                let video_result = download_with_fallbacks(
-                    &client,
-                    &media_url,
-                    &media_fallback_urls,
-                    &headers,
-                    &video_temp,
-                    true,
-                    retries.max(1) as u8,
-                    0.0,
-                    1.0,
-                    &video_reporter,
-                    "Downloading video stream",
-                );
-
-                let audio_result = audio_worker
-                    .join()
-                    .map_err(|_| anyhow!("Audio download worker panicked"))?;
-                video_result?;
-                audio_result
-            })?;
+            download_stream_pair(
+                &client,
+                &media_url,
+                &media_fallback_urls,
+                &audio,
+                &audio_fallback_urls,
+                &headers,
+                &video_temp,
+                &audio_temp,
+                concurrency as usize,
+                retries.max(1) as u8,
+                &reporter,
+            )?;
 
             merge_media_streams(
                 &video_temp,
                 &audio_temp,
                 None,
                 None,
-                &output,
+                &staged_name,
                 video_bitrate.max(0) as u32,
                 audio_bitrate.max(0) as u32,
                 reporter.clone(),
                 None,
             )?;
 
+            publish_media_output(&staged, &output_path)?;
             cleanup_temp_files(keep_temp, [&video_temp, &audio_temp]);
         }
         None => {
@@ -2547,6 +2251,7 @@ pub(crate) fn download_media_with_context_core(
                 &headers,
                 &temp_input,
                 true,
+                concurrency as usize,
                 retries.max(1) as u8,
                 0.04,
                 0.72,
@@ -2555,18 +2260,21 @@ pub(crate) fn download_media_with_context_core(
             )?;
             transcode_input_to_output(
                 &temp_input,
-                &output,
+                &staged_name,
                 video_bitrate.max(0) as u32,
                 audio_bitrate.max(0) as u32,
                 reporter.clone(),
                 None,
             )?;
+            publish_media_output(&staged, &output_path)?;
             cleanup_temp_files(keep_temp, [&temp_input]);
         }
     }
 
-    let _ = std::fs::remove_dir(&temp_dir);
     ensure_output_file_ready(&output_path)?;
+    if !keep_temp {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
     if let Some(target) = page_url.as_ref() {
         write_subtitle_sidecar(
             &reporter,
@@ -2647,11 +2355,91 @@ fn write_subtitle_sidecar(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn download_stream_pair(
+    client: &SyncHttpClient,
+    video: &str,
+    video_fallbacks: &[String],
+    audio: &str,
+    audio_fallbacks: &[String],
+    headers: &[(String, String)],
+    video_path: &Path,
+    audio_path: &Path,
+    concurrency: usize,
+    retries: u8,
+    reporter: &ProgressReporter,
+) -> Result<()> {
+    let fractions = Arc::new(Mutex::new([0.0f64; 2]));
+    let make_reporter = |index: usize| -> ProgressReporter {
+        let fractions = fractions.clone();
+        let reporter = reporter.clone();
+        Arc::new(move |mut update| {
+            let mut values = fractions.lock().unwrap_or_else(|e| e.into_inner());
+            values[index] = values[index].max(update.progress);
+            update.progress = 0.04 + values[0] * 0.55 + values[1] * 0.21;
+            reporter(update);
+        })
+    };
+    let video_reporter = make_reporter(0);
+    let audio_reporter = make_reporter(1);
+    let video_workers = if concurrency > 1 { concurrency - 1 } else { 1 };
+    let fetch_video = || {
+        download_with_fallbacks(
+            client,
+            video,
+            video_fallbacks,
+            headers,
+            video_path,
+            true,
+            video_workers,
+            retries,
+            0.0,
+            1.0,
+            &video_reporter,
+            "Downloading video stream",
+        )
+    };
+    let fetch_audio = || {
+        download_with_fallbacks(
+            client,
+            audio,
+            audio_fallbacks,
+            headers,
+            audio_path,
+            true,
+            1,
+            retries,
+            0.0,
+            1.0,
+            &audio_reporter,
+            "Downloading audio stream",
+        )
+    };
+    if concurrency <= 1 {
+        fetch_video()?;
+        return fetch_audio();
+    }
+    let control = crate::download_control::current();
+    std::thread::scope(|scope| {
+        let audio_worker = scope.spawn(|| {
+            let _scope = crate::download_control::enter(control);
+            fetch_audio()
+        });
+        let video_result = fetch_video();
+        let audio_result = audio_worker
+            .join()
+            .map_err(|_| anyhow!("Audio download worker panicked"))?;
+        video_result?;
+        audio_result
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
 fn run_dash_pipeline(
     reporter: &ProgressReporter,
     manifest_url: &str,
     request_context: &RequestContext,
     output: &str,
+    concurrency: usize,
     retries: i32,
     video_bitrate: i32,
     audio_bitrate: i32,
@@ -2661,6 +2449,9 @@ fn run_dash_pipeline(
 
     let plan = resolve_dash_download_plan(manifest_url, request_context)?;
     let (output_path, temp_dir) = prepare_output_path(output, manifest_url.as_bytes())?;
+    let staged = staged_output_path(&output_path);
+    let _staged_cleanup = StagedOutputCleanup(staged.clone());
+    let staged_name = staged.to_string_lossy();
 
     let client = create_http_client_for_context(Some(&plan.video_url), request_context)?;
     let retries = retries.max(1) as u8;
@@ -2669,35 +2460,23 @@ fn run_dash_pipeline(
 
     let video_extension = container_from_url(&plan.video_url);
     let video_temp = temp_dir.join(format!("dash_video_input.{}", video_extension));
-    download_with_retries(
-        &client,
-        &plan.video_url,
-        &headers,
-        &video_temp,
-        true,
-        retries,
-        0.04,
-        0.46,
-        reporter,
-        "Downloading DASH video",
-    )?;
-
     match plan.audio_url {
         Some(audio_url) => {
             let audio_extension = container_from_url(&audio_url);
             let audio_temp = temp_dir.join(format!("dash_audio_input.{}", audio_extension));
 
-            download_with_retries(
+            download_stream_pair(
                 &client,
+                &plan.video_url,
+                &[],
                 &audio_url,
+                &[],
                 &headers,
+                &video_temp,
                 &audio_temp,
-                true,
+                concurrency,
                 retries,
-                0.48,
-                0.78,
                 reporter,
-                "Downloading DASH audio",
             )?;
 
             merge_media_streams(
@@ -2705,45 +2484,58 @@ fn run_dash_pipeline(
                 &audio_temp,
                 None,
                 None,
-                output,
+                &staged_name,
                 video_bitrate.max(0) as u32,
                 audio_bitrate.max(0) as u32,
                 reporter.clone(),
                 plan.duration_seconds,
             )?;
 
+            publish_media_output(&staged, &output_path)?;
             cleanup_temp_files(keep_temp, [&video_temp, &audio_temp]);
         }
         None => {
-            // A video-only DASH representation is a fragmented MP4 (its `mvhd`
-            // carries no duration), so it may only be delivered by copying when
-            // it is a plain MP4 the platform's own stack reads correctly.
+            download_with_retries(
+                &client,
+                &plan.video_url,
+                &headers,
+                &video_temp,
+                true,
+                concurrency,
+                retries,
+                0.04,
+                0.78,
+                reporter,
+                "Downloading DASH video",
+            )?;
             let plain = plain_mp4_duration_seconds(&video_temp).is_some_and(|seconds| {
                 copied_mp4_duration_is_plausible(seconds, plan.duration_seconds)
             });
             if video_extension == "mp4" && plain && video_bitrate <= 0 && audio_bitrate <= 0 {
-                if std::fs::rename(&video_temp, &output_path).is_err() {
-                    std::fs::copy(&video_temp, &output_path).with_context(|| {
-                        format!("Failed to copy DASH output to {}", output_path.display())
-                    })?;
-                }
+                std::fs::copy(&video_temp, &staged).with_context(|| {
+                    format!("Failed to copy DASH output to {}", staged.display())
+                })?;
+                publish_media_output(&staged, &output_path)?;
                 cleanup_temp_files(keep_temp, [&video_temp]);
             } else {
                 transcode_input_to_output(
                     &video_temp,
-                    output,
+                    &staged_name,
                     video_bitrate.max(0) as u32,
                     audio_bitrate.max(0) as u32,
                     reporter.clone(),
                     plan.duration_seconds,
                 )?;
+                publish_media_output(&staged, &output_path)?;
                 cleanup_temp_files(keep_temp, [&video_temp]);
             }
         }
     }
 
-    let _ = std::fs::remove_dir(&temp_dir);
     ensure_output_file_ready(&output_path)?;
+    if !keep_temp {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
     emit_progress(reporter, "All tasks completed", 1.0);
     Ok(())
 }
@@ -2773,12 +2565,12 @@ pub(crate) fn run_hls_pipeline(
     // file) when the output's parent directory does not exist — e.g. when the
     // external files dir has not been materialised yet. Create it up-front so
     // a missing directory can never cause a spurious "no output file".
-    if let Some(parent) = Path::new(output).parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            std::fs::create_dir_all(parent).with_context(|| {
-                format!("Failed to create output directory: {}", parent.display())
-            })?;
-        }
+    if let Some(parent) = Path::new(output).parent()
+        && !parent.as_os_str().is_empty()
+        && !parent.exists()
+    {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create output directory: {}", parent.display()))?;
     }
 
     let concurrency = concurrency.max(1) as usize;
@@ -2883,11 +2675,14 @@ pub(crate) fn run_hls_pipeline(
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."))
     };
-    let mut resume_identity = url.as_bytes().to_vec();
-    resume_identity.push(0);
-    resume_identity.extend_from_slice(&m3u8_content);
-    let temp_dir = create_resume_temp_dir(&temp_root, Path::new(output), &resume_identity)?;
+    // The per-segment receipts include URI/range/sequence/crypto/init digest.
+    // Keep their directory stable when a refreshed manifest changes its tokens
+    // or formatting; only individually matching, intact segments are reused.
+    let temp_dir = create_resume_temp_dir(&temp_root, Path::new(output), b"hls-cache-v2")?;
 
+    let staged = staged_output_path(Path::new(output));
+    let _staged_cleanup = StagedOutputCleanup(staged.clone());
+    let staged_name = staged.to_string_lossy();
     let temp_primary = temp_dir.join("temp_primary.ts");
     let temp_primary_str = temp_primary.to_string_lossy().to_string();
     let temp_audio = temp_dir.join("temp_audio.ts");
@@ -3049,7 +2844,7 @@ pub(crate) fn run_hls_pipeline(
             &temp_audio,
             video_segments,
             audio_segments,
-            output,
+            &staged_name,
             video_bitrate,
             audio_bitrate,
             reporter.clone(),
@@ -3059,7 +2854,7 @@ pub(crate) fn run_hls_pipeline(
         convert_to_mp4(
             &temp_primary_str,
             video_segments,
-            output,
+            &staged_name,
             video_bitrate,
             audio_bitrate,
             &multi_progress,
@@ -3069,6 +2864,7 @@ pub(crate) fn run_hls_pipeline(
         )?;
     }
 
+    publish_media_output(&staged, Path::new(output))?;
     if !keep_temp {
         // remove_dir_all also cleans the per-segment .part files and the
         // ffmpeg concat lists that live inside the temp directory.
@@ -3303,10 +3099,10 @@ fn normalize_source_url(input: &str) -> Result<String> {
         bail!("Source URL is empty");
     }
 
-    if let Ok(url) = Url::parse(input) {
-        if matches!(url.scheme(), "http" | "https") {
-            return Ok(url.to_string());
-        }
+    if let Ok(url) = Url::parse(input)
+        && matches!(url.scheme(), "http" | "https")
+    {
+        return Ok(url.to_string());
     }
 
     let url_pattern = Regex::new(r#"https?://[^\s<>\"']+"#)?;
@@ -3425,18 +3221,17 @@ fn protocol_from_url(url: &str) -> String {
 }
 
 fn container_from_url(url: &str) -> String {
-    if let Ok(parsed) = Url::parse(url) {
-        if let Some((_, mime)) = parsed
+    if let Ok(parsed) = Url::parse(url)
+        && let Some((_, mime)) = parsed
             .query_pairs()
             .find(|(name, _)| name == "mime" || name == "type")
-        {
-            let mime = mime.to_ascii_lowercase();
-            if mime.contains("mp4") {
-                return "mp4".to_string();
-            }
-            if mime.contains("webm") {
-                return "webm".to_string();
-            }
+    {
+        let mime = mime.to_ascii_lowercase();
+        if mime.contains("mp4") {
+            return "mp4".to_string();
+        }
+        if mime.contains("webm") {
+            return "webm".to_string();
         }
     }
     let without_query = url.split('?').next().unwrap_or(url);
@@ -3465,6 +3260,48 @@ fn mime_from_urls(split_streams: bool) -> &'static str {
     } else {
         "application/octet-stream"
     }
+}
+
+fn normalized_output_path(output: &str) -> Result<PathBuf> {
+    let path = Path::new(output);
+    let filename = path.file_name().context("Output must name a file")?;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    Ok(std::fs::canonicalize(parent)?.join(filename))
+}
+
+#[flutter_rust_bridge::frb(ignore)]
+struct StagedOutputCleanup(PathBuf);
+
+impl Drop for StagedOutputCleanup {
+    fn drop(&mut self) {
+        // Desktop workers have exited before their call returns. Native mobile
+        // transcoders can outlive a timeout, so their isolated staging file must
+        // remain until that native operation has actually stopped.
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+fn staged_output_path(output: &Path) -> PathBuf {
+    let extension = output.extension().and_then(|s| s.to_str()).unwrap_or("mp4");
+    output.with_file_name(format!(
+        ".segmeris-output-{}.{}",
+        Uuid::new_v4().simple(),
+        extension
+    ))
+}
+
+fn publish_media_output(staged: &Path, output: &Path) -> Result<()> {
+    ensure_output_file_ready(staged)?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(staged)?
+        .sync_all()?;
+    replace_download_output(staged, output)
 }
 
 fn prepare_output_path(output: &str, resume_identity: &[u8]) -> Result<(PathBuf, PathBuf)> {
@@ -3903,18 +3740,19 @@ fn join_manifest_url(
 #[cfg(test)]
 mod tests {
     use super::{
-        canonical_site_context, checksum_for_release_asset, clear_resumable_partial,
-        copied_mp4_duration_is_plausible, has_mp4_signature, hls_response_bytes,
-        hls_segment_cache_key, is_complete_unsatisfied_range, is_valid_header_value_byte,
-        is_valid_hls_segment_cache, mp4_layout, normalize_fallback_urls, normalize_source_url,
-        parse_content_range, parse_iso_duration_seconds, parse_ytdlp_progress,
-        plain_mp4_duration_seconds, playlist_base_url, range_response_has_safe_resume_identity,
-        read_resumable_metadata, resolve_dash_download_plan_from_manifest, resolve_hls_byte_range,
+        ByteRange, ContentRange, HlsResourceRequest, Playlist, ResumableMetadata, SubtitleChoice,
+        SubtitleMode, Uuid, canonical_site_context, checksum_for_release_asset,
+        clear_resumable_partial, copied_mp4_duration_is_plausible, has_mp4_signature,
+        hls_response_bytes, hls_segment_cache_key, is_complete_unsatisfied_range,
+        is_valid_header_value_byte, is_valid_hls_segment_cache, mp4_layout,
+        normalize_fallback_urls, normalize_source_url, parse_content_range,
+        parse_iso_duration_seconds, parse_ytdlp_progress, plain_mp4_duration_seconds,
+        playlist_base_url, range_response_has_safe_resume_identity, read_resumable_metadata,
+        resolve_dash_download_plan_from_manifest, resolve_hls_byte_range,
         resumable_metadata_from_response, resumable_metadata_matches_response,
         resumable_partial_path, segment_input_for, select_best_hls_variant,
         select_hls_audio_rendition, should_auto_inspect_download_target, write_hls_segment_cache,
-        write_resumable_metadata, youtube_itag_from_media_url, ByteRange, ContentRange,
-        HlsResourceRequest, Playlist, ResumableMetadata, SubtitleChoice, SubtitleMode, Uuid,
+        write_resumable_metadata, youtube_itag_from_media_url,
     };
     use crate::hls::parse_playlist;
     use url::Url;
@@ -3927,8 +3765,8 @@ mod tests {
     /// transport, the download core or the muxing path.
     mod live {
         use super::super::{
-            download_media_with_context_core, noop_progress_reporter, DownloadOptions, MediaSource,
-            RequestContext,
+            DownloadOptions, MediaSource, RequestContext, download_media_with_context_core,
+            noop_progress_reporter,
         };
         use crate::api::bilibili::BilibiliApi;
         use std::path::PathBuf;
@@ -4023,7 +3861,7 @@ mod tests {
                 },
                 output.to_string_lossy().into_owned(),
                 DownloadOptions {
-                    concurrency: 4,
+                    concurrency: 6,
                     retries: 3,
                     ..DownloadOptions::default()
                 },
@@ -4079,7 +3917,7 @@ mod tests {
                 MediaSource::from(&candidate),
                 output.to_string_lossy().into_owned(),
                 DownloadOptions {
-                    concurrency: 4,
+                    concurrency: 6,
                     retries: 3,
                     ..DownloadOptions::default()
                 },
@@ -4101,8 +3939,7 @@ mod tests {
         fn hls_live_ts_download_round_trip() {
             let scratch = Scratch::new("hls-ts");
             let output = scratch.file("hls-ts.mp4");
-            let manifest =
-                "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_4x3/bipbop_4x3_variant.m3u8";
+            let manifest = "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_4x3/bipbop_4x3_variant.m3u8";
 
             download_media_with_context_core(
                 noop_progress_reporter(),
@@ -4113,7 +3950,7 @@ mod tests {
                 },
                 output.to_string_lossy().into_owned(),
                 DownloadOptions {
-                    concurrency: 4,
+                    concurrency: 6,
                     retries: 3,
                     ..DownloadOptions::default()
                 },
@@ -4147,7 +3984,7 @@ mod tests {
                 },
                 output.to_string_lossy().into_owned(),
                 DownloadOptions {
-                    concurrency: 4,
+                    concurrency: 6,
                     retries: 3,
                     ..DownloadOptions::default()
                 },
@@ -4218,7 +4055,7 @@ mod tests {
 
     #[test]
     fn sends_the_session_cookie_where_it_matters() {
-        use super::{request_headers, HeaderEntry, RequestContext};
+        use super::{HeaderEntry, RequestContext, request_headers};
         use url::Url;
 
         let page = Url::parse("https://www.bilibili.com/bangumi/play/ep1994063").expect("parses");
@@ -4261,9 +4098,11 @@ mod tests {
             headers.iter().filter(|(name, _)| name == "cookie").count(),
             1
         );
-        assert!(headers
-            .iter()
-            .any(|(name, value)| name == "x-test" && value == "ok"));
+        assert!(
+            headers
+                .iter()
+                .any(|(name, value)| name == "x-test" && value == "ok")
+        );
     }
 
     #[test]
@@ -4338,16 +4177,20 @@ mod tests {
                 .bytes()
                 .all(is_valid_header_value_byte)
         );
-        assert!("Mozilla/5.0 (中文设备) Chrome/120"
-            .bytes()
-            .all(is_valid_header_value_byte));
+        assert!(
+            "Mozilla/5.0 (中文设备) Chrome/120"
+                .bytes()
+                .all(is_valid_header_value_byte)
+        );
         assert!(!b"\r".iter().copied().all(is_valid_header_value_byte));
         assert!(!b"\n".iter().copied().all(is_valid_header_value_byte));
         assert!(!b"\x00".iter().copied().all(is_valid_header_value_byte));
         assert!(!b"\x7f".iter().copied().all(is_valid_header_value_byte));
-        assert!(!"text/html\r\nX-Evil: 1"
-            .bytes()
-            .all(is_valid_header_value_byte));
+        assert!(
+            !"text/html\r\nX-Evil: 1"
+                .bytes()
+                .all(is_valid_header_value_byte)
+        );
     }
 
     #[test]
@@ -4359,8 +4202,7 @@ mod tests {
 
     #[test]
     fn accepts_only_the_requested_official_release_checksum() {
-        let checksums =
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  yt-dlp\n\
+        let checksums = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  yt-dlp\n\
 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *yt-dlp.exe\n";
         assert_eq!(
             checksum_for_release_asset(checksums, "yt-dlp.exe").as_deref(),
@@ -4422,15 +4264,17 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *yt-dlp.exe\n";
             .expect("implicit range should continue from the prior range"),
             Some((6, 8))
         );
-        assert!(resolve_hls_byte_range(
-            "other.mp4",
-            Some(&ByteRange {
-                length: 2,
-                offset: None,
-            }),
-            &mut cursor,
-        )
-        .is_err());
+        assert!(
+            resolve_hls_byte_range(
+                "other.mp4",
+                Some(&ByteRange {
+                    length: 2,
+                    offset: None,
+                }),
+                &mut cursor,
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -4822,13 +4666,15 @@ seg1.m4s
         let Playlist::MediaPlaylist(fragmented_playlist) = playlist else {
             panic!("expected a media playlist");
         };
-        assert!(segment_input_for(
-            &fragmented_playlist.segments,
-            std::path::Path::new("/tmp/segmeris"),
-            "v",
-            2
-        )
-        .is_some());
+        assert!(
+            segment_input_for(
+                &fragmented_playlist.segments,
+                std::path::Path::new("/tmp/segmeris"),
+                "v",
+                2
+            )
+            .is_some()
+        );
 
         let transport_stream = br#"#EXTM3U
 #EXTINF:6.0,
@@ -4957,9 +4803,11 @@ seg1.ts
         );
         // A track URL is only accepted over TLS, and both payload modes
         // demand a value.
-        assert!(SubtitleMode::Track
-            .to_choice("http://i0.hdslb.com/bfs/subtitle/1.json")
-            .is_err());
+        assert!(
+            SubtitleMode::Track
+                .to_choice("http://i0.hdslb.com/bfs/subtitle/1.json")
+                .is_err()
+        );
         assert!(SubtitleMode::Track.to_choice("   ").is_err());
         assert!(SubtitleMode::Language.to_choice("").is_err());
         assert!(SubtitleMode::Language.to_choice(&"x".repeat(33)).is_err());
@@ -5115,7 +4963,7 @@ fn merge_media_streams(
             }
         } else {
             android_merge_error = Some(
-                "the Android MediaCodec transcoder is not registered (JNI_OnLoad did not run)"
+                "the Android MediaCodec transcoder is not registered"
                     .to_string(),
             );
         }
@@ -5710,11 +5558,7 @@ fn select_transcoder_backend() -> Result<TranscoderKind> {
 /// was the root cause of outputs containing only the first few seconds.
 fn concat_list_for_input(input_path: &Path) -> Option<PathBuf> {
     let list = PathBuf::from(format!("{}.concat.txt", input_path.to_string_lossy()));
-    if list.is_file() {
-        Some(list)
-    } else {
-        None
-    }
+    if list.is_file() { Some(list) } else { None }
 }
 
 fn parse_ffmpeg_duration(stderr: &str) -> Option<f64> {
@@ -5742,16 +5586,14 @@ fn probe_media_duration(path: &Path, ffmpeg_path: &Path) -> Option<f64> {
         "default=noprint_wrappers=1:nokey=1".to_string(),
         path.to_string_lossy().to_string(),
     ];
-    if let Ok(probe) = run_ffmpeg(&ffprobe_path, &probe_args, Duration::from_secs(20)) {
-        if probe.status.success() {
-            if let Ok(text) = String::from_utf8(probe.stdout) {
-                if let Ok(seconds) = text.trim().parse::<f64>() {
-                    if seconds.is_finite() && seconds > 0.0 {
-                        return Some(seconds);
-                    }
-                }
-            }
-        }
+    if let Ok(probe) = run_ffmpeg(&ffprobe_path, &probe_args, Duration::from_secs(20))
+        && probe.status.success()
+        && let Ok(text) = String::from_utf8(probe.stdout)
+        && let Ok(seconds) = text.trim().parse::<f64>()
+        && seconds.is_finite()
+        && seconds > 0.0
+    {
+        return Some(seconds);
     }
     let inspect_args = [
         "-hide_banner".to_string(),
@@ -6033,15 +5875,13 @@ fn convert_to_mp4(
         TranscoderKind::IosVideoToolbox => {
             let requires_reencode = video_bitrate > 0 || audio_bitrate > 0;
             let mut per_segment_done = false;
-            if !requires_reencode {
-                if let Some(segments) = video_segments.as_ref() {
-                    match ios_hardware_merge_segments(segments, output_path, expected_duration) {
-                        Ok(()) => per_segment_done = true,
-                        Err(error) => warn!(
-                            "iOS per-segment merge failed ({}); falling back to single-file VideoToolbox",
-                            error
-                        ),
-                    }
+            if !requires_reencode && let Some(segments) = video_segments.as_ref() {
+                match ios_hardware_merge_segments(segments, output_path, expected_duration) {
+                    Ok(()) => per_segment_done = true,
+                    Err(error) => warn!(
+                        "iOS per-segment merge failed ({}); falling back to single-file VideoToolbox",
+                        error
+                    ),
                 }
             }
             if per_segment_done {
@@ -6240,12 +6080,12 @@ fn android_hardware_transcode(
     {
         let transcoder = ANDROID_HW_TRANSCODER.get().ok_or_else(|| {
             error!("   CRITICAL: Android MediaCodec transcoder not registered!");
-            error!("   This means JNI_OnLoad was not executed by Android runtime.");
+            error!("   This means MainActivity did not initialize the media bridge.");
             error!("   Possible causes:");
             error!("   1. Your Rust library (.so) was not loaded as a JNI library");
             error!("   2. Cargo.toml [lib] crate-type is not [\"cdylib\"]");
             error!("   3. Check logcat for any JNI loading errors");
-            anyhow!("Android MediaCodec transcoder not registered; JNI_OnLoad failed")
+            anyhow!("Android MediaCodec transcoder not registered; nativeInitMedia has not completed")
         })?;
 
         if let Some(segments) = segments {
@@ -6314,66 +6154,38 @@ pub fn init_android_transcoder_check() -> Result<String> {
     }
 
     Err(anyhow!(
-        "Android MediaCodec transcoder not registered. Make sure System.loadLibrary(\"rust_lib_segmeris\")
-        is called in your Android code so that JNI_OnLoad runs."
+        "Android MediaCodec transcoder has not been initialized by MainActivity."
     ))
 }
 
+// MainActivity supplies the class from the app class loader and directories
+// from its Application context before Flutter starts the Dart entry point.
 #[cfg(target_os = "android")]
-// Edition 2024 requires unsafe attributes to be spelled `#[unsafe(...)]`.
 #[unsafe(no_mangle)]
-pub extern "C" fn JNI_OnLoad(
-    vm: *mut jni::sys::JavaVM,
-    _reserved: *mut std::os::raw::c_void,
-) -> i32 {
-    android_logger::init_once(
-        android_logger::Config::default().with_max_level(log::LevelFilter::Info),
-    );
-
-    let jvm = match unsafe { jni::JavaVM::from_raw(vm) } {
-        Ok(vm) => Arc::new(vm),
-        Err(e) => {
-            eprintln!("Failed to create JavaVM in JNI_OnLoad: {:?}", e);
-            return jni::sys::JNI_VERSION_1_6 as i32;
-        }
-    };
-
-    match register_android_mediacodec_transcoder(jvm.clone()) {
-        Ok(_) => {
-            info!("Android MediaCodec transcoder registered successfully in JNI_OnLoad");
-        }
-        Err(e) => {
-            error!("Failed to register transcoder in JNI_OnLoad: {}", e);
-        }
-    }
-
-    match jvm.attach_current_thread() {
-        Ok(mut env) => {
-            if let Ok(thread_class) = env.find_class("android/app/ActivityThread") {
-                if let Ok(app_obj) = env.call_static_method(
-                    thread_class,
-                    "currentApplication",
-                    "()Landroid/app/Application;",
-                    &[],
-                ) {
-                    if let Ok(app) = app_obj.l() {
-                        if !app.is_null() {
-                            if let Ok(global) = env.new_global_ref(app) {
-                                if let Err(e) = init_android_context(jvm.clone(), global) {
-                                    warn!("⚠️ Failed to init Android Context: {}", e);
-                                }
-                            }
-                        } else {
-                            info!("ℹ️ currentApplication() returned null");
-                        }
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            warn!("⚠️ Failed to attach thread in JNI_OnLoad: {}", e);
-        }
-    }
-
-    jni::sys::JNI_VERSION_1_6 as i32
+pub extern "system" fn Java_com_blue_segmeris_MainActivity_nativeInitMedia<'frame>(
+    mut unowned: EnvUnowned<'frame>,
+    _activity: JObject<'frame>,
+    class: JClass<'frame>,
+    files: JString<'frame>,
+    external: JString<'frame>,
+    cache: JString<'frame>,
+) {
+    unowned
+        .with_env(|env| -> jni::errors::Result<()> {
+            android_logger::init_once(
+                android_logger::Config::default().with_max_level(log::LevelFilter::Info),
+            );
+            let bridge = AndroidMediaCodecTranscoder {
+                jvm: env.get_java_vm()?,
+                class: Arc::new(env.new_global_ref(&class)?),
+                scratch_dirs: [
+                    files.try_to_string(env)?.into(),
+                    external.try_to_string(env)?.into(),
+                    cache.try_to_string(env)?.into(),
+                ],
+            };
+            ANDROID_HW_TRANSCODER.get_or_init(|| Arc::new(bridge));
+            Ok(())
+        })
+        .resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }

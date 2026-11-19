@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/brand_splash_vector">
+    <target android:name="ribbon0" android:animation="@animator/brand_trace" />
+    <target android:name="ribbon1" android:animation="@animator/brand_trace" />
+    <target android:name="ribbon2" android:animation="@animator/brand_trace" />
+    <target android:name="silhouette0" android:animation="@animator/brand_fill" />
+    <target android:name="silhouette1" android:animation="@animator/brand_fill" />
+    <target android:name="silhouette2" android:animation="@animator/brand_fill" />
+</animated-vector>

@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'rust_lib_segmeris'
-  s.version          = '1.0.8'
+  s.version          = '1.1.0'
   s.summary          = 'Segmeris Rust download engine and Flutter bridge.'
   s.description      = <<-DESC
 Builds and links the Segmeris Rust runtime for Flutter.

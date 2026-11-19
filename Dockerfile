@@ -26,7 +26,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # 安装Flutter
-RUN git clone https://github.com/flutter/flutter.git -b 3.47.9 --depth 1 /flutter
+RUN git clone https://github.com/flutter/flutter.git -b 3.50.0 --depth 1 /flutter
 ENV PATH="/flutter/bin:/flutter/bin/cache/dart-sdk/bin:${PATH}"
 
 # 验证安装

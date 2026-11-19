@@ -1,5 +1,7 @@
 //! HLS resource planning, decryption, cache verification and segment assembly.
 use super::*;
+#[path = "hls_stream.rs"]
+mod stream;
 
 #[derive(Debug)]
 pub(super) struct HlsHttpError {
@@ -17,9 +19,18 @@ impl std::fmt::Display for HlsHttpError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "HTTP {}", self.status)?;
         match self.status {
-            404 if self.missing_object => write!(f, ": NoSuchKey; the origin reports that this object does not exist. Obtain a current media URL from the source page"),
-            404 | 410 => write!(f, ": resource not found. Check the URL or obtain a current link from the source page"),
-            401 | 403 => write!(f, ": the server refused access. Check the session, permissions and link validity"),
+            404 if self.missing_object => write!(
+                f,
+                ": NoSuchKey; the origin reports that this object does not exist. Obtain a current media URL from the source page"
+            ),
+            404 | 410 => write!(
+                f,
+                ": resource not found. Check the URL or obtain a current link from the source page"
+            ),
+            401 | 403 => write!(
+                f,
+                ": the server refused access. Check the session, permissions and link validity"
+            ),
             _ => Ok(()),
         }
     }
@@ -101,7 +112,7 @@ pub(super) fn download_and_merge(
                     .downcast_ref::<HlsHttpError>()
                     .is_some_and(HlsHttpError::is_permanent) =>
             {
-                return Err(error)
+                return Err(error);
             }
             Err(error) => {
                 warn!(
@@ -561,7 +572,9 @@ pub(super) fn download_and_merge_once(
     }
 
     if !playlist.end_list {
-        bail!("Live HLS has no EXT-X-ENDLIST; recording is not supported. Use a finalized VOD playlist.");
+        bail!(
+            "Live HLS has no EXT-X-ENDLIST; recording is not supported. Use a finalized VOD playlist."
+        );
     }
     let media_sequence = playlist.media_sequence;
     let segments = playlist.segments;
@@ -777,7 +790,6 @@ pub(super) fn download_and_merge_once(
             scope.spawn(move || {
                 let _control_scope = crate::download_control::enter(control);
                 loop {
-                    // Stop early if a previous worker failed.
                     if errors.lock().unwrap().is_some() {
                         break;
                     }
@@ -818,15 +830,16 @@ pub(super) fn download_and_merge_once(
                             return Ok(());
                         }
 
-                        let buffer = download_and_decrypt_segment(
+                        stream::download_segment_to_cache(
                             &client,
                             &headers,
                             &segment_request,
                             init_bytes[idx].as_ref().map(|data| data.bytes.as_slice()),
                             key.as_ref(),
                             retries,
+                            &tmp_path,
+                            &cache_key,
                         )?;
-                        write_hls_segment_cache(&tmp_path, &buffer, &cache_key)?;
                         report_hls_segment_completed(
                             &completed,
                             total,
@@ -979,11 +992,13 @@ mod regression_tests {
         assert!(message.contains("HTTP 404: NoSuchKey"), "{message}");
         assert!(!message.contains("private server detail"));
         assert!(!output.exists());
-        assert!(events
-            .lock()
-            .unwrap()
-            .iter()
-            .all(|event| !event.message.contains("backend")));
+        assert!(
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|event| !event.message.contains("backend"))
+        );
         server.join().unwrap();
     }
 
@@ -1039,9 +1054,11 @@ mod regression_tests {
             ),
         ] {
             let (url, server) = serve(1, move |_, request, socket| {
-                assert!(request
-                    .to_ascii_lowercase()
-                    .contains("range: bytes=100-102"));
+                assert!(
+                    request
+                        .to_ascii_lowercase()
+                        .contains("range: bytes=100-102")
+                );
                 write!(socket, "HTTP/1.1 206 Partial Content\r\n{range}Content-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
             });
             let error = download_hls_resource(
@@ -1221,15 +1238,17 @@ mod regression_tests {
             url,
             byte_range: None,
         };
-        assert!(download_and_decrypt_segment(
-            &SyncHttpClient::new().unwrap(),
-            &[],
-            &request,
-            None,
-            Some(&(vec![0; 16], vec![0; 16])),
-            1
-        )
-        .is_err());
+        assert!(
+            download_and_decrypt_segment(
+                &SyncHttpClient::new().unwrap(),
+                &[],
+                &request,
+                None,
+                Some(&(vec![0; 16], vec![0; 16])),
+                1
+            )
+            .is_err()
+        );
         server.join().unwrap();
     }
 

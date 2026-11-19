@@ -7,7 +7,7 @@ mod common;
 mod generic;
 mod youtube;
 
-pub(crate) use common::{extract_page_title, SiteWarning};
+pub(crate) use common::{SiteWarning, extract_page_title};
 
 #[derive(Clone, Copy, Debug)]
 enum SiteAdapterKind {
@@ -55,7 +55,7 @@ fn adapter_for_host(host: Option<&str>) -> Option<SiteAdapterKind> {
 
 #[cfg(test)]
 mod tests {
-    use super::{extractor_name_for_host, inspect_page_candidates, SiteWarning};
+    use super::{SiteWarning, extractor_name_for_host, inspect_page_candidates};
     use crate::api::downloader::{CandidateCollector, MediaCandidate};
     use url::Url;
 
@@ -109,9 +109,11 @@ mod tests {
                 && candidate.protocol == "dash"
                 && candidate.media_url.contains("dash_parse.mpd")
         }));
-        assert!(warnings
-            .iter()
-            .any(|warning| warning.contains("youtube-signature-protected")));
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("youtube-signature-protected"))
+        );
     }
 
     #[test]
@@ -145,9 +147,11 @@ mod tests {
                 && candidate.protocol == "dash"
                 && candidate.media_url.contains("live_master.mpd")
         }));
-        assert!(warnings
-            .iter()
-            .any(|warning| warning.contains("youtube-signature-protected")));
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("youtube-signature-protected"))
+        );
     }
 
     #[test]
@@ -157,9 +161,11 @@ mod tests {
             inspect_fixture("https://www.youtube.com/watch?v=fixture-age-watch", html);
 
         assert!(candidates.is_empty());
-        assert!(warnings
-            .iter()
-            .any(|warning| warning.contains("[auth:youtube-age-gate]")));
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("[auth:youtube-age-gate]"))
+        );
     }
 
     #[test]
@@ -169,9 +175,11 @@ mod tests {
             inspect_fixture("https://www.youtube.com/watch?v=fixture-age-live", html);
 
         assert!(candidates.is_empty());
-        assert!(warnings
-            .iter()
-            .any(|warning| warning.contains("[auth:youtube-age-gate]")));
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("[auth:youtube-age-gate]"))
+        );
     }
 
     #[test]
@@ -181,9 +189,11 @@ mod tests {
             inspect_fixture("https://www.youtube.com/watch?v=fixture-members", html);
 
         assert!(candidates.is_empty());
-        assert!(warnings
-            .iter()
-            .any(|warning| warning.contains("[auth:youtube-membership-required]")));
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("[auth:youtube-membership-required]"))
+        );
     }
 
     #[test]

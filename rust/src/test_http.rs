@@ -65,6 +65,31 @@ pub(crate) fn serve(
     (url, worker)
 }
 
+/// Concurrent handlers for tests that must prove requests overlap.
+pub(crate) fn serve_parallel(
+    count: usize,
+    handler: impl Fn(String, &mut TcpStream) + Send + Sync + 'static,
+) -> (String, std::thread::JoinHandle<()>) {
+    let handler = std::sync::Arc::new(handler);
+    let workers = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let handles = workers.clone();
+    let (url, listener) = serve(count, move |_, request, socket| {
+        let handler = handler.clone();
+        let mut socket = socket.try_clone().unwrap();
+        handles
+            .lock()
+            .unwrap()
+            .push(std::thread::spawn(move || handler(request, &mut socket)));
+    });
+    let joined = std::thread::spawn(move || {
+        listener.join().unwrap();
+        for worker in workers.lock().unwrap().drain(..) {
+            worker.join().unwrap();
+        }
+    });
+    (url, joined)
+}
+
 pub(crate) fn response(socket: &mut TcpStream, bytes: &[u8]) {
     write!(
         socket,

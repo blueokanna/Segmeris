@@ -53,6 +53,7 @@ END
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
 IDI_APP_ICON            ICON                    "resources\\app_icon.ico"
+IDI_APP_ICON_DARK       ICON                    "resources\\app_icon_dark.ico"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -63,13 +64,13 @@ IDI_APP_ICON            ICON                    "resources\\app_icon.ico"
 #if defined(FLUTTER_VERSION_MAJOR) && defined(FLUTTER_VERSION_MINOR) && defined(FLUTTER_VERSION_PATCH) && defined(FLUTTER_VERSION_BUILD)
 #define VERSION_AS_NUMBER FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,FLUTTER_VERSION_PATCH,FLUTTER_VERSION_BUILD
 #else
-#define VERSION_AS_NUMBER 1,0,8,1
+#define VERSION_AS_NUMBER 1,1,0,5001
 #endif
 
 #if defined(FLUTTER_VERSION)
 #define VERSION_AS_STRING FLUTTER_VERSION
 #else
-#define VERSION_AS_STRING "1.0.8"
+#define VERSION_AS_STRING "1.1.0"
 #endif
 
 VS_VERSION_INFO VERSIONINFO

@@ -14,6 +14,21 @@ struct _MyApplication {
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
+static void update_brand_icon(GtkSettings* settings, GParamSpec*, GtkWindow* window) {
+  gboolean prefer_dark = FALSE;
+  g_autofree gchar* theme = nullptr;
+  g_object_get(settings, "gtk-application-prefer-dark-theme", &prefer_dark,
+               "gtk-theme-name", &theme, nullptr);
+  g_autofree gchar* lower = g_ascii_strdown(theme ? theme : "", -1);
+  const bool dark = prefer_dark || g_strrstr(lower, "dark") != nullptr;
+  g_autofree gchar* executable = g_file_read_link("/proc/self/exe", nullptr);
+  if (!executable) return;
+  g_autofree gchar* directory = g_path_get_dirname(executable);
+  g_autofree gchar* icon = g_build_filename(directory, "data", "icons",
+      dark ? "segmeris-dark.png" : "segmeris.png", nullptr);
+  gtk_window_set_icon_from_file(window, icon, nullptr);
+}
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
@@ -24,6 +39,12 @@ static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+  GtkSettings* settings = gtk_widget_get_settings(GTK_WIDGET(window));
+  update_brand_icon(settings, nullptr, window);
+  g_signal_connect_object(settings, "notify::gtk-theme-name",
+      G_CALLBACK(update_brand_icon), window, G_CONNECT_DEFAULT);
+  g_signal_connect_object(settings, "notify::gtk-application-prefer-dark-theme",
+      G_CALLBACK(update_brand_icon), window, G_CONNECT_DEFAULT);
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu

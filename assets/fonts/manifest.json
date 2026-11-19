@@ -1,0 +1,26 @@
+[
+  {
+    "file": "GoogleSans-Variable.ttf",
+    "size": 4974940,
+    "sha256": "d0a87d835a944b8b40d0e82a5651bb59ab97b936a2aeed5946eb57e7b2a3a90a",
+    "variable": true
+  },
+  {
+    "file": "HarmonyOS_SansSC_Bold.ttf",
+    "size": 8379892,
+    "sha256": "c215d8ab1cb6709fec2e063f8213e9af86d7587d345b56325e36b67d6b947d98",
+    "variable": false
+  },
+  {
+    "file": "HarmonyOS_SansSC_Medium.ttf",
+    "size": 8449140,
+    "sha256": "7aa97804da2fc3802d116011b73ee25791303598718cc58dc49fedc9d63e5d2a",
+    "variable": false
+  },
+  {
+    "file": "HarmonyOS_SansSC_Regular.ttf",
+    "size": 8483132,
+    "sha256": "984cf609545acee8ef060780fb70fc3099b058c0553416331b6e863fdf7c26fa",
+    "variable": false
+  }
+]

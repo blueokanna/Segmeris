@@ -267,7 +267,7 @@ pub(crate) fn episode_page_url(ep_id: i64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_target, CollectionKind, Target};
+    use super::{CollectionKind, Target, parse_target};
     use url::Url;
 
     fn target(url: &str) -> Option<Target> {

@@ -9,4 +9,8 @@ Future<bool> fileExists(String path) async => false;
 
 Future<int> fileLength(String path) async => 0;
 
-Future<void> deleteFile(String path) async {}
+Future<void> deleteFile(String path) async => throw UnsupportedError(
+  'Server files must be deleted through the download API',
+);
+
+Future<String> outputPath(String name, String? directory) async => name;

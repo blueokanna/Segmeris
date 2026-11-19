@@ -13,7 +13,7 @@
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use log::debug;
 use nextjson::Value;
 
@@ -231,8 +231,9 @@ impl BilibiliApi {
         if !(200..300).contains(&status) {
             bail!("Bilibili API returned HTTP {status} for {url}");
         }
-        nextjson::from_slice::<Value>(&body)
-            .with_context(|| format!("Failed to parse Bilibili API response from {url}"))
+        nextjson::from_slice::<Value>(&body).map_err(|error| {
+            anyhow::anyhow!("Failed to parse Bilibili API response from {url}: {error}")
+        })
     }
 
     /// Fetch the rotating `wbi` key pair (cached for [`WBI_KEY_TTL`]).
@@ -242,10 +243,10 @@ impl BilibiliApi {
             let guard = cache
                 .lock()
                 .map_err(|_| anyhow::anyhow!("WBI key cache is poisoned"))?;
-            if let Some(keys) = guard.as_ref() {
-                if keys.fetched_at.elapsed() < WBI_KEY_TTL {
-                    return Ok((keys.img_key.clone(), keys.sub_key.clone()));
-                }
+            if let Some(keys) = guard.as_ref()
+                && keys.fetched_at.elapsed() < WBI_KEY_TTL
+            {
+                return Ok((keys.img_key.clone(), keys.sub_key.clone()));
             }
         }
 
@@ -655,17 +656,27 @@ fn classify_api_error(code: i64, message: &str) -> (String, bool) {
     let detail = |hint: &str| format!("Bilibili error {code}: {message} ({hint})");
     match code {
         -352 => (
-            detail("risk control rejected the request; sign in to a browser session and paste its Cookie, or retry later"),
+            detail(
+                "risk control rejected the request; sign in to a browser session and paste its Cookie, or retry later",
+            ),
             true,
         ),
         -412 => (
             detail("requests were intercepted; wait a few minutes, or configure a browser Cookie"),
             true,
         ),
-        -403 => (detail("access denied; this may require the account that owns the content"), true),
-        -2 | -23 => (detail("content is restricted in this region or context"), true),
+        -403 => (
+            detail("access denied; this may require the account that owns the content"),
+            true,
+        ),
+        -2 | -23 => (
+            detail("content is restricted in this region or context"),
+            true,
+        ),
         -10403 | 10403 => (
-            detail("region-restricted or membership-only content; a signed-in session with the required entitlements is needed"),
+            detail(
+                "region-restricted or membership-only content; a signed-in session with the required entitlements is needed",
+            ),
             true,
         ),
         -101 => (detail("login required for this stream"), true),
@@ -674,8 +685,14 @@ fn classify_api_error(code: i64, message: &str) -> (String, bool) {
         -509 => (detail("rate limited; retry later"), false),
         62002 => (detail("the upload was hidden by its owner"), false),
         62004 => (detail("the upload is under review"), false),
-        87007 => (detail("this content is only playable in the mobile app"), false),
-        87008 => (detail("this content is only playable in the official client"), false),
+        87007 => (
+            detail("this content is only playable in the mobile app"),
+            false,
+        ),
+        87008 => (
+            detail("this content is only playable in the official client"),
+            false,
+        ),
         10003 | 147002 => (detail("the content does not exist"), false),
         _ => (detail("unexpected API error"), false),
     }
@@ -895,12 +912,13 @@ fn parse_playurl_payload(payload: &Value, root: &str) -> Result<DashStreams> {
     streams.preview = marker("/is_preview").and_then(Value::as_i64).unwrap_or(0) != 0;
 
     // Progressive fallback (`durl`): one muxed file, no separate audio.
-    if streams.video.is_empty() && streams.audio.is_empty() {
-        if let Some(durl) = stream_root.get("durl").and_then(Value::as_array) {
-            for entry in durl {
-                if let Some(media) = parse_dash_media(entry) {
-                    streams.progressive.push(media);
-                }
+    if streams.video.is_empty()
+        && streams.audio.is_empty()
+        && let Some(durl) = stream_root.get("durl").and_then(Value::as_array)
+    {
+        for entry in durl {
+            if let Some(media) = parse_dash_media(entry) {
+                streams.progressive.push(media);
             }
         }
     }
@@ -1134,12 +1152,12 @@ fn page_url_candidates(html: &str) -> Vec<url::Url> {
             })
             .unwrap_or(candidate.len());
         let candidate = decode_url_text(&candidate[..end]);
-        if !candidate.contains("fe-static") {
-            if let Ok(parsed) = url::Url::parse(&candidate) {
-                let host = parsed.host_str().unwrap_or_default();
-                if super::url::is_bilibili_host(host) && !found.contains(&parsed) {
-                    found.push(parsed);
-                }
+        if !candidate.contains("fe-static")
+            && let Ok(parsed) = url::Url::parse(&candidate)
+        {
+            let host = parsed.host_str().unwrap_or_default();
+            if super::url::is_bilibili_host(host) && !found.contains(&parsed) {
+                found.push(parsed);
             }
         }
         search = &search[index + end..];
@@ -1706,8 +1724,10 @@ mod tests {
             page_url_candidates(
                 r#"<script>var u="https:\/\/www.bilibili.com\/video\/BV1xx411c7mD"</script>"#
             ),
-            vec![Url::parse("https://www.bilibili.com/video/BV1xx411c7mD")
-                .expect("escaped URL parses")]
+            vec![
+                Url::parse("https://www.bilibili.com/video/BV1xx411c7mD")
+                    .expect("escaped URL parses")
+            ]
         );
         assert_eq!(
             page_url_candidates(

@@ -1,5 +1,5 @@
 //! Diagnose HTTP responses through the downloader's production transport.
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use rust_lib_segmeris::net::SyncHttpClient;
 
 fn main() -> Result<()> {

@@ -1,0 +1,22 @@
+{
+  "light": {
+    "source_sha256": "8cb4adb9950784e13700640bacd5d7bb95f2ce5d8aab2fb6142a71b85b281de0",
+    "silhouette_iou": 0.961879,
+    "view_box": [
+      0,
+      0,
+      1000,
+      1000
+    ]
+  },
+  "dark": {
+    "source_sha256": "7b60b97b9200537a4f562663d960b7fc38437fdd6d3eb31890d9101f66d584e4",
+    "silhouette_iou": 0.965218,
+    "view_box": [
+      0,
+      0,
+      1000,
+      1000
+    ]
+  }
+}

@@ -1,7 +1,7 @@
 //! Verified path-building fallback for cross-signed certificate chains.
 use anyhow::{Context, Result};
 use courierust::courierust_client::TlsSettings;
-use rustls::{pki_types::ServerName, ClientConnection, RootCertStore, StreamOwned};
+use rustls::{ClientConnection, RootCertStore, StreamOwned, pki_types::ServerName};
 use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::Duration;
@@ -59,8 +59,8 @@ pub(super) fn connect(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustls::client::danger::ServerCertVerifier;
     use rustls::client::WebPkiServerVerifier;
+    use rustls::client::danger::ServerCertVerifier;
     use rustls::pki_types::{CertificateDer, UnixTime};
 
     #[test]
@@ -98,21 +98,29 @@ mod tests {
                 .verify_server_cert(&chain[0], &chain[1..], &name, &[], now)
                 .unwrap();
             let wrong = ServerName::try_from("unrelated.example").unwrap();
-            assert!(verifier
-                .verify_server_cert(&chain[0], &chain[1..], &wrong, &[], now)
-                .is_err());
+            assert!(
+                verifier
+                    .verify_server_cert(&chain[0], &chain[1..], &wrong, &[], now)
+                    .is_err()
+            );
             let expired = UnixTime::since_unix_epoch(Duration::from_secs(2_524_608_000));
-            assert!(verifier
-                .verify_server_cert(&chain[0], &chain[1..], &name, &[], expired)
-                .is_err());
+            assert!(
+                verifier
+                    .verify_server_cert(&chain[0], &chain[1..], &name, &[], expired)
+                    .is_err()
+            );
             let mut tampered = chain[0].as_ref().to_vec();
             *tampered.last_mut().unwrap() ^= 1;
-            assert!(verifier
-                .verify_server_cert(&tampered.into(), &chain[1..], &name, &[], now)
-                .is_err());
-            assert!(verifier
-                .verify_server_cert(&chain[0], &[], &name, &[], now)
-                .is_err());
+            assert!(
+                verifier
+                    .verify_server_cert(&tampered.into(), &chain[1..], &name, &[], now)
+                    .is_err()
+            );
+            assert!(
+                verifier
+                    .verify_server_cert(&chain[0], &[], &name, &[], now)
+                    .is_err()
+            );
         }
     }
 }

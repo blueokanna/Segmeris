@@ -1,0 +1,18 @@
+{
+  "id": ".",
+  "name": "Segmeris",
+  "short_name": "Segmeris",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "description": "Segmeris video downloader",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "icons/Icon-dark-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/Icon-dark-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/Icon-maskable-dark-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/Icon-maskable-dark-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

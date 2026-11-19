@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use uuid::Uuid;
 
 use crate::api::downloader::{
-    inspect_media_with_context_sync, DownloadOptions, MediaSource, RequestContext, SubtitleMode,
+    DownloadOptions, MediaSource, RequestContext, SubtitleMode, inspect_media_with_context_sync,
 };
 use crate::download_service::{self, DownloadProgressHandler};
 
@@ -37,11 +37,19 @@ fn execute_download_task(task_id: &str, req: &DownloadRequest, tasks: &TaskStore
     {
         super::validate_public_http_url(target)?;
     }
-    let file_name = normalized_output_name(req.output_filename.as_deref(), &inferred_name);
-    let download_dir =
-        std::env::var("DOWNLOAD_DIR").unwrap_or_else(|_| "/app/downloads".to_string());
-    let output_path = build_output_path(&download_dir, &file_name)?;
+    let output_path = match tasks.get(task_id).and_then(|task| task.output_path) {
+        Some(reserved) => PathBuf::from(reserved),
+        None => {
+            let file_name = normalized_output_name(req.output_filename.as_deref(), &inferred_name);
+            let download_dir =
+                std::env::var("DOWNLOAD_DIR").unwrap_or_else(|_| "/app/downloads".to_string());
+            build_output_path(&download_dir, &file_name)?
+        }
+    };
     let output_path_string = output_path.to_string_lossy().to_string();
+    tasks
+        .claim_output(task_id, &output_path_string)
+        .map_err(|error| anyhow!(error.to_string()))?;
 
     tasks.update_progress(
         task_id,
@@ -74,7 +82,7 @@ fn execute_download_task(task_id: &str, req: &DownloadRequest, tasks: &TaskStore
         source,
         output_path_string.clone(),
         DownloadOptions {
-            concurrency: req.concurrency.unwrap_or(8) as i32,
+            concurrency: req.concurrency.unwrap_or(6) as i32,
             retries: req.retries.unwrap_or(3) as i32,
             video_bitrate: req.video_bitrate.unwrap_or(0) as i32,
             audio_bitrate: req.audio_bitrate.unwrap_or(0) as i32,
@@ -141,6 +149,23 @@ fn resolve_media(
     Ok((MediaSource::from(&candidate), inferred_name))
 }
 
+/// Resolve explicit filenames (and direct-media fallback names) without network
+/// I/O so /download can reserve the output atomically before accepting a job.
+pub(super) fn requested_output_path(req: &DownloadRequest) -> Result<Option<String>> {
+    let fallback = match (&req.output_filename, &req.media_url) {
+        (Some(_), _) => "video".to_string(),
+        (None, Some(media_url)) => infer_name_from_url(media_url),
+        (None, None) => return Ok(None),
+    };
+    let name = normalized_output_name(req.output_filename.as_deref(), &fallback);
+    let directory = std::env::var("DOWNLOAD_DIR").unwrap_or_else(|_| "/app/downloads".into());
+    Ok(Some(
+        build_output_path(&directory, &name)?
+            .to_string_lossy()
+            .into_owned(),
+    ))
+}
+
 fn build_output_path(download_dir: &str, file_name: &str) -> Result<PathBuf> {
     let directory = Path::new(download_dir);
     std::fs::create_dir_all(directory).with_context(|| {
@@ -149,7 +174,7 @@ fn build_output_path(download_dir: &str, file_name: &str) -> Result<PathBuf> {
             directory.display()
         )
     })?;
-    Ok(directory.join(file_name))
+    Ok(directory.canonicalize()?.join(file_name))
 }
 
 fn normalized_output_name(preferred: Option<&str>, fallback: &str) -> String {

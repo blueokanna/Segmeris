@@ -48,7 +48,6 @@ pub fn aes_128_cbc_decrypt(
         previous = encrypted;
     }
 
-    // Verify and strip PKCS#7 padding.
     let pad_len = match plaintext.last() {
         Some(&byte) => usize::from(byte),
         None => return Err(AesCbcError::EmptyPlaintext),
@@ -65,6 +64,70 @@ pub fn aes_128_cbc_decrypt(
     }
     plaintext.truncate(padding_start);
     Ok(plaintext)
+}
+
+/// Decrypt disk-backed HLS ciphertext with bounded memory. Hold the final
+/// block until padding is checked; callers publish the staging file only on
+/// success. Buffered I/O avoids a syscall for each AES block.
+pub(crate) fn aes_128_cbc_decrypt_stream(
+    key: &[u8],
+    iv: &[u8],
+    input: impl std::io::Read,
+    output: impl std::io::Write,
+) -> anyhow::Result<()> {
+    use std::io::{Read, Write};
+    let key: &[u8; 16] = key
+        .try_into()
+        .map_err(|_| AesCbcError::InvalidKeyLength(key.len()))?;
+    let mut previous: [u8; 16] = iv
+        .try_into()
+        .map_err(|_| AesCbcError::InvalidIvLength(iv.len()))?;
+    let mut input = std::io::BufReader::with_capacity(64 * 1024, input);
+    let mut output = std::io::BufWriter::with_capacity(64 * 1024, output);
+    let mut pending: Option<[u8; 16]> = None;
+    let mut count = 0;
+    loop {
+        let mut encrypted = [0u8; 16];
+        let mut filled = 0;
+        while filled < encrypted.len() {
+            let length = input.read(&mut encrypted[filled..])?;
+            if length == 0 {
+                break;
+            }
+            filled += length;
+        }
+        if filled == 0 {
+            break;
+        }
+        if filled != 16 {
+            return Err(AesCbcError::InvalidCiphertextLength(count + filled).into());
+        }
+        if count % (64 * 1024) == 0 {
+            crate::download_control::checkpoint()?;
+        }
+        count += 16;
+        let mut decrypted = decrypt_block(key, &encrypted);
+        for (plain, previous_byte) in decrypted.iter_mut().zip(previous.iter()) {
+            *plain ^= *previous_byte;
+        }
+        if let Some(block) = pending.replace(decrypted) {
+            output.write_all(&block)?;
+        }
+        previous = encrypted;
+    }
+    let final_block = pending.ok_or(AesCbcError::InvalidCiphertextLength(0))?;
+    let padding = usize::from(final_block[15]);
+    if padding == 0
+        || padding > 16
+        || final_block[16 - padding..]
+            .iter()
+            .any(|byte| usize::from(*byte) != padding)
+    {
+        return Err(AesCbcError::InvalidPadding.into());
+    }
+    output.write_all(&final_block[..16 - padding])?;
+    output.flush()?;
+    Ok(())
 }
 
 /// Errors produced by [`aes_128_cbc_decrypt`].

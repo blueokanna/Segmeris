@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:path_provider/path_provider.dart';
+
 /// Native local-file helpers backed by `dart:io`.
 ///
 /// Selected by the conditional import in `local_file_utils.dart` when
@@ -13,9 +15,15 @@ Future<bool> fileExists(String path) async => File(path).exists();
 Future<int> fileLength(String path) async => File(path).length();
 
 Future<void> deleteFile(String path) async {
-  try {
-    await File(path).delete();
-  } catch (_) {
-    // Best-effort cleanup; a missing file is not an error here.
-  }
+  final file = File(path);
+  if (await file.exists()) await file.delete();
+}
+
+Future<String> outputPath(String name, String? directory) async {
+  final base =
+      directory ??
+      (await getDownloadsDirectory())?.path ??
+      (await getApplicationDocumentsDirectory()).path;
+  final dir = await Directory(base).absolute.create(recursive: true);
+  return '${dir.path}${Platform.pathSeparator}$name';
 }

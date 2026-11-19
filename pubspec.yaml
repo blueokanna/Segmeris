@@ -2,59 +2,54 @@ name: segmeris
 description: "A Flutter application to download m3u8 video files using Rust for performance."
 publish_to: "none"
 
-version: 1.0.8+1
+version: 1.1.0+5001
 
 environment:
-  sdk: ">=3.13.0 <4.0.0"
-  flutter: ">=3.47.9"
+  sdk: ">=3.14.0 <4.0.0"
+  flutter: ">=3.50.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  flutter_localizations:
-    sdk: flutter
+  material_ui: ^1.11.1
 
-  cupertino_icons: ^2.0.0
   rust_lib_segmeris:
     path: rust_builder
   flutter_rust_bridge: 2.13.0
   dynamic_color: 2.1.0
-  file_picker: ^13.3.2
+  file_picker: ^13.4.0
   flutter_inappwebview: 6.1.5
-  http: ^1.2.0
+  http: ^1.6.0
+  package_info_plus: ^10.2.2
   permission_handler: ^13.0.2
   flutter_secure_storage: ^11.2.0
   shared_preferences: ^2.5.6
+  path_provider: ^2.1.6
   qr_flutter: ^4.1.0
   url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  integration_test:
-    sdk: flutter
-  flutter_launcher_icons: ^0.14.4
   flutter_lints: ^6.0.0
-
-flutter_launcher_icons:
-  android: "ic_launcher"
-  ios: true
-  image_path: "assets/playstore.png"
-  min_sdk_android: 21
-  adaptive_icon_background: "#6750A4"
-  adaptive_icon_foreground: "assets/playstore.png"
-  web:
-    generate: true
-    image_path: "assets/playstore.png"
-    background_color: "#6750A4"
-    theme_color: "#6750A4"
-  windows:
-    generate: true
-    image_path: "assets/playstore.png"
-    icon_size: 48
-  macos:
-    generate: true
-    image_path: "assets/playstore.png"
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/SegmerisLight.jpg
+    - assets/SegmerisDark.jpg
+    - assets/fonts/huawei/LICENSE.txt
+    - assets/fonts/google/OFL.txt
+    - assets/fonts/google/TRADEMARKS.md
+  fonts:
+    - family: Google Sans Flex
+      fonts:
+        - asset: assets/fonts/google/GoogleSansFlex.ttf
+    - family: HarmonyOS Sans SC
+      fonts:
+        - asset: assets/fonts/huawei/HarmonyOS_Sans_SC_Regular.ttf
+          weight: 400
+        - asset: assets/fonts/huawei/HarmonyOS_Sans_SC_Medium.ttf
+          weight: 500
+        - asset: assets/fonts/huawei/HarmonyOS_Sans_SC_Bold.ttf
+          weight: 700

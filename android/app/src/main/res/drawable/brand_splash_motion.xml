@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/brand_splash_vector">
+    <target android:name="ribbon0" android:animation="@animator/brand_trace" />
+    <target android:name="ribbon1" android:animation="@animator/brand_trace" />
+    <target android:name="ribbon2" android:animation="@animator/brand_trace" />
+    <target android:name="ribbon3" android:animation="@animator/brand_trace" />
+    <target android:name="ribbon4" android:animation="@animator/brand_trace" />
+    <target android:name="ribbon5" android:animation="@animator/brand_trace" />
+    <target android:name="ribbon6" android:animation="@animator/brand_trace" />
+</animated-vector>

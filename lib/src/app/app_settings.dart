@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_theme.dart';
@@ -13,6 +13,8 @@ class AppSettings {
     required this.autoOpenAuthBrowser,
     required this.apiBaseUrl,
     required this.apiToken,
+    this.font = AppFont.system,
+    this.historyRetentionDays = 0,
   });
 
   final String themeProfileId;
@@ -21,6 +23,27 @@ class AppSettings {
   final bool autoOpenAuthBrowser;
   final String apiBaseUrl;
   final String apiToken;
+  final AppFont font;
+
+  /// Zero disables automatic cleanup. Cleanup removes records, never videos.
+  final int historyRetentionDays;
+
+  static const allowedHistoryRetentionDays = <int>[
+    0,
+    1,
+    3,
+    5,
+    7,
+    15,
+    30,
+    60,
+    90,
+    180,
+    365,
+  ];
+
+  static int normalizeHistoryRetentionDays(int value) =>
+      allowedHistoryRetentionDays.contains(value) ? value : 0;
 
   Locale get locale => parseLocaleTag(localeTag);
 
@@ -38,6 +61,8 @@ class AppSettings {
     bool? autoOpenAuthBrowser,
     String? apiBaseUrl,
     String? apiToken,
+    AppFont? font,
+    int? historyRetentionDays,
   }) {
     return AppSettings(
       themeProfileId: themeProfileId ?? this.themeProfileId,
@@ -46,6 +71,10 @@ class AppSettings {
       autoOpenAuthBrowser: autoOpenAuthBrowser ?? this.autoOpenAuthBrowser,
       apiBaseUrl: apiBaseUrl ?? this.apiBaseUrl,
       apiToken: apiToken ?? this.apiToken,
+      font: font ?? this.font,
+      historyRetentionDays: historyRetentionDays == null
+          ? this.historyRetentionDays
+          : normalizeHistoryRetentionDays(historyRetentionDays),
     );
   }
 
@@ -105,6 +134,13 @@ class AppSettings {
       autoOpenAuthBrowser: autoOpenAuthBrowser,
       apiBaseUrl: apiBaseUrl,
       apiToken: apiToken,
+      font: AppFont.values.firstWhere(
+        (font) => font.name == prefs.getString('font'),
+        orElse: () => AppFont.system,
+      ),
+      historyRetentionDays: normalizeHistoryRetentionDays(
+        prefs.getInt('historyRetentionDays') ?? 0,
+      ),
     );
   }
 
@@ -112,9 +148,30 @@ class AppSettings {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('themeMode', themeMode.name);
     await prefs.setString('themeProfileId', themeProfileId);
+    await prefs.setString('font', font.name);
+    await prefs.setInt(
+      'historyRetentionDays',
+      normalizeHistoryRetentionDays(historyRetentionDays),
+    );
     await prefs.setString('localeTag', localeTag);
     await prefs.setBool('autoOpenAuthBrowser', autoOpenAuthBrowser);
     await prefs.setString('apiBaseUrl', apiBaseUrl);
     await CredentialStore.write('apiToken', apiToken);
+  }
+}
+
+/// Keeps immediate UI updates independent of ordered disk/vault writes.
+/// A failed write is returned to its caller without poisoning later saves.
+class AppSettingsSaveQueue {
+  AppSettingsSaveQueue({Future<void> Function(AppSettings)? save})
+    : _save = save ?? ((settings) => settings.save());
+
+  final Future<void> Function(AppSettings) _save;
+  Future<void> _pending = Future<void>.value();
+
+  Future<void> enqueue(AppSettings settings) {
+    final next = _pending.then((_) => _save(settings));
+    _pending = next.catchError((Object error, StackTrace stack) {});
+    return next;
   }
 }

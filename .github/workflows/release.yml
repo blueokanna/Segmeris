@@ -1,28 +1,23 @@
-name: Build and Release
+name: Validate, build and release
 
 on:
   push:
-    branches:
-      - main
-      - testchain
-    tags:
-      - "v*"
+    branches: [main, testchain]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Release tag name (v1.0.8). Leave empty to build only."
+        description: 'Existing vMAJOR.MINOR.PATCH tag pointing at the selected commit; empty builds without publishing.'
         required: false
-        default: ""
+        default: ''
       skip_docker:
-        description: "Skip publishing the Docker API image (all app artifacts are still built and released)."
+        description: 'Skip publishing the Docker image (the API image is still validated).'
         type: boolean
-        required: false
         default: false
       skip_ios:
-        description: "Skip the iOS build on manual runs (untick to build it). v* tag releases always build iOS."
+        description: 'Skip the unsigned iOS archive on a manual run.'
         type: boolean
-        required: false
         default: true
 
 permissions:
@@ -34,562 +29,411 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  FLUTTER_VERSION: 3.47.9
+  FLUTTER_VERSION: '3.50.0'
   PUB_HOSTED_URL: https://pub.dev
   FLUTTER_STORAGE_BASE_URL: https://storage.googleapis.com
 
 jobs:
-  validate:
-    name: Validate sources and packages
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+  prepare:
+    name: Validate release intent and immutable source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      build_number: ${{ steps.plan.outputs.build_number }}
+      commit: ${{ steps.plan.outputs.commit }}
+      publish: ${{ steps.plan.outputs.publish }}
+      build_apps: ${{ steps.plan.outputs.build_apps }}
+      build_windows: ${{ steps.plan.outputs.build_windows }}
+      ios_enabled: ${{ steps.plan.outputs.ios_enabled }}
+      docker_enabled: ${{ steps.plan.outputs.docker_enabled }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Validate release versions
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Plan and validate existing release tag
+        id: plan
         env:
-          RELEASE_TAG: ${{ inputs.tag_name }}
+          MANUAL_TAG: ${{ inputs.tag_name }}
+          SKIP_IOS: ${{ inputs.skip_ios }}
+          SKIP_DOCKER: ${{ inputs.skip_docker }}
+        run: python3 scripts/release.py plan
+
+  validate:
+    name: Validate source, versions and native contracts
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - name: Check release version and packaging contracts
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           python3 scripts/check_versions.py
           python3 scripts/check_app_identity.py
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+      - name: Verify launcher artwork and browser theme changes
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pil
+          /usr/bin/python3 -m unittest discover -s test/branding -p '*_test.py'
+          node --test test/branding/web_brand_theme_test.cjs
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
-
-      - name: Setup Rust MSRV toolchain
-        uses: dtolnay/rust-toolchain@1.89.0
-
-      - name: Validate Rust MSRV and no_std core
-        working-directory: rust
-        run: |
-          cargo check --workspace --all-targets --features api-server --locked
-          cargo check -p segmeris-core --no-default-features --locked
-
-      - name: Setup stable Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable installer
         with:
+          toolchain: stable
           components: rustfmt, clippy
-
-      - name: Flutter pub get
+      - name: Resolve locked Flutter packages
         run: flutter pub get --enforce-lockfile
-
-      - name: Validate Rust workspace
+      - name: Validate Rust runtime and no_std core
         working-directory: rust
         run: |
           cargo fmt --all --check
           cargo clippy --workspace --all-targets --features api-server --locked -- -D warnings
           cargo test --workspace --features api-server --locked
+          cargo check -p segmeris-core --no-default-features --locked
           cargo package -p segmeris-core --locked --allow-dirty
-
       - name: Validate Flutter application
         run: |
-          flutter analyze
-          flutter test
+          flutter analyze --no-pub
+          flutter test --no-pub
 
   security-scan:
-    name: Security scan (Rust / Dart / Container)
-    needs: validate
-    runs-on: ubuntu-latest
+    name: Scan release dependencies and repository
+    needs: [prepare, validate]
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
           tool: cargo-audit
-
-      - name: cargo audit (Rust dependency advisories)
+      - name: Check Rust dependency advisories
         working-directory: rust
         run: cargo audit --deny warnings
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
-
-      - name: Flutter pub get
-        run: flutter pub get --enforce-lockfile
-
-      - name: Check for outdated Dart dependencies
-        run: flutter pub outdated || true
-
-      - name: Scan repository with Trivy (vulns + secrets + misconfig)
-        uses: aquasecurity/trivy-action@v0.36.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
-          scanners: vuln,secret,misconfig
-          skip-dirs: build,rust/target,.dart_tool,ios/Pods
-          exit-code: "0"
+          scanners: vuln,secret
+          skip-dirs: build,rust/target,.dart_tool,ios/Pods,macos/Pods
+          severity: HIGH,CRITICAL
+          exit-code: '1'
 
   build-android:
-    name: Build Android APKs
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
-    needs: validate
-    runs-on: ubuntu-latest
-    timeout-minutes: 50
-    outputs:
-      release_signed: ${{ steps.android_signing.outputs.release_signed }}
+    name: Build and verify signed Android APKs
+    needs: [prepare, validate]
+    if: needs.prepare.outputs.build_apps == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
-          java-version: "17"
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+          java-version: '17'
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca
         with:
-          targets: >-
-            aarch64-linux-android,
-            armv7-linux-androideabi,
-            x86_64-linux-android
-
-      - name: Cache Rust dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            rust/target
-          key: rust-android-${{ hashFiles('rust/Cargo.lock', 'rust/Cargo.toml') }}
-          restore-keys: rust-android-
-
-      - name: Setup Android NDK
-        id: setup-ndk
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r27c
-          add-to-path: true
-
-      - name: Configure Flutter
-        run: flutter config --no-analytics
-
-      - name: Flutter pub get
-        run: flutter pub get --enforce-lockfile
-
-      - name: Configure Android signing
-        id: android_signing
-        shell: bash
+          toolchain: stable
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - name: Configure release signing
         env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: python3 scripts/release_android.py configure
+      - name: Resolve locked packages and build all supported ABIs
         run: |
-          signing_values=("$KEYSTORE_BASE64" "$KEY_ALIAS" "$KEY_PASSWORD" "$STORE_PASSWORD")
-          populated_values=0
-          for value in "${signing_values[@]}"; do
-            [[ -n "$value" ]] && ((populated_values += 1))
-          done
-
-          if [[ "$populated_values" -eq "${#signing_values[@]}" ]]; then
-            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/release.jks
-            {
-              printf 'storeFile=app/release.jks\n'
-              printf 'storePassword=%s\n' "$STORE_PASSWORD"
-              printf 'keyAlias=%s\n' "$KEY_ALIAS"
-              printf 'keyPassword=%s\n' "$KEY_PASSWORD"
-            } > android/key.properties
-            echo "release_signed=true" >> "$GITHUB_OUTPUT"
-          elif [[ "$populated_values" -eq 0 ]]; then
-            echo "::warning::Android signing secrets are not configured. APKs will use the debug signing key and will not be published as a GitHub Release."
-            echo "release_signed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::Configure all Android signing secrets or none of them: ANDROID_KEYSTORE_BASE64, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD, ANDROID_STORE_PASSWORD." >&2
-            exit 1
-          fi
-
-      - name: Build Android APKs
+          flutter pub get --enforce-lockfile
+          flutter build apk --release --no-pub --split-per-abi --target-platform=android-arm,android-arm64,android-x64
+      - name: Verify certificate, versions, FFI and 16 KiB alignment
         env:
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-        shell: bash
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
           mkdir -p dist/android
-          build_apk() {
-            local target_platform="$1"
-            local artifact_name="$2"
-            local abi="$3"
-            local log="build-$target_platform.log"
-            flutter build apk --release --split-per-abi --target-platform="$target_platform" 2>&1 | tee "$log"
-            # cargokit logs Rust compile failures and lets Gradle finish anyway, which
-            # would ship an APK carrying the previous build's jniLibs.
-            if grep -q -E "Cargokit BuildTool failed|failed to run custom build command|could not compile" "$log"; then
-              echo "::error::Rust build failed while packaging $artifact_name"
-              exit 1
-            fi
-            local apk="build/app/outputs/flutter-apk/app-$abi-release.apk"
-            local aapt
-            aapt=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)
-            test -n "$aapt"
-            local package_info
-            package_info=$("$aapt" dump badging "$apk")
-            if ! grep -q "^package: name='com.blue.segmeris'.*versionName='1.0.8'" <<< "$package_info"; then
-              echo "::error::$artifact_name has an unexpected package ID or version"
-              exit 1
-            fi
-            python3 scripts/check_android_apk.py "$apk" "$abi"
-            "$(dirname "$aapt")/zipalign" -c -P 16 4 "$apk"
-            cp "$apk" "dist/android/$artifact_name"
-          }
-          build_apk android-arm64 Segmeris-android-arm64-v8a.apk arm64-v8a
-          build_apk android-arm Segmeris-android-armeabi-v7a.apk armeabi-v7a
-          build_apk android-x64 Segmeris-android-x86_64.apk x86_64
-          ls -lah dist/android
-
-      - name: Run Android unit tests
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            apk="build/app/outputs/flutter-apk/app-${abi}-release.apk"
+            python3 scripts/release_android.py verify --apk "$apk" --abi "$abi"
+            cp "$apk" "dist/android/Segmeris-android-${abi}.apk"
+          done
+      - name: Run Android unit tests and compile device tests
         working-directory: android
-        run: ./gradlew :app:testDebugUnitTest -Ptarget-platform=android-x64 --console=plain
-
-      - name: Upload Android artifacts
-        uses: actions/upload-artifact@v4
+        run: ./gradlew :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin -Ptarget-platform=android-x64 --console=plain
+      - name: Cold-start the signed APK in light and dark mode
+        timeout-minutes: 12
+        run: bash scripts/check_android_launch.sh dist/android/Segmeris-android-x86_64.apk
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: android-apks
-          path: dist/android/*
+          name: release-android
+          path: dist/android/*.apk
+          if-no-files-found: error
           retention-days: 7
+          compression-level: 0
+      - name: Remove signing material
+        if: always()
+        run: python3 scripts/release_android.py clean
 
   build-windows:
-    name: Build Windows x64
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
-    needs: validate
-    runs-on: windows-latest
-    timeout-minutes: 45
+    name: Build Windows x64 portable runtime
+    needs: [prepare, validate]
+    if: needs.prepare.outputs.build_windows == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 100
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca
         with:
+          toolchain: stable
           targets: x86_64-pc-windows-msvc
-
-      - name: Cache verified NuGet CLI
-        uses: actions/cache@v4
-        with:
-          path: build/tools/nuget
-          key: windows-nuget-${{ hashFiles('scripts/setup_nuget.ps1') }}
-
-      - name: Cache Rust dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~\.cargo\registry
-            ~\.cargo\git
-            rust\target
-          key: rust-windows-${{ hashFiles('rust/Cargo.lock', 'rust/Cargo.toml') }}
-          restore-keys: rust-windows-
-
-      - name: Flutter pub get
+      - name: Resolve locked packages
         run: flutter pub get --enforce-lockfile
-
-      - name: Build Windows release bundle
+      - name: Build release runtime
         env:
           CMAKE_GENERATOR: Visual Studio 17 2022
           CMAKE_GENERATOR_PLATFORM: x64
-        run: |
-          ./scripts/build_windows.ps1 -NoPub
-
-      - name: Verify the release Rust library through Flutter FFI
+        run: ./scripts/build_windows.ps1 -NoPub
+      - name: Verify the packaged Rust library through Flutter FFI
         run: flutter test --no-pub test/native_runtime_test.dart --dart-define=SEGMERIS_NATIVE_LIBRARY=build/windows/x64/runner/Release/rust_lib_segmeris.dll
-
-      - name: Package Windows artifact
-        run: |
-          New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
-          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "dist\windows\Segmeris-windows-x64.zip"
-
-      - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
-          name: windows-x64
-          path: dist/windows/Segmeris-windows-x64.zip
+          msystem: UCRT64
+          update: true
+          install: >-
+            make nasm diffutils gnupg
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-python
+      - name: Build and exercise FFmpeg and ffprobe from pinned source
+        shell: msys2 {0}
+        run: python scripts/bundle_ffmpeg.py build --prefix build/media-tools --work build/media-source
+      - name: Stage media tools with source and license information
+        run: python scripts/bundle_ffmpeg.py stage --prefix build/media-tools --destination build/windows/x64/runner/Release/tools
+      - name: Package and check runtime dependencies
+        run: ./scripts/release_windows.ps1
+      - name: Build and test the per-user installer
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          & $compiler "/DReleaseVersion=$env:RELEASE_VERSION" scripts/segmeris.iss
+          if ($LASTEXITCODE) { throw "Installer compilation failed" }
+          $target = Join-Path $env:RUNNER_TEMP 'segmeris-install-test'
+          $setup = Start-Process dist/windows/Segmeris-windows-x64-setup.exe -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$target`"" -WindowStyle Hidden -Wait -PassThru
+          if ($setup.ExitCode) { throw "Installation failed: $($setup.ExitCode)" }
+          foreach ($name in 'segmeris.exe', 'rust_lib_segmeris.dll', 'flutter_windows.dll', 'tools/ffmpeg.exe') {
+            $installed = Get-FileHash (Join-Path $target $name)
+            $original = Get-FileHash (Join-Path 'build/windows/x64/runner/Release' $name)
+            if ($installed.Hash -ne $original.Hash) { throw "Installed file differs: $name" }
+          }
+          $uninstall = Start-Process (Join-Path $target 'unins000.exe') -ArgumentList '/VERYSILENT /NORESTART' -WindowStyle Hidden -Wait -PassThru
+          if ($uninstall.ExitCode -or (Test-Path (Join-Path $target 'segmeris.exe'))) { throw "Uninstall failed" }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-windows-x64
+          path: |
+            dist/windows/Segmeris-windows-x64.zip
+            dist/windows/Segmeris-windows-x64-setup.exe
+          if-no-files-found: error
           retention-days: 7
+          compression-level: 0
+
+  build-linux:
+    name: Build Linux x64 portable runtime
+    needs: [prepare, validate]
+    if: needs.prepare.outputs.build_apps == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev build-essential nasm gnupg
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca
+        with:
+          toolchain: stable
+      - name: Build release runtime
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter build linux --release --no-pub
+      - name: Verify the packaged Rust library through Flutter FFI
+        run: flutter test --no-pub test/native_runtime_test.dart --dart-define=SEGMERIS_NATIVE_LIBRARY=build/linux/x64/release/bundle/lib/librust_lib_segmeris.so
+      - name: Build and exercise FFmpeg and ffprobe from pinned source
+        run: python3 scripts/bundle_ffmpeg.py build --prefix build/media-tools --work build/media-source
+      - name: Stage media tools with source and license information
+        run: python3 scripts/bundle_ffmpeg.py stage --prefix build/media-tools --destination build/linux/x64/release/bundle/tools
+      - name: Package and check shared libraries
+        run: python3 scripts/release_linux.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-linux-x64
+          path: dist/linux/Segmeris-linux-x64.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   build-macos:
-    name: Build macOS ${{ matrix.arch }}
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
-    needs: validate
+    name: Build macOS ${{ matrix.arch }} (not notarized)
+    needs: [prepare, validate]
+    if: needs.prepare.outputs.build_apps == 'true'
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: macos-15-intel
             arch: x64
+            macho_arch: x86_64
           - runner: macos-15
             arch: arm64
+            macho_arch: arm64
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust dependencies
-        uses: actions/cache@v4
+          architecture: ${{ matrix.arch }}
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            rust/target
-          key: rust-macos-${{ matrix.arch }}-${{ hashFiles('rust/Cargo.lock', 'rust/Cargo.toml') }}
-          restore-keys: rust-macos-${{ matrix.arch }}-
-
-      - name: Enable macOS desktop
-        run: flutter config --enable-macos-desktop
-
-      - name: Flutter pub get
-        run: flutter pub get --enforce-lockfile
-
-      - name: Build macOS app
-        run: flutter build macos --release
-
-      - name: Package macOS artifact
-        shell: bash
+          toolchain: stable
+      - name: Build release application
         run: |
-          mkdir -p dist/macos
-          APP_PATH=$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' | head -n 1)
-          test -n "$APP_PATH"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "dist/macos/Segmeris-macos-${{ matrix.arch }}.zip"
-          ls -lah dist/macos
-
-      - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4
+          flutter pub get --enforce-lockfile
+          flutter build macos --release --no-pub
+      - name: Verify and package the correct Mach-O architecture
+        env:
+          MACHO_ARCH: ${{ matrix.macho_arch }}
+        run: python3 scripts/release_apple.py macos --arch "$MACHO_ARCH"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: macos-${{ matrix.arch }}
+          name: release-macos-${{ matrix.arch }}
           path: dist/macos/Segmeris-macos-${{ matrix.arch }}.zip
+          if-no-files-found: error
           retention-days: 7
-
-  build-linux:
-    name: Build Linux x64 bundle
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
-    needs: validate
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            clang \
-            cmake \
-            ninja-build \
-            pkg-config \
-            libgtk-3-dev \
-            liblzma-dev \
-            libsecret-1-dev \
-            libjsoncpp-dev
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            rust/target
-          key: rust-linux-${{ hashFiles('rust/Cargo.lock', 'rust/Cargo.toml') }}
-          restore-keys: rust-linux-
-
-      - name: Enable Linux desktop
-        run: flutter config --enable-linux-desktop
-
-      - name: Flutter pub get
-        run: flutter pub get --enforce-lockfile
-
-      - name: Build Linux release bundle
-        run: flutter build linux --release
-
-      - name: Package Linux artifact
-        shell: bash
-        run: |
-          mkdir -p dist/linux
-          tar -C build/linux/x64/release/bundle -czf dist/linux/Segmeris-linux-x64.tar.gz .
-          ls -lah dist/linux
-
-      - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-x64
-          path: dist/linux/Segmeris-linux-x64.tar.gz
-          retention-days: 7
+          compression-level: 0
 
   build-web:
-    name: Build Web (JS + WASM)
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/testchain'
-    needs: validate
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
+    name: Build Web JavaScript and WebAssembly bundles
+    needs: [prepare, validate]
+    if: needs.prepare.outputs.build_apps == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
-
-      - name: Flutter pub get
-        run: flutter pub get --enforce-lockfile
-
-      - name: Build Web (JS fallback build)
-        run: flutter build web --release
-
-      - name: Package Web JS build
+      - name: Build and archive both web runtimes
         run: |
-          mkdir -p dist/web-js
-          cp -r build/web/* dist/web-js/
-
-      - name: Build Web (WASM)
-        run: flutter build web --release --wasm
-
-      - name: Package Web WASM build
-        run: |
-          mkdir -p dist/web-wasm
-          cp -r build/web/* dist/web-wasm/
-
-      - name: Upload Web JS artifact
-        uses: actions/upload-artifact@v4
+          flutter pub get --enforce-lockfile
+          mkdir -p dist/web
+          flutter build web --release --no-pub
+          python3 -c "import shutil; shutil.make_archive('dist/web/Segmeris-web-js', 'zip', 'build/web')"
+          flutter build web --release --wasm --no-pub
+          python3 -c "import shutil; shutil.make_archive('dist/web/Segmeris-web-wasm', 'zip', 'build/web')"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: web-js
-          path: dist/web-js/
+          name: release-web
+          path: dist/web/*.zip
+          if-no-files-found: error
           retention-days: 7
-
-      - name: Upload Web WASM artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-wasm
-          path: dist/web-wasm/
-          retention-days: 7
+          compression-level: 0
 
   build-ios:
-    name: Build iOS arm64 (unsigned)
-    if: >-
-      startsWith(github.ref, 'refs/tags/v')
-      || github.ref == 'refs/heads/testchain'
-      || (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_ios != 'true')
-    needs: validate
+    name: Build iOS arm64 unsigned archive
+    needs: [prepare, validate]
+    if: needs.prepare.outputs.ios_enabled == 'true'
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+          architecture: arm64
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca
         with:
+          toolchain: stable
           targets: aarch64-apple-ios
-
-      - name: Cache Rust dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            rust/target
-          key: rust-ios-${{ hashFiles('rust/Cargo.lock', 'rust/Cargo.toml') }}
-          restore-keys: rust-ios-
-
-      # Validates the `#[cfg(target_os = "ios")]` VideoToolbox FFI code that
-      # cannot be compiled on other hosts (needs the Apple SDK headers).
-      - name: Cross-check iOS Rust code
+      - name: Verify Rust iOS compilation
         working-directory: rust
         run: cargo check --target aarch64-apple-ios --lib --locked
-
-      - name: Flutter pub get
-        run: flutter pub get --enforce-lockfile
-
-      - name: Build iOS app (unsigned, for sideloading)
-        shell: bash
+      - name: Build application without inventing a signing identity
         run: |
-          set +e
-          # -v (verbose) is REQUIRED: without it flutter swallows the
-          # xcodebuild details and only prints "linker command failed".
-          flutter build ios --release --no-codesign -v > /tmp/ios_build.log 2>&1
-          status=$?
-          if [ "$status" -ne 0 ]; then
-            echo "===== LINKER / UNDEFINED SYMBOLS ====="
-            grep -n -E "Undefined symbols|referenced from|ld: |framework .*not found|library not found|duplicate symbol|clang: error|error:" /tmp/ios_build.log | head -160 || true
-            echo "===== LAST 120 LINES OF BUILD LOG ====="
-            tail -n 120 /tmp/ios_build.log || true
-          else
-            tail -n 10 /tmp/ios_build.log || true
-          fi
-          exit $status
-
-      - name: Package iOS artifact
-        shell: bash
-        run: |
-          mkdir -p dist/ios
-          APP_PATH=$(find build/ios/iphoneos -maxdepth 1 -name '*.app' | head -n 1)
-          test -n "$APP_PATH"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "dist/ios/Segmeris-ios-arm64-unsigned.zip"
-          ls -lah dist/ios
-
-      - name: Upload iOS artifact
-        uses: actions/upload-artifact@v4
+          flutter pub get --enforce-lockfile
+          flutter build ios --release --no-pub --no-codesign
+      - name: Verify and package Payload IPA
+        run: python3 scripts/release_apple.py ios --arch arm64
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ios-arm64
-          path: dist/ios/Segmeris-ios-arm64-unsigned.zip
+          name: release-ios-arm64
+          path: dist/ios/Segmeris-ios-arm64-unsigned.ipa
+          if-no-files-found: error
           retention-days: 7
+          compression-level: 0
 
   docker-validate:
-    name: Validate Docker API image (linux/amd64)
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
-    needs: validate
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    name: Build and smoke-test the API container
+    needs: [prepare, validate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build the API image without pushing
-        uses: docker/build-push-action@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile.api
@@ -597,193 +441,109 @@ jobs:
           push: false
           load: true
           tags: segmeris-api:validate
-          cache-from: type=gha,scope=docker-api
-          cache-to: type=gha,mode=max,scope=docker-api
-
-      - name: Smoke-test the health endpoint
-        shell: bash
+      - name: Verify the health endpoint
         run: |
           trap 'docker rm -f segmeris-api-validate >/dev/null 2>&1 || true' EXIT
           docker run -d --name segmeris-api-validate -p 127.0.0.1:3000:3000 segmeris-api:validate
           for attempt in $(seq 1 30); do
             if [ "$(docker inspect --format '{{.State.Running}}' segmeris-api-validate)" != true ]; then
-              echo '::error::API container exited before becoming healthy'
-              docker inspect --format '{{json .State}}' segmeris-api-validate
               docker logs segmeris-api-validate
               exit 1
             fi
             if curl -fsS --connect-timeout 1 --max-time 2 http://127.0.0.1:3000/health > health.json; then
               python3 -c 'import json; h=json.load(open("health.json")); assert h == {"status":"ok","service":"segmeris-api"}, h'
-              echo "health endpoint responded after ${attempt}s"
               exit 0
             fi
             sleep 1
           done
-          echo "::error::the container never answered /health"
-          docker logs segmeris-api-validate || true
+          docker logs segmeris-api-validate
           exit 1
 
+  release-gate:
+    name: Require every planned release artifact and check
+    if: always() && needs.prepare.outputs.publish == 'true'
+    needs: [prepare, validate, security-scan, build-android, build-windows, build-linux, build-macos, build-web, build-ios, docker-validate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - name: Reject failed, cancelled or unintended skipped jobs
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          IOS_ENABLED: ${{ needs.prepare.outputs.ios_enabled }}
+        run: python3 scripts/release.py gate
+
   docker-api:
-    name: Publish Docker API image
-    if: >-
-      startsWith(github.ref, 'refs/tags/v')
-      || (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_docker != 'true')
-    needs: [validate, security-scan]
-    runs-on: ubuntu-latest
+    name: Publish verified-source Docker image
+    needs: [prepare, release-gate]
+    if: needs.prepare.outputs.docker_enabled == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
     permissions:
       contents: read
       packages: write
-    # QEMU-based arm builds can exceed one hour on a cold Cargo cache.
-    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Compute Docker tags
-        id: docker_tags
-        shell: bash
+      - name: Compute validated image name
+        id: image
         env:
-          MANUAL_TAG: ${{ inputs.tag_name }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/segmeris-api"
-          TAGS=("${IMAGE}:sha-${GITHUB_SHA::7}")
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            RELEASE_TAG="${GITHUB_REF#refs/tags/}"
-            TAGS+=("${IMAGE}:${RELEASE_TAG}" "${IMAGE}:latest")
-          elif [[ -n "$MANUAL_TAG" ]]; then
-            RELEASE_TAG="$MANUAL_TAG"
-            TAGS+=("${IMAGE}:${RELEASE_TAG}" "${IMAGE}:manual")
-          else
-            SAFE_REF="${GITHUB_REF_NAME//\//-}"
-            TAGS+=("${IMAGE}:${SAFE_REF}")
-          fi
-          {
-            echo 'tags<<EOF'
-            printf '%s\n' "${TAGS[@]}"
-            echo EOF
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Build and push Docker API image
-        uses: docker/build-push-action@v6
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/segmeris-api"
+          echo "tag=$image:$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "latest=$image:latest" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile.api
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
-          tags: ${{ steps.docker_tags.outputs.tags }}
-          cache-from: type=gha,scope=docker-api
-          cache-to: type=gha,mode=max,scope=docker-api
+          tags: |
+            ${{ steps.image.outputs.tag }}
+            ${{ steps.image.outputs.latest }}
 
   create-release:
-    name: Create GitHub Release
+    name: Verify assets and publish a complete GitHub Release
     if: >-
-      ${{ !cancelled()
-      && (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.tag_name != '')
-      && needs.build-android.outputs.release_signed == 'true'
-      && needs.build-windows.result == 'success'
-      && needs.build-macos.result == 'success'
-      && needs.build-linux.result == 'success'
-      && needs.build-web.result == 'success'
-      && needs.security-scan.result == 'success'
-      && needs.docker-api.result != 'cancelled'
-      && needs.build-ios.result != 'cancelled' }}
+      always() && needs.prepare.outputs.publish == 'true'
+      && needs.release-gate.result == 'success'
+      && ((needs.prepare.outputs.docker_enabled == 'true' && needs.docker-api.result == 'success')
+      || (needs.prepare.outputs.docker_enabled != 'true' && needs.docker-api.result == 'skipped'))
+    needs: [prepare, release-gate, docker-api]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     permissions:
       contents: write
-    needs:
-      - security-scan
-      - build-android
-      - build-windows
-      - build-macos
-      - build-linux
-      - build-web
-      - build-ios
-      - docker-api
-    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
+      IOS_ENABLED: ${{ needs.prepare.outputs.ios_enabled }}
+      DOCKER_ENABLED: ${{ needs.prepare.outputs.docker_enabled }}
     steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
           path: artifacts
-          pattern: "!*.dockerbuild"
-
-      - name: Determine release tag
-        id: release_tag
-        shell: bash
+      - name: Require exact assets and generate checksums and release manifest
+        run: python3 scripts/release.py stage --source artifacts --directory release
+      - name: Upload to a draft, verify every asset, then publish
         env:
-          MANUAL_TAG: ${{ inputs.tag_name }}
-        run: |
-          if [[ -n "$MANUAL_TAG" ]]; then
-            RELEASE_NAME="$MANUAL_TAG"
-          else
-            RELEASE_NAME="${GITHUB_REF#refs/tags/}"
-          fi
-          echo "name=${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
-          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/segmeris-api:${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
-          if [[ "${{ needs.docker-api.result }}" == "success" ]]; then
-            echo "docker_line=Docker API image: \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/segmeris-api:${RELEASE_NAME}\`" >> "$GITHUB_OUTPUT"
-          else
-            echo 'docker_line=Docker API image was not published for this release (skipped or failed; app artifacts above are unaffected).' >> "$GITHUB_OUTPUT"
-          fi
-          if [[ "${{ needs.build-ios.result }}" == "success" ]]; then
-            echo 'ios_line=iOS arm64 (unsigned) archive: `Segmeris-ios-arm64-unsigned.zip`.' >> "$GITHUB_OUTPUT"
-          else
-            echo 'ios_line=iOS archive was not built for this release (skipped or failed; other artifacts are unaffected).' >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Compute release file list
-        id: release_files
-        shell: bash
-        run: |
-          {
-            echo 'files<<EOF'
-            echo 'artifacts/android-apks/Segmeris-android-arm64-v8a.apk'
-            echo 'artifacts/android-apks/Segmeris-android-armeabi-v7a.apk'
-            echo 'artifacts/android-apks/Segmeris-android-x86_64.apk'
-            echo 'artifacts/windows-x64/Segmeris-windows-x64.zip'
-            echo 'artifacts/macos-x64/Segmeris-macos-x64.zip'
-            echo 'artifacts/macos-arm64/Segmeris-macos-arm64.zip'
-            echo 'artifacts/linux-x64/Segmeris-linux-x64.tar.gz'
-            if [[ "${{ needs.build-ios.result }}" == "success" ]]; then
-              echo 'artifacts/ios-arm64/Segmeris-ios-arm64-unsigned.zip'
-            fi
-            echo 'artifacts/SHA256SUMS'
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
-
-      - name: List release files
-        run: find artifacts -type f | sort
-
-      - name: Generate SHA-256 checksums
-        shell: bash
-        run: |
-          find artifacts -type f -print0 \
-            | sort -z \
-            | xargs -0 sha256sum \
-            | sed -E 's#  artifacts/[^/]+/#  #' > SHA256SUMS
-          mv SHA256SUMS artifacts/SHA256SUMS
-          cat artifacts/SHA256SUMS
-
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.release_tag.outputs.name }}
-          target_commitish: ${{ github.sha }}
-          name: Segmeris ${{ steps.release_tag.outputs.name }}
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          body: |
-            ${{ steps.release_tag.outputs.docker_line }}
-            ${{ steps.release_tag.outputs.ios_line }}
-          files: ${{ steps.release_files.outputs.files }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/release.py publish --directory release

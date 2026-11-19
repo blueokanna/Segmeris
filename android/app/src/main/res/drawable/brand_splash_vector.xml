@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Measured light photograph geometry. Default trim=1 is the static fallback. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="432dp" android:height="432dp"
+    android:viewportWidth="1000" android:viewportHeight="1000">
+    <!-- Inset the measured art into the system's central circular safe zone. -->
+    <group android:pivotX="500" android:pivotY="500" android:scaleX="0.9" android:scaleY="0.9">
+    <path android:name="ribbon0" android:fillColor="#00000000"
+        android:strokeColor="#000000" android:strokeWidth="23.2" android:strokeLineCap="round"
+        android:pathData="M674,211.5 L479,211.5 C388.15,211.5 314.5,285.15 314.5,376 C314.5,466.85 388.15,540.5 479,540.5 L520,540.5 C565.56,540.5 602.5,577.44 602.5,623 C602.5,668.56 565.56,705.5 520,705.5 L408.5,705.5" />
+    <path android:name="ribbon1" android:fillColor="#00000000"
+        android:strokeColor="#000000" android:strokeWidth="23.2" android:strokeLineCap="round"
+        android:pathData="M633,252.7 L479,252.7 C410.91,252.7 355.7,307.91 355.7,376 C355.7,444.09 410.91,499.3 479,499.3 L520,499.3 C588.32,499.3 643.7,554.68 643.7,623 C643.7,691.32 588.32,746.7 520,746.7 L367.3,746.7" />
+    <path android:name="ribbon2" android:fillColor="#00000000"
+        android:strokeColor="#000000" android:strokeWidth="23.2" android:strokeLineCap="round"
+        android:pathData="M591.8,293.9 L479,293.9 C433.66,293.9 396.9,330.66 396.9,376 C396.9,421.34 433.66,458.1 479,458.1 L520,458.1 C611.07,458.1 684.9,531.93 684.9,623 C684.9,714.07 611.07,787.9 520,787.9 L326.1,787.9" />
+    <path android:name="ribbon3" android:fillColor="#00000000"
+        android:strokeColor="#000000" android:strokeWidth="23.2" android:strokeLineCap="round"
+        android:pathData="M550.6,335.1 L479,335.1 C456.41,335.1 438.1,353.41 438.1,376 C438.1,394.27 450.08,409.74 466.6,414.99" />
+    <path android:name="ribbon4" android:fillColor="#00000000"
+        android:strokeColor="#000000" android:strokeWidth="23.2" android:strokeLineCap="round"
+        android:pathData="M449.4,664.1 L520,664.1 C542.7,664.1 561.1,645.7 561.1,623 C561.1,604.72 549.17,589.23 532.7,583.86" />
+    <path android:name="ribbon5" android:fillColor="#00000000"
+        android:strokeColor="#000000" android:strokeWidth="23.2" android:strokeLineCap="round"
+        android:pathData="M490.9,376 L509.1,376" />
+    <path android:name="ribbon6" android:fillColor="#00000000"
+        android:strokeColor="#000000" android:strokeWidth="23.2" android:strokeLineCap="round"
+        android:pathData="M490.9,623 L509.1,623" />
+    </group>
+</vector>

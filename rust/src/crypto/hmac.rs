@@ -4,7 +4,7 @@
 //! this MAC (key `XgwSnGZ1p`, message `ts<unix-seconds>`), so the
 //! implementation is pinned to the RFC 4231 vectors below.
 
-use crate::crypto::sha256::{sha256, Sha256};
+use crate::crypto::sha256::{Sha256, sha256};
 
 /// Computes the HMAC-SHA-256 tag of `message` under `key`.
 ///

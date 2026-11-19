@@ -102,9 +102,6 @@ mod tests {
 
     #[test]
     fn mixin_key_uses_the_published_reordering_table() {
-        // With `A`×32 + `B`×32 every table slot maps to either `A`
-        // (index < 32) or `B`; the expected string is the table's first
-        // 32 entries resolved by hand.
         let mixin = mixin_key(&"A".repeat(32), &"B".repeat(32)).expect("keys are long enough");
         assert_eq!(mixin, "BBAABAABABAABABBABABBABAAAABABBA");
         assert_eq!(mixin.len(), 32);
@@ -148,15 +145,15 @@ mod tests {
         assert!(query.starts_with("bvid=BV1xx411c7mD&cid=123&wts=1700000000&w_rid="));
         let signature = query.rsplit("w_rid=").next().expect("signature present");
         assert_eq!(signature.len(), 32);
-        assert!(signature
-            .chars()
-            .all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase()));
+        assert!(
+            signature
+                .chars()
+                .all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase())
+        );
     }
 
     #[test]
     fn signed_query_signature_is_md5_of_query_plus_mixin_key() {
-        // Cross-checked against an independent MD5 implementation:
-        // md5("wts=123key") = "18c37754d587a9a65e1e0022976fce3b".
         let query = signed_query("key", &[], 123);
         assert_eq!(query, "wts=123&w_rid=18c37754d587a9a65e1e0022976fce3b");
     }

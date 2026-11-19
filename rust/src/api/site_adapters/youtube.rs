@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use nextjson::Value;
 use regex::Regex;
 use url::Url;
@@ -6,9 +6,8 @@ use url::Url;
 use crate::api::downloader::{CandidateCollector, CandidateSpec};
 
 use super::common::{
-    extract_json_object_after_any, extract_json_string_after_any, extract_page_title,
+    SiteWarning, extract_json_object_after_any, extract_json_string_after_any, extract_page_title,
     extract_text_runs_pointer, first_media_url, first_string_pointer, normalize_exposed_media_url,
-    SiteWarning,
 };
 
 pub(crate) fn extract_youtube_candidates(
@@ -25,7 +24,8 @@ pub(crate) fn extract_youtube_candidates(
         return Ok(());
     };
 
-    let value: Value = nextjson::from_str(&json).context("Failed to parse youtube player JSON")?;
+    let value: Value = nextjson::from_str(&json)
+        .map_err(|error| anyhow::anyhow!("Failed to parse youtube player JSON: {error}"))?;
     push_playability_warnings(&value, warnings);
     let title = first_string_pointer(
         &value,

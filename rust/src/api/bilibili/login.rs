@@ -18,10 +18,10 @@
 
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use nextjson::Value;
 
-use crate::api::downloader::{request_headers, RequestContext};
+use crate::api::downloader::{RequestContext, request_headers};
 use crate::net::SyncHttpClient;
 
 const PASSPORT_BASE: &str = "https://passport.bilibili.com";
@@ -187,8 +187,9 @@ impl QrLoginApi {
         if !(200..300).contains(&status) {
             bail!("Bilibili passport answered HTTP {status} for {path}");
         }
-        let payload = nextjson::from_slice::<Value>(&body)
-            .with_context(|| format!("Failed to parse Bilibili passport response from {path}"))?;
+        let payload = nextjson::from_slice::<Value>(&body).map_err(|error| {
+            anyhow::anyhow!("Failed to parse Bilibili passport response from {path}: {error}")
+        })?;
         Ok((payload, response_headers))
     }
 }
@@ -240,22 +241,21 @@ fn session_cookie(
             }
         }
     }
-    if let Some(url) = data_url {
-        if let Ok(parsed) = url::Url::parse(url) {
-            for (name, value) in parsed.query_pairs() {
-                if !SESSION_COOKIE_NAMES
-                    .iter()
-                    .any(|known| known.eq_ignore_ascii_case(&name))
-                {
-                    continue;
-                }
-                pairs.retain(|(existing, _)| !existing.eq_ignore_ascii_case(&name));
-                pairs.push((name.into_owned(), value.into_owned()));
+    if let Some(url) = data_url
+        && let Ok(parsed) = url::Url::parse(url)
+    {
+        for (name, value) in parsed.query_pairs() {
+            if !SESSION_COOKIE_NAMES
+                .iter()
+                .any(|known| known.eq_ignore_ascii_case(&name))
+            {
+                continue;
             }
+            pairs.retain(|(existing, _)| !existing.eq_ignore_ascii_case(&name));
+            pairs.push((name.into_owned(), value.into_owned()));
         }
     }
-    // Device cookies last: they are the weakest evidence and must never
-    // overwrite a session value that arrived in the same response.
+
     for pair in attempt_cookie.split("; ") {
         let Some((name, value)) = pair.split_once('=') else {
             continue;
@@ -269,8 +269,7 @@ fn session_cookie(
         }
         pairs.push((name.to_string(), value.to_string()));
     }
-    // A session without SESSDATA cannot authenticate anything; reporting
-    // success would hand the UI a cookie string that silently does nothing.
+
     if !pairs
         .iter()
         .any(|(name, _)| name.eq_ignore_ascii_case("SESSDATA"))
@@ -331,8 +330,6 @@ mod tests {
             SESSION_COOKIE_NAMES,
         )
         .expect("device cookies are kept");
-        // The comma inside `expires` must not split anything, and cookies
-        // nothing asks for must not be forwarded.
         assert_eq!(parsed, "buvid3=ABC123infoc; b_nut=1791197852");
         assert!(
             cookies_from_headers(&headers(&["b_lsid=x; path=/"]), SESSION_COOKIE_NAMES).is_none()
@@ -361,11 +358,6 @@ mod tests {
 
     #[test]
     fn reads_the_session_from_the_cross_domain_url() {
-        // The hand-off shape: the query carries the same values, URL-encoded,
-        // so one decode yields the cookie value Bilibili itself stores.
-        // `SESSDATA` legitimately contains percent sequences (`abc%2Cdef` is
-        // a comma and an asterisk in the raw token), which is why the fixture
-        // encodes the percent sign as well: `abc%252Cdef` -> `abc%2Cdef`.
         let cookie = session_cookie(
             &headers(&["buvid3=device; path=/"]),
             Some(
@@ -382,7 +374,6 @@ mod tests {
 
     #[test]
     fn refuses_a_confirmation_without_sessdata() {
-        // Device cookies alone are not a login.
         assert!(
             session_cookie(&headers(&["buvid3=device; path=/"]), None, "buvid3=device").is_none()
         );

@@ -158,7 +158,7 @@ pub fn md5_hex(data: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{md5, md5_hex, Md5};
+    use super::{Md5, md5, md5_hex};
 
     /// RFC 1321 Appendix A.5 test suite.
     const RFC1321_SUITE: [(&str, &str); 7] = [

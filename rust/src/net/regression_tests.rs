@@ -14,9 +14,6 @@ fn redirects_recheck_address_policy_before_connecting() {
             "http://{host}:{}/private",
             target.local_addr().unwrap().port()
         );
-        // Policy is enabled only after two accepted requests, in this isolated
-        // process. This exercises the real redirect loop and socket connector
-        // without public-network fixtures or global races with other tests.
         let (source, server) = serve(2, move |index, _, socket| {
             let location = if index == 0 {
                 "/second-hop"
@@ -82,17 +79,20 @@ fn memory_reads_remain_bounded_for_fixed_and_chunked_bodies() {
         }
     });
     let client = SyncHttpClient::new().unwrap();
-    assert!(client
-        .get(&url, &[])
-        .unwrap_err()
-        .to_string()
-        .contains("memory limit"));
+    assert!(
+        client
+            .get(&url, &[])
+            .unwrap_err()
+            .to_string()
+            .contains("memory limit")
+    );
     let body = client.stream(&url, &[]).unwrap().body;
-    assert!(body
-        .collect_limited(8)
-        .unwrap_err()
-        .to_string()
-        .contains("memory limit"));
+    assert!(
+        body.collect_limited(8)
+            .unwrap_err()
+            .to_string()
+            .contains("memory limit")
+    );
     server.join().unwrap();
 }
 

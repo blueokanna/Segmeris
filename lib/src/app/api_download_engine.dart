@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:segmeris/src/rust/api/downloader.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'download_engine.dart';
 
@@ -18,25 +19,155 @@ import 'download_engine.dart';
 /// Because browsers cannot run the Rust engine, this client translates the
 /// REST responses into the same `ProgressUpdate` / `MediaInspectionResult`
 /// objects the native UI consumes.
-class ApiDownloadEngine implements DownloadEngine, PausableDownloadEngine {
-  ApiDownloadEngine({required String apiBaseUrl, this.apiToken = ''})
-      : apiBaseUrl = _normalizeBaseUrl(apiBaseUrl);
+class ApiDownloadEngine
+    implements
+        DownloadEngine,
+        PausableDownloadEngine,
+        ReattachableDownloadEngine,
+        CompletedDownloadDeletionEngine {
+  ApiDownloadEngine({
+    required String apiBaseUrl,
+    this.apiToken = '',
+    http.Client? client,
+    this._preferences,
+    this._pollInterval = const Duration(seconds: 1),
+  }) : apiBaseUrl = _normalizeBaseUrl(apiBaseUrl),
+       _client = client ?? http.Client();
 
   final String apiBaseUrl;
 
   /// Optional bearer token forwarded to the API server (`FERRISLOAD_API_TOKEN`).
+  /// It is never included in the persisted task mapping.
   final String apiToken;
+  final http.Client _client;
+  SharedPreferences? _preferences;
+  final Duration _pollInterval;
   final _activeTasks = <String, String>{};
+
+  // Keep read-modify-write transactions and output ownership consistent across
+  // engine instances in this isolate. Other browser tabs require server-side
+  // idempotency to provide the same guarantee.
+  static Future<void> _mappingTail = Future<void>.value();
+  static final _ownedOutputs = <String>{};
+  static final _unpersistedTaskIds = <String, String>{};
+
+  String get taskMappingKey =>
+      'segmeris.apiDownloadTasks.v1.${Uri.encodeComponent(apiBaseUrl)}';
+
+  String _outputKey(String output) => '$taskMappingKey:${jsonEncode(output)}';
+
+  Future<T> _withMappings<T>(
+    Future<T> Function(SharedPreferences preferences, Map<String, String> tasks)
+    action,
+  ) {
+    final result = _mappingTail.then((_) async {
+      final preferences = _preferences ??=
+          await SharedPreferences.getInstance();
+      await preferences.reload();
+      final raw = preferences.get(taskMappingKey);
+      final tasks = <String, String>{};
+      if (raw != null) {
+        if (raw is! String) {
+          throw ApiEngineException('Stored API task mapping is invalid');
+        }
+        final decoded = jsonDecode(raw);
+        if (decoded is! Map<String, dynamic> ||
+            decoded.values.any((id) => id is! String || id.isEmpty)) {
+          throw ApiEngineException('Stored API task mapping is invalid');
+        }
+        tasks.addAll(decoded.cast<String, String>());
+      }
+      return action(preferences, tasks);
+    });
+    _mappingTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return result;
+  }
+
+  Future<String?> _storedTaskId(String output) =>
+      _withMappings((_, tasks) async => tasks[output]);
+
+  Future<void> _persistTaskId(String output, String id) =>
+      _withMappings((preferences, tasks) async {
+        tasks[output] = id;
+        if (!await preferences.setString(taskMappingKey, jsonEncode(tasks))) {
+          throw ApiEngineException('Could not persist the API task id');
+        }
+      });
+
+  Future<void> _removeTaskId(String id) => _withMappings((
+    preferences,
+    tasks,
+  ) async {
+    tasks.removeWhere((_, value) => value == id);
+    if (!await preferences.setString(taskMappingKey, jsonEncode(tasks))) {
+      throw ApiEngineException('Could not update the stored API task mapping');
+    }
+  });
+
+  @override
+  Future<bool> canReattach({required String output}) async {
+    final id = await _storedTaskId(output);
+    if (id == null) return false;
+    try {
+      final status = await _getJson('/status/${Uri.encodeComponent(id)}');
+      return switch (status['status']) {
+        'queued' || 'running' || 'paused' || 'completed' => true,
+        _ => false,
+      };
+    } on ApiEngineException catch (error) {
+      if (error.statusCode != 404) rethrow;
+      // This probe never mutates the mapping. download() confirms staleness
+      // again before replacing it, after the caller refreshes signed sources.
+      return false;
+    }
+  }
 
   @override
   Future<bool> setPaused({required String output, required bool paused}) async {
-    final id = _activeTasks[output];
+    final id = _activeTasks[output] ?? await _storedTaskId(output);
     if (id == null || id.isEmpty) return false;
-    await _postJson('/tasks/$id/${paused ? 'pause' : 'resume'}', {});
-    return true;
+    try {
+      await _postJson(
+        '/tasks/${Uri.encodeComponent(id)}/${paused ? 'pause' : 'resume'}',
+        {},
+      );
+      return true;
+    } on ApiEngineException catch (error) {
+      if (error.statusCode != 404) rethrow;
+      // Older servers may lack this action even while the task still exists.
+      // Only GET /status returning 404 establishes that a mapping is stale.
+      return false;
+    }
   }
 
-  static const _pollInterval = Duration(seconds: 1);
+  @override
+  Future<bool> deleteDownloadedFile({required String path}) async {
+    if (path.isEmpty) return false;
+    final payload = await _getJsonValue('/tasks');
+    if (payload is! List) throw const FormatException('Unexpected task list');
+    final matches = payload
+        .whereType<Map<String, dynamic>>()
+        .where((task) => task['output_path'] == path)
+        .toList();
+    if (matches.length != 1 || matches.single['status'] != 'completed') {
+      return false;
+    }
+    final id = matches.single['task_id'];
+    if (id is! String || id.isEmpty) return false;
+    final deleted = await _postJson(
+      '/tasks/${Uri.encodeComponent(id)}/delete',
+      {},
+    );
+    if (deleted['deleted'] != true) {
+      throw ApiEngineException('The API did not confirm file deletion');
+    }
+    await _removeTaskId(id);
+    if (_lastOutputPath == path) _lastOutputPath = null;
+    return true;
+  }
 
   /// Upper bound for a single queued download. Long transcodes (CPU) can take
   /// hours; this only fires when the server stops making progress forever.
@@ -49,9 +180,9 @@ class ApiDownloadEngine implements DownloadEngine, PausableDownloadEngine {
   String? get lastResultPath => _lastOutputPath;
 
   Map<String, String> _authHeaders() => {
-        'content-type': 'application/json',
-        if (apiToken.isNotEmpty) 'authorization': 'Bearer $apiToken',
-      };
+    'content-type': 'application/json',
+    if (apiToken.isNotEmpty) 'authorization': 'Bearer $apiToken',
+  };
 
   /// Strip a trailing slash and reject entirely-empty values.
   static String _normalizeBaseUrl(String raw) {
@@ -73,12 +204,11 @@ class ApiDownloadEngine implements DownloadEngine, PausableDownloadEngine {
   void _assertTransportSecurity() {
     final uri = Uri.tryParse(apiBaseUrl);
     if (uri == null || !uri.hasScheme) {
-      throw ApiEngineException(
-        'Invalid Segmeris API base URL: $apiBaseUrl',
-      );
+      throw ApiEngineException('Invalid Segmeris API base URL: $apiBaseUrl');
     }
     final host = uri.host;
-    final isLoopback = host.isEmpty ||
+    final isLoopback =
+        host.isEmpty ||
         host == 'localhost' ||
         host == '127.0.0.1' ||
         host == '::1';
@@ -103,36 +233,46 @@ class ApiDownloadEngine implements DownloadEngine, PausableDownloadEngine {
     Map<String, dynamic> body,
   ) async {
     _assertTransportSecurity();
-    final response = await http
-        .post(
-          _uri(path),
-          headers: _authHeaders(),
-          body: jsonEncode(body),
-        )
+    final response = await _client
+        .post(_uri(path), headers: _authHeaders(), body: jsonEncode(body))
         .timeout(const Duration(seconds: 60));
     final payload = _decodeResponse(response, path);
+    if (payload is! Map<String, dynamic>) {
+      throw FormatException('Unexpected response from $path');
+    }
     return payload;
   }
 
   Future<Map<String, dynamic>> _getJson(String path) async {
+    final payload = await _getJsonValue(path);
+    if (payload is! Map<String, dynamic>) {
+      throw FormatException('Unexpected response from $path');
+    }
+    return payload;
+  }
+
+  Future<Object?> _getJsonValue(String path) async {
     _assertTransportSecurity();
-    final response = await http
+    final response = await _client
         .get(_uri(path), headers: _authHeaders())
         .timeout(const Duration(seconds: 30));
     return _decodeResponse(response, path);
   }
 
-  Map<String, dynamic> _decodeResponse(http.Response response, String path) {
-    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-    if (decoded is! Map<String, dynamic>) {
-      throw FormatException('Unexpected response from $path');
-    }
+  Object? _decodeResponse(http.Response response, String path) {
     if (response.statusCode >= 400) {
-      final message = decoded['error'] ??
-          'API request failed (HTTP ${response.statusCode})';
-      throw ApiEngineException('$message');
+      String message = 'API request failed (HTTP ${response.statusCode})';
+      try {
+        final payload = jsonDecode(utf8.decode(response.bodyBytes));
+        if (payload is Map<String, dynamic> && payload['error'] is String) {
+          message = payload['error'] as String;
+        }
+      } on FormatException {
+        // Error pages need not be JSON. Preserve the HTTP status either way.
+      }
+      throw ApiEngineException(message, statusCode: response.statusCode);
     }
-    return decoded;
+    return jsonDecode(utf8.decode(response.bodyBytes));
   }
 
   @override
@@ -212,11 +352,13 @@ class ApiDownloadEngine implements DownloadEngine, PausableDownloadEngine {
       extractor: raw['extractor'] as String? ?? '',
       pageUrl: raw['page_url'] as String? ?? '',
       mediaUrl: raw['media_url'] as String? ?? '',
-      mediaFallbackUrls:
-          _asList(raw['media_fallback_urls']).whereType<String>().toList(),
+      mediaFallbackUrls: _asList(raw['media_fallback_urls'])
+          .whereType<String>()
+          .toList(),
       audioUrl: raw['audio_url'] as String?,
-      audioFallbackUrls:
-          _asList(raw['audio_fallback_urls']).whereType<String>().toList(),
+      audioFallbackUrls: _asList(raw['audio_fallback_urls'])
+          .whereType<String>()
+          .toList(),
       container: raw['container'] as String? ?? '',
       protocol: raw['protocol'] as String? ?? '',
       mimeType: raw['mime_type'] as String? ?? '',
@@ -245,32 +387,67 @@ class ApiDownloadEngine implements DownloadEngine, PausableDownloadEngine {
     required DownloadOptions options,
     required RequestContext requestContext,
   }) async* {
-    if (_activeTasks.containsKey(output)) {
+    final ownershipKey = _outputKey(output);
+    if (!_ownedOutputs.add(ownershipKey)) {
       throw ApiEngineException('A download already owns this output path');
     }
     _activeTasks[output] = '';
+    _lastOutputPath = null;
     try {
-      final accepted = await _postJson('/download', {
-        'url': pageUrl,
-        'media_url': mediaUrl,
-        'media_fallback_urls': mediaFallbackUrls,
-        'audio_url': audioUrl,
-        'audio_fallback_urls': audioFallbackUrls,
-        'output_filename': _basename(output),
-        'concurrency': options.concurrency,
-        'retries': options.retries,
-        'video_bitrate': options.videoBitrate,
-        'audio_bitrate': options.audioBitrate,
-        'keep_temp': options.keepTemp,
-        'subtitle': {
-          'mode': _subtitleModeName(options.subtitleMode),
-          'value': options.subtitleValue,
-        },
-        'request_context': _contextToJson(requestContext),
-      });
-      final taskId = accepted['task_id'] as String?;
-      if (taskId == null || taskId.isEmpty) {
-        throw ApiEngineException('API did not return a task id');
+      var taskId = _unpersistedTaskIds[ownershipKey];
+      if (taskId != null) {
+        // A previous preferences failure must not create another server task.
+        await _persistTaskId(output, taskId);
+        _unpersistedTaskIds.remove(ownershipKey);
+      } else {
+        taskId = await _storedTaskId(output);
+      }
+      Map<String, dynamic>? recoveredStatus;
+      if (taskId != null) {
+        _activeTasks[output] = taskId;
+        try {
+          recoveredStatus = await _getJson(
+            '/status/${Uri.encodeComponent(taskId)}',
+          );
+          if (recoveredStatus['status'] == 'failed') {
+            // An explicitly failed task can be retried. Keep its mapping until
+            // the new task id has been accepted and durably stored.
+            taskId = null;
+            recoveredStatus = null;
+          }
+        } on ApiEngineException catch (error) {
+          if (error.statusCode != 404) rethrow;
+          await _removeTaskId(taskId!);
+          taskId = null;
+        }
+      }
+      if (taskId == null) {
+        final accepted = await _postJson('/download', {
+          'url': pageUrl,
+          'media_url': mediaUrl,
+          'media_fallback_urls': mediaFallbackUrls,
+          'audio_url': audioUrl,
+          'audio_fallback_urls': audioFallbackUrls,
+          'output_filename': _basename(output),
+          'concurrency': options.concurrency,
+          'retries': options.retries,
+          'video_bitrate': options.videoBitrate,
+          'audio_bitrate': options.audioBitrate,
+          'keep_temp': options.keepTemp,
+          'subtitle': {
+            'mode': _subtitleModeName(options.subtitleMode),
+            'value': options.subtitleValue,
+          },
+          'request_context': _contextToJson(requestContext),
+        });
+        final acceptedId = accepted['task_id'];
+        if (acceptedId is! String || acceptedId.isEmpty) {
+          throw ApiEngineException('API did not return a task id');
+        }
+        taskId = acceptedId;
+        _unpersistedTaskIds[ownershipKey] = taskId;
+        await _persistTaskId(output, taskId);
+        _unpersistedTaskIds.remove(ownershipKey);
       }
 
       _activeTasks[output] = taskId;
@@ -290,7 +467,16 @@ class ApiDownloadEngine implements DownloadEngine, PausableDownloadEngine {
             '${_maxPollDuration.inHours}h; check the server logs.',
           );
         }
-        final status = await _getJson('/status/$taskId');
+        final Map<String, dynamic> status;
+        try {
+          status =
+              recoveredStatus ??
+              await _getJson('/status/${Uri.encodeComponent(taskId)}');
+          recoveredStatus = null;
+        } on ApiEngineException catch (error) {
+          if (error.statusCode == 404) await _removeTaskId(taskId);
+          rethrow;
+        }
         final state = status['status'] as String? ?? 'running';
         wasPaused = state == 'paused';
         final message = status['message'] as String? ?? '';
@@ -329,13 +515,16 @@ class ApiDownloadEngine implements DownloadEngine, PausableDownloadEngine {
             if (!sawProgress && _pollInterval.inMilliseconds > 0) {
               // Keep emitting an initial progress so the UI never stalls blank.
               yield ProgressUpdate(
-                  message: 'Waiting for API server...', progress: 0.0);
+                message: 'Waiting for API server...',
+                progress: 0.0,
+              );
             }
             await Future<void>.delayed(_pollInterval);
         }
       }
     } finally {
       _activeTasks.remove(output);
+      _ownedOutputs.remove(ownershipKey);
     }
   }
 
@@ -351,9 +540,7 @@ class ApiDownloadEngine implements DownloadEngine, PausableDownloadEngine {
       'referer': context.referer,
       'origin': context.origin,
       'cookie': context.cookie,
-      'headers': {
-        for (final entry in context.headers) entry.name: entry.value,
-      },
+      'headers': {for (final entry in context.headers) entry.name: entry.value},
     };
   }
 
@@ -366,9 +553,10 @@ class ApiDownloadEngine implements DownloadEngine, PausableDownloadEngine {
 }
 
 class ApiEngineException implements Exception {
-  ApiEngineException(this.message);
+  ApiEngineException(this.message, {this.statusCode});
 
   final String message;
+  final int? statusCode;
 
   @override
   String toString() => message;

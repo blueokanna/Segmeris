@@ -4,11 +4,11 @@
 //! SEGMERIS_EXTRA_CA_FILE. Cross-signed paths that Courierust cannot anchor are
 //! retried with rustls using the same trust store and certificate validation.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 mod tls;
 mod transport;
 use courierust::courierust_client::{ClientConfig, TlsSettings as ClientTls};
-use courierust::courierust_fingerprint::profile::{chrome_tls_profile, TlsProfile};
+use courierust::courierust_fingerprint::profile::{TlsProfile, chrome_tls_profile};
 use courierust::courierust_http::header::{HeaderName, HeaderValue};
 use courierust::courierust_http::method::Method;
 use courierust::courierust_http::request::Request;

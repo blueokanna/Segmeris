@@ -214,12 +214,14 @@ mod tests {
     }
     #[test]
     fn spawn_errors_are_not_timeouts() {
-        assert!(command_with_timeout(
-            &mut Command::new("segmeris-no-such-command"),
-            Duration::from_secs(1)
-        )
-        .unwrap()
-        .is_err());
+        assert!(
+            command_with_timeout(
+                &mut Command::new("segmeris-no-such-command"),
+                Duration::from_secs(1)
+            )
+            .unwrap()
+            .is_err()
+        );
         assert!(!failed_exit_status().success());
     }
 }

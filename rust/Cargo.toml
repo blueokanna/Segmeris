@@ -1,7 +1,7 @@
 [package]
 name = "rust_lib_segmeris"
-version = "1.0.8"
-edition = "2021"
+version = "1.1.0"
+edition = "2024"
 rust-version = "1.89"
 license-file = "../LICENSE"
 authors = ["blueokanna"]
@@ -10,7 +10,7 @@ repository = "https://github.com/blueokanna/Segmeris"
 
 [workspace]
 members = ["core"]
-resolver = "2"
+resolver = "3"
 
 [lib]
 name = "rust_lib_segmeris"
@@ -18,28 +18,32 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 anyhow = "1.0.104"
-segmeris-core = { path = "core", version = "=1.0.8", features = ["std"] }
+segmeris-core = { path = "core", version = "=1.1.0", features = ["std"] }
 flutter_rust_bridge = "=2.13.0"
 
 hex = "0.4.3"
-jni = "0.21.1"
+jni = "0.22.4"
 log = "0.4.35"
 env_logger = "0.11.11"
 
-regex = "1.13.1"
+regex = "1.13.2"
 
-nextjson = { version = "0.1.4", features = ["derive", "std"] }
+nextjson = { version = "0.1.5", features = ["derive"] }
 tzcraft = { version = "0.1.2", default-features = false, features = [
     "std",
     "serde",
 ] }
-courierust = { version = "1.1.1", default-features = false, features = ["std"] }
-webpki-root-certs = "1.0.11"
-rustls = { version = "0.23.46", default-features = false, features = ["std", "ring", "tls12"] }
+courierust = { version = "1.1.3", default-features = false, features = ["std"] }
+webpki-root-certs = "1.0.12"
+rustls = { version = "0.23.46", default-features = false, features = [
+    "std",
+    "ring",
+    "tls12",
+] }
 url = "2.5.8"
 dashmap = "6.2.1"
 indicatif = "0.18.6"
-uuid = { version = "1.29.1", features = ["v4"] }
+uuid = { version = "1.29.3", features = ["v4"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15.1"

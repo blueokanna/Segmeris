@@ -1,4 +1,30 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
+
+import 'app_motion.dart';
+
+/// Google Sans provides Latin glyphs; missing Han glyphs fall back to the
+/// original Huawei HarmonyOS Sans SC fonts bundled with their own license.
+enum AppFont { system, harmonyGoogle }
+
+bool _fontLicensesRegistered = false;
+
+void registerAppFontLicenses() {
+  if (_fontLicensesRegistered) return;
+  _fontLicensesRegistered = true;
+  LicenseRegistry.addLicense(() async* {
+    for (final entry in const {
+      'HarmonyOS Sans': 'assets/fonts/huawei/LICENSE.txt',
+      'Google Sans Flex': 'assets/fonts/google/OFL.txt',
+    }.entries) {
+      final license = await rootBundle.loadString(entry.value);
+      yield LicenseEntryWithLineBreaks([
+        entry.key,
+      ], license.replaceAll('\u0000', ''));
+    }
+  });
+}
 
 class AppThemeProfile {
   const AppThemeProfile({
@@ -107,6 +133,7 @@ ThemeData buildAppTheme(
   AppThemeProfile profile,
   Brightness brightness, {
   ColorScheme? dynamicScheme,
+  AppFont font = AppFont.system,
 }) {
   final isDark = brightness == Brightness.dark;
   final generatedScheme = ColorScheme.fromSeed(
@@ -163,17 +190,24 @@ ThemeData buildAppTheme(
     surfaceContainerHigh: surfaceHigh,
     surfaceContainerHighest: surfaceHighest,
   );
+  final fontFamily = font == AppFont.harmonyGoogle ? 'Google Sans Flex' : null;
+  final fontFamilyFallback = font == AppFont.harmonyGoogle
+      ? const ['HarmonyOS Sans SC']
+      : null;
   final textTheme = ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
     brightness: brightness,
-    typography: Typography.material2021(colorScheme: scheme),
+    fontFamily: fontFamily,
+    fontFamilyFallback: fontFamilyFallback,
   ).textTheme;
 
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
     colorScheme: scheme,
+    fontFamily: fontFamily,
+    fontFamilyFallback: fontFamilyFallback,
     textTheme: textTheme,
     scaffoldBackgroundColor: canvas,
     canvasColor: canvas,
@@ -226,7 +260,7 @@ ThemeData buildAppTheme(
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: const Size.fromHeight(54),
-        animationDuration: const Duration(milliseconds: 220),
+        animationDuration: SegmerisMotion.fast,
         shape: const StadiumBorder(),
         textStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
       ),
@@ -234,7 +268,7 @@ ThemeData buildAppTheme(
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         minimumSize: const Size.fromHeight(52),
-        animationDuration: const Duration(milliseconds: 220),
+        animationDuration: SegmerisMotion.fast,
         shape: const StadiumBorder(),
       ),
     ),

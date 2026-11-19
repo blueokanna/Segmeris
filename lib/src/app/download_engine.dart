@@ -43,6 +43,19 @@ abstract interface class PausableDownloadEngine {
   Future<bool> setPaused({required String output, required bool paused});
 }
 
+/// Optional capability to resume an existing task without resolving its source.
+abstract interface class ReattachableDownloadEngine {
+  /// Returns true only when an existing server task can be attached to directly.
+  /// Transport/authentication failures throw instead of requesting a new source.
+  Future<bool> canReattach({required String output});
+}
+
+/// Optional capability for engines that own completed files on another host.
+abstract interface class CompletedDownloadDeletionEngine {
+  /// Returns true only after the backend confirms deletion of this exact file.
+  Future<bool> deleteDownloadedFile({required String path});
+}
+
 /// Native engine backed by the Rust library (`flutter_rust_bridge`).
 class FrbDownloadEngine implements DownloadEngine, PausableDownloadEngine {
   const FrbDownloadEngine();

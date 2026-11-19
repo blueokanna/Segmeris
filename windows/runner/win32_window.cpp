@@ -2,6 +2,7 @@
 
 #include <dwmapi.h>
 #include <flutter_windows.h>
+#include <initializer_list>
 
 #include "resource.h"
 
@@ -213,6 +214,9 @@ Win32Window::MessageHandler(HWND hwnd,
       }
       return 0;
 
+    case WM_SETTINGCHANGE:
+      UpdateTheme(hwnd);
+      break;
     case WM_DWMCOLORIZATIONCOLORCHANGED:
       UpdateTheme(hwnd);
       return 0;
@@ -280,9 +284,14 @@ void Win32Window::UpdateTheme(HWND const window) {
                                RRF_RT_REG_DWORD, nullptr, &light_mode,
                                &light_mode_size);
 
-  if (result == ERROR_SUCCESS) {
-    BOOL enable_dark_mode = light_mode == 0;
-    DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
-                          &enable_dark_mode, sizeof(enable_dark_mode));
+  BOOL dark = result == ERROR_SUCCESS && light_mode == 0;
+  DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                        &dark, sizeof(dark));
+  auto resource = MAKEINTRESOURCE(dark ? IDI_APP_ICON_DARK : IDI_APP_ICON);
+  for (auto role : {ICON_SMALL, ICON_BIG}) {
+    const int size = GetSystemMetrics(role == ICON_SMALL ? SM_CXSMICON : SM_CXICON);
+    HANDLE icon = LoadImage(GetModuleHandle(nullptr), resource, IMAGE_ICON,
+                            size, size, LR_SHARED);
+    if (icon) SendMessage(window, WM_SETICON, role, reinterpret_cast<LPARAM>(icon));
   }
 }

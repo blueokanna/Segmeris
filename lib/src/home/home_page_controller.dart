@@ -166,6 +166,8 @@ class HomeDownloadTask {
     this.paused = false,
     this.controlBusy = false,
     this.downloadUrls = const [],
+    this.interrupted = false,
+    this.completedAt,
   });
 
   final String id;
@@ -182,6 +184,8 @@ class HomeDownloadTask {
   final bool paused;
   final bool controlBusy;
   final List<String> downloadUrls;
+  final bool interrupted;
+  final DateTime? completedAt;
 
   bool get canPause =>
       running &&
@@ -202,9 +206,13 @@ class HomeDownloadTask {
     bool? paused,
     bool? controlBusy,
     List<String>? downloadUrls,
+    bool? interrupted,
+    DateTime? completedAt,
   }) {
     return HomeDownloadTask(
       id: id,
+      interrupted: interrupted ?? this.interrupted,
+      completedAt: completedAt ?? this.completedAt,
       paused: paused ?? this.paused,
       controlBusy: controlBusy ?? this.controlBusy,
       downloadUrls: downloadUrls ?? this.downloadUrls,
@@ -497,6 +505,7 @@ class HomePageController extends ChangeNotifier {
     required String fileName,
     required String sourcePage,
     required String status,
+    bool queued = false,
   }) {
     final startedAt = DateTime.now();
     final task = HomeDownloadTask(
@@ -507,22 +516,19 @@ class HomePageController extends ChangeNotifier {
       progress: 0.02,
       stage: HomeWorkflowStage.preparing,
       startedAt: startedAt,
-      running: true,
+      running: !queued,
+      interrupted: queued,
     );
     _apply(
       _withRecoveredError(
         _value.copyWith(
-          running: true,
+          running: _value.running || !queued,
           error: null,
           resultPath: null,
           progress: 0.02,
           status: status,
           retryAction: HomeRetryAction.download,
-          downloadTasks: [
-            task,
-            ..._value.downloadTasks.where((task) => task.running),
-            ..._value.downloadTasks.where((task) => !task.running).take(7),
-          ],
+          downloadTasks: [task, ..._value.downloadTasks],
         ),
       ),
       stage: HomeWorkflowStage.preparing,
@@ -637,6 +643,8 @@ class HomePageController extends ChangeNotifier {
         paused: false,
         controlBusy: false,
         error: null,
+        interrupted: false,
+        completedAt: DateTime.now(),
         resultPath: finalPath,
       ),
     );
@@ -650,12 +658,13 @@ class HomePageController extends ChangeNotifier {
         downloadTasks: tasks,
         history: [
           DownloadRecord(
+            taskId: id,
             name: fileName,
             source: sourcePage,
             path: finalPath,
             time: DateTime.now(),
           ),
-          ..._value.history,
+          ..._value.history.where((record) => record.taskId != id),
         ],
         retryAction: hasRunningTasks
             ? _value.retryAction
@@ -703,7 +712,10 @@ class HomePageController extends ChangeNotifier {
 
   bool retryDownloadTask(String id, {required String status}) {
     final canRetry = _value.downloadTasks.any(
-      (task) => task.id == id && !task.running && task.error != null,
+      (task) =>
+          task.id == id &&
+          !task.running &&
+          (task.error != null || task.interrupted),
     );
     if (!canRetry) {
       return false;
@@ -716,6 +728,8 @@ class HomePageController extends ChangeNotifier {
         progress: 0.02,
         stage: HomeWorkflowStage.preparing,
         running: true,
+        interrupted: false,
+        paused: false,
         error: null,
       ),
     );
@@ -730,6 +744,71 @@ class HomePageController extends ChangeNotifier {
         downloadTasks: tasks,
       ),
       stage: HomeWorkflowStage.preparing,
+    );
+    return true;
+  }
+
+  void restoreDownloads({
+    required List<HomeDownloadTask> tasks,
+    required List<DownloadRecord> history,
+  }) {
+    _apply(
+      _value.copyWith(
+        downloadTasks: tasks,
+        history: history,
+        running: tasks.any((task) => task.running),
+      ),
+    );
+  }
+
+  /// Retention applies to completed records only; unfinished work never expires.
+  bool pruneHistory(int days, {DateTime? now}) {
+    if (days <= 0) return false;
+    final cutoff = (now ?? DateTime.now()).subtract(Duration(days: days));
+    final history = _value.history
+        .where((item) => !item.time.isBefore(cutoff))
+        .toList();
+    final tasks = _value.downloadTasks
+        .where(
+          (task) =>
+              task.running ||
+              task.stage != HomeWorkflowStage.completed ||
+              !(task.completedAt ?? task.startedAt).isBefore(cutoff),
+        )
+        .toList();
+    if (history.length == _value.history.length &&
+        tasks.length == _value.downloadTasks.length) {
+      return false;
+    }
+    _apply(_value.copyWith(history: history, downloadTasks: tasks));
+    return true;
+  }
+
+  void removeHistory(String id) {
+    final records = _value.history.where((record) => record.id == id);
+    if (records.isEmpty) return;
+    final taskId = records.first.taskId;
+    _apply(
+      _value.copyWith(
+        history: _value.history.where((record) => record.id != id).toList(),
+        downloadTasks: _value.downloadTasks
+            .where((task) => task.id != taskId || task.running)
+            .toList(),
+      ),
+    );
+  }
+
+  bool removeDownloadTask(String id) {
+    if (_value.downloadTasks.any((task) => task.id == id && task.running)) {
+      return false;
+    }
+    _apply(
+      _value.copyWith(
+        downloadTasks: _value.downloadTasks
+            .where((task) => task.id != id)
+            .toList(),
+        history: _value.history.where((record) => record.taskId != id).toList(),
+      ),
     );
     return true;
   }

@@ -1,7 +1,10 @@
-# Segmeris 1.0.8 - [简体中文](README.md)
+# Segmeris 1.1.0 - [简体中文](README.md)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/blueokanna/Segmeris/main/assets/playstore.png" width="20%" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/SegmerisDark.jpg" />
+    <img src="assets/SegmerisLight.jpg" alt="Segmeris" width="20%" />
+  </picture>
 </p>
 
 Segmeris is a Flutter video downloader with a Rust engine for media discovery, HTTP transfer and download tasks. It supports HLS, direct media URLs and Bilibili pages, producing MP4 output. Android uses the system MediaCodec and MediaMuxer APIs and exports finished files to shared storage.
@@ -21,7 +24,9 @@ The application ID is `com.blue.segmeris`. Android package identity, Kotlin name
 
 Published binaries are available from [Releases](https://github.com/blueokanna/Segmeris/releases).
 
-Build with Flutter 3.47.9 (Dart 3.13.7), Rust 1.89 or newer and the toolchain for the target platform. Desktop media processing needs FFmpeg and ffprobe on PATH. Android does not need FFmpeg. Linux secure storage needs a Secret Service implementation and libsecret-1-dev at build time.
+See the [release guide](docs/releasing.md) for signing, version tags and artifacts. The app checks for stable releases after launch. A manual check is available in Settings.
+
+Build with Flutter 3.50.0 (Dart 3.14.0), Rust 1.89 or newer and the toolchain for the target platform. Desktop media processing needs FFmpeg and ffprobe on PATH. Android does not need FFmpeg. Linux secure storage needs a Secret Service implementation and libsecret-1-dev at build time.
 
 The embedded authorization browser stays on stable `flutter_inappwebview 6.1.5`. Its Android plugin references a default ProGuard file removed by AGP 9. The build generates a compatible script under `build/plugin-gradle`, replacing only those two references without modifying the Pub cache. An upstream script change fails the compatibility check and requires review when updating the dependency.
 
@@ -38,7 +43,7 @@ Cargokit compiles the Rust library during the Flutter build. After changing the 
 
     flutter_rust_bridge_codegen generate
 
-Courierust is pinned to the published crates.io release **1.1.1**, without a vendor copy or local path patch. Commit both `rust/Cargo.lock` and `pubspec.lock`; CI builds against these locks. The app, Rust core and Flutter bridge use **1.0.8**. Third-party dependencies retain their own versions. Release tags must match `v1.0.8`; `scripts/check_versions.py` checks package and tag consistency.
+Courierust is pinned to the published crates.io release **1.1.3**, without a vendor copy or local path patch. Commit both `rust/Cargo.lock` and `pubspec.lock`; CI builds against these locks. The app, Rust core and Flutter bridge use **1.1.0**. Third-party dependencies retain their own versions. Release tags must match `v1.1.0`; `scripts/check_versions.py` checks package and tag consistency.
 
 ## Use
 

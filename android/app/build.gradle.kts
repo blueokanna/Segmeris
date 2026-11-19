@@ -30,16 +30,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
-    }
-
-    sourceSets {
-        getByName("main") {
-            java.srcDirs("src/main/kotlin", "src/main/java")
-        }
-    }
-
     defaultConfig {
         applicationId = "com.blue.segmeris"
         minSdk = flutter.minSdkVersion
@@ -62,11 +52,16 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Device smoke tests can coexist with a differently signed release.
+            if (providers.gradleProperty("segmerisSideBySide").orNull == "true") {
+                applicationIdSuffix = ".validation"
+                versionNameSuffix = "-validation"
+            }
+        }
         release {
-            signingConfig = signingConfigs.getByName(
-                if (hasReleaseSigning) "release" else "debug"
-            )
-            
+            signingConfig = signingConfigs.findByName("release")
+
             // Keep MediaTranscoder class from being stripped by R8
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -82,13 +77,16 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
 dependencies {
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
-    // Flutter integration_test also resolves these on the debug runtime classpath.
-    debugImplementation("androidx.test.ext:junit:1.2.1")
-    debugImplementation("androidx.test:runner:1.6.2")
     implementation("androidx.core:core-ktx:1.15.0")
 }
 

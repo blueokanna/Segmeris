@@ -1,5 +1,5 @@
 use super::run_ffmpeg;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::{path::Path, time::Duration};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -168,13 +168,15 @@ mod tests {
             let args = probe_arguments(accel);
             let mut conversion = Vec::new();
             push_accel_encode_args(&mut conversion, accel);
-            assert!(args
-                .iter()
-                .any(|arg| arg == "color=c=black:s=1280x720:r=30"));
+            assert!(
+                args.iter()
+                    .any(|arg| arg == "color=c=black:s=1280x720:r=30")
+            );
             if !conversion.is_empty() {
-                assert!(args
-                    .windows(conversion.len())
-                    .any(|part| part == conversion));
+                assert!(
+                    args.windows(conversion.len())
+                        .any(|part| part == conversion)
+                );
             }
         }
         let args = probe_arguments(AccelType::AppleVideoToolbox);
