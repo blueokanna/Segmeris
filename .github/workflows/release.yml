@@ -77,6 +77,13 @@ jobs:
           python3 scripts/check_versions.py
           python3 scripts/check_app_identity.py
           python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable installer
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Check Rust formatting
+        working-directory: rust
+        run: cargo fmt --all --check
       - name: Verify launcher artwork and browser theme changes
         run: |
           sudo apt-get update
@@ -87,16 +94,11 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
-      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable installer
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
       - name: Resolve locked Flutter packages
         run: flutter pub get --enforce-lockfile
       - name: Validate Rust runtime and no_std core
         working-directory: rust
         run: |
-          cargo fmt --all --check
           cargo clippy --workspace --all-targets --features api-server --locked -- -D warnings
           cargo test --workspace --features api-server --locked
           cargo check -p segmeris-core --no-default-features --locked

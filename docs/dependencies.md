@@ -2,7 +2,7 @@
 
 核验日期为 2026-11-19。版本来自 pub.dev 与 crates.io 的官方 API，再由 Pub、Cargo 在实际 SDK 与上游约束下解析。这里的“最新”指已发布、未撤回的稳定版本；不把预发布版本、被撤回版本或强制覆盖约束的结果当作可交付升级。
 
-本次逐项对照了三个 Cargo 清单与三个 Pub 清单。按注册表和包名去重后，51 项第三方直接依赖均与各自注册表的最新稳定版一致。应用、Rust 桥接包、核心库和 fuzz 包的项目版本统一为 `1.1.0`。
+本次逐项对照了三个 Cargo 清单与三个 Pub 清单。按注册表和包名去重后，50 项第三方直接依赖均与各自注册表的最新稳定版一致。应用、Rust 桥接包、核心库和 fuzz 包的项目版本统一为 `1.1.0`。
 
 ## 工具链与锁文件
 
@@ -45,7 +45,7 @@
 | anyhow | 1.0.104 | [crates.io](https://crates.io/crates/anyhow) |
 | flutter_rust_bridge | 2.13.0 | [crates.io](https://crates.io/crates/flutter_rust_bridge) |
 | hex | 0.4.3 | [crates.io](https://crates.io/crates/hex) |
-| jni | 0.22.4 | [crates.io](https://crates.io/crates/jni) |
+| jni（仅 Android） | 0.22.4 | [crates.io](https://crates.io/crates/jni) |
 | log | 0.4.35 | [crates.io](https://crates.io/crates/log) |
 | env_logger | 0.11.11 | [crates.io](https://crates.io/crates/env_logger) |
 | regex | 1.13.2 | [crates.io](https://crates.io/crates/regex) |
@@ -55,7 +55,6 @@
 | webpki-root-certs | 1.0.12 | [crates.io](https://crates.io/crates/webpki-root-certs) |
 | rustls | 0.23.46 | [crates.io](https://crates.io/crates/rustls) |
 | url | 2.5.8 | [crates.io](https://crates.io/crates/url) |
-| dashmap | 6.2.1 | [crates.io](https://crates.io/crates/dashmap) |
 | indicatif | 0.18.6 | [crates.io](https://crates.io/crates/indicatif) |
 | uuid | 1.29.3 | [crates.io](https://crates.io/crates/uuid) |
 | android_logger | 0.15.1 | [crates.io](https://crates.io/crates/android_logger) |

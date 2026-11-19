@@ -4962,10 +4962,8 @@ fn merge_media_streams(
                 }
             }
         } else {
-            android_merge_error = Some(
-                "the Android MediaCodec transcoder is not registered"
-                    .to_string(),
-            );
+            android_merge_error =
+                Some("the Android MediaCodec transcoder is not registered".to_string());
         }
     }
 
@@ -6085,7 +6083,9 @@ fn android_hardware_transcode(
             error!("   1. Your Rust library (.so) was not loaded as a JNI library");
             error!("   2. Cargo.toml [lib] crate-type is not [\"cdylib\"]");
             error!("   3. Check logcat for any JNI loading errors");
-            anyhow!("Android MediaCodec transcoder not registered; nativeInitMedia has not completed")
+            anyhow!(
+                "Android MediaCodec transcoder not registered; nativeInitMedia has not completed"
+            )
         })?;
 
         if let Some(segments) = segments {
