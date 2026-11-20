@@ -76,15 +76,18 @@ def verify_metadata(badging, version, build_number):
 
 
 def verify_signer(output, expected):
-    # Build-tools 37 labels v3 signers by signature scheme. Source stamps and
-    # public-key digests describe different identities and cannot attest the APK.
+    # Build-tools 37 prefixes the signature scheme and may report a v3 SDK range.
+    signer_label = re.compile(
+        r"(?:(?:V[12]|V3\.[01]|V3\.2 Hybrid (?:Classical|PQC)) )?"
+        r"Signer(?: #\d+)?:?(?: \(minSdkVersion=\d+(?: \(dev release=true\))?, maxSdkVersion=\d+\))?"
+    )
     signers = []
     for line in output.splitlines():
         label, separator, digest = line.strip().partition(" certificate SHA-256 digest: ")
         if not separator or label.rstrip(":") == "Source Stamp Signer":
             continue
-        if not re.fullmatch(r"(?:Signer #\d+|V3\.[01] Signer|V3\.2 Hybrid (?:Classical|PQC) Signer):?", label):
-            raise ValueError("Unrecognized APK signer in apksigner certificate report")
+        if not signer_label.fullmatch(label):
+            raise ValueError(f"Unrecognized APK signer label in apksigner certificate report: {label!r}")
         signers.append(digest.strip().replace(":", "").lower())
     if not signers:
         raise ValueError("No APK signing certificate found in apksigner output")

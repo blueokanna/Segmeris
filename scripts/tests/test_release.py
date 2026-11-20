@@ -255,10 +255,17 @@ class SigningAndBinaryTests(unittest.TestCase):
     def test_build_tools_37_signers_and_source_stamps(self):
         release_cert, other = "ab" * 32, "cd" * 32
         stamp = f"Source Stamp Signer: certificate SHA-256 digest: {other}\n"
-        signer = f"V3.0 Signer: certificate SHA-256 digest: {release_cert}\n"
-        release_android.verify_signer(signer + stamp, release_cert)
+        for label in ("V1 Signer:", "V2 Signer:", "V2 Signer #1:", "V3.0 Signer:",
+                      "V3.1 Signer: (minSdkVersion=33, maxSdkVersion=2147483647)",
+                      "V3.2 Hybrid Classical Signer: (minSdkVersion=37 (dev release=true), maxSdkVersion=2147483647)",
+                      "V3.2 Hybrid PQC Signer: (minSdkVersion=37, maxSdkVersion=2147483647)"):
+            with self.subTest(label=label):
+                release_android.verify_signer(f"{label} certificate SHA-256 digest: {release_cert}\n" + stamp,
+                                              release_cert)
+        signer = f"V2 Signer #1: certificate SHA-256 digest: {release_cert}\n"
         for invalid in (stamp, signer.replace(release_cert, other) + stamp.replace(other, release_cert),
-                        signer + f"V3.1 Signer: certificate SHA-256 digest: {other}",
+                        signer + f"V2 Signer #2: certificate SHA-256 digest: {other}",
+                        signer + f"Unknown Signer: certificate SHA-256 digest: {release_cert}",
                         signer.replace("certificate SHA-256", "public key SHA-256")):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 release_android.verify_signer(invalid, release_cert)
