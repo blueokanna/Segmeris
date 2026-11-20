@@ -199,10 +199,12 @@ def verify_signature(archive, signature, public_key, fingerprint, work):
     fingerprint = fingerprint.upper()
     with tempfile.TemporaryDirectory(prefix="segmeris-gpg-", dir=work) as keyring:
         Path(keyring).chmod(0o700)
-        common = [gpg, "--batch", "--no-tty", "--homedir", keyring,
+        windows = os.name == "nt"
+        common = [gpg, "--batch", "--no-tty", "--homedir", shell_path(keyring, windows),
                   "--no-auto-key-retrieve", "--no-auto-key-import"]
-        run([*common, "--import", public_key], capture=True, timeout=30)
-        status = run([*common, "--status-fd", "1", "--verify", signature, archive], capture=True, timeout=30)
+        run([*common, "--import", shell_path(public_key, windows)], capture=True, timeout=30)
+        status = run([*common, "--status-fd", "1", "--verify", shell_path(signature, windows),
+                      shell_path(archive, windows)], capture=True, timeout=30)
         signatures = [line.split()[2:] for line in status.splitlines() if line.startswith("[GNUPG:] VALIDSIG ")]
         if not any(fields and (fields[0].upper() == fingerprint or fields[-1].upper() == fingerprint)
                    for fields in signatures):

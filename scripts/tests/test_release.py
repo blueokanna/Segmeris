@@ -252,6 +252,17 @@ class SigningAndBinaryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 release_android.verify_signer(value, fingerprint)
 
+    def test_build_tools_37_signers_and_source_stamps(self):
+        release_cert, other = "ab" * 32, "cd" * 32
+        stamp = f"Source Stamp Signer: certificate SHA-256 digest: {other}\n"
+        signer = f"V3.0 Signer: certificate SHA-256 digest: {release_cert}\n"
+        release_android.verify_signer(signer + stamp, release_cert)
+        for invalid in (stamp, signer.replace(release_cert, other) + stamp.replace(other, release_cert),
+                        signer + f"V3.1 Signer: certificate SHA-256 digest: {other}",
+                        signer.replace("certificate SHA-256", "public key SHA-256")):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                release_android.verify_signer(invalid, release_cert)
+
     def test_linux_unresolved_dependencies_fail(self):
         parsed = release_linux.parse_ldd("libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x123)\n/lib64/ld-linux-x86-64.so.2 (0x456)")
         self.assertEqual(len(parsed), 2)

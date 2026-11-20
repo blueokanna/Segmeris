@@ -76,9 +76,19 @@ def verify_metadata(badging, version, build_number):
 
 
 def verify_signer(output, expected):
-    fingerprints = re.findall(r"Signer #\d+ certificate SHA-256 digest:\s*([0-9a-fA-F:]+)", output)
-    normalized = {value.replace(":", "").lower() for value in fingerprints}
-    if normalized != {expected.lower()}:
+    # Build-tools 37 labels v3 signers by signature scheme. Source stamps and
+    # public-key digests describe different identities and cannot attest the APK.
+    signers = []
+    for line in output.splitlines():
+        label, separator, digest = line.strip().partition(" certificate SHA-256 digest: ")
+        if not separator or label.rstrip(":") == "Source Stamp Signer":
+            continue
+        if not re.fullmatch(r"(?:Signer #\d+|V3\.[01] Signer|V3\.2 Hybrid (?:Classical|PQC) Signer):?", label):
+            raise ValueError("Unrecognized APK signer in apksigner certificate report")
+        signers.append(digest.strip().replace(":", "").lower())
+    if not signers:
+        raise ValueError("No APK signing certificate found in apksigner output")
+    if set(signers) != {expected.lower()}:
         raise ValueError("APK signer does not match the configured release keystore certificate")
     if re.search(r"CN\s*=\s*Android Debug(?:,|$)", output, re.I | re.M):
         raise ValueError("Android debug certificates are forbidden in release artifacts")

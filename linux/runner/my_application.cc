@@ -42,9 +42,9 @@ static void my_application_activate(GApplication* application) {
   GtkSettings* settings = gtk_widget_get_settings(GTK_WIDGET(window));
   update_brand_icon(settings, nullptr, window);
   g_signal_connect_object(settings, "notify::gtk-theme-name",
-      G_CALLBACK(update_brand_icon), window, G_CONNECT_DEFAULT);
+      G_CALLBACK(update_brand_icon), window, GConnectFlags{});
   g_signal_connect_object(settings, "notify::gtk-application-prefer-dark-theme",
-      G_CALLBACK(update_brand_icon), window, G_CONNECT_DEFAULT);
+      G_CALLBACK(update_brand_icon), window, GConnectFlags{});
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu
