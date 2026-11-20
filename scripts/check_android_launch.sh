@@ -5,6 +5,7 @@ set -euo pipefail
 apk=${1:?expected path to signed x86_64 APK}
 export ANDROID_SERIAL=emulator-5564
 sdk=${ANDROID_HOME:?}
+export PATH="$sdk/cmdline-tools/latest/bin:$sdk/platform-tools:$PATH"
 image='system-images;android-35;google_apis;x86_64'
 sdkmanager 'platform-tools' 'emulator' "$image" >/dev/null
 export ANDROID_AVD_HOME="$RUNNER_TEMP/segmeris-avd"
