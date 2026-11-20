@@ -498,7 +498,10 @@ jobs:
   docker-api:
     name: Publish verified-source Docker image
     needs: [prepare, release-gate]
-    if: needs.prepare.outputs.docker_enabled == 'true'
+    # The release gate accepts an explicitly skipped iOS build.
+    if: >-
+      !cancelled() && needs.prepare.result == 'success' && needs.release-gate.result == 'success'
+      && needs.prepare.outputs.publish == 'true' && needs.prepare.outputs.docker_enabled == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     permissions:
@@ -537,10 +540,8 @@ jobs:
   create-release:
     name: Verify assets and publish a complete GitHub Release
     if: >-
-      always() && needs.prepare.outputs.publish == 'true'
+      !cancelled() && needs.prepare.outputs.publish == 'true'
       && needs.release-gate.result == 'success'
-      && ((needs.prepare.outputs.docker_enabled == 'true' && needs.docker-api.result == 'success')
-      || (needs.prepare.outputs.docker_enabled != 'true' && needs.docker-api.result == 'skipped'))
     needs: [prepare, release-gate, docker-api]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -552,6 +553,14 @@ jobs:
       IOS_ENABLED: ${{ needs.prepare.outputs.ios_enabled }}
       DOCKER_ENABLED: ${{ needs.prepare.outputs.docker_enabled }}
     steps:
+      - name: Require the planned Docker publication result
+        env:
+          DOCKER_RESULT: ${{ needs.docker-api.result }}
+        run: |
+          case "$DOCKER_ENABLED/$DOCKER_RESULT" in
+            true/success|false/skipped) ;;
+            *) echo "::error::Docker publication was enabled=$DOCKER_ENABLED and finished with result $DOCKER_RESULT"; exit 1 ;;
+          esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.commit }}
